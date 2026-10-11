@@ -34,11 +34,8 @@ private:
   static constexpr uint32_t kApiVersion = VK_API_VERSION_1_4;
   static constexpr const char* kValidationLayerName = "VK_LAYER_KHRONOS_validation";
 
-#if defined(NE_BUILD_DEBUG)
-  const bool enableValidationLayers = true;
-#else
-  const bool enableValidationLayers = false;
-#endif
+  // Requested in Debug builds; stays off when the validation layer is not installed
+  bool mValidationEnabled = false;
 
   VkInstance mInstance = VK_NULL_HANDLE;
   VkDebugUtilsMessengerEXT mDebugMessenger = VK_NULL_HANDLE;

@@ -34,7 +34,9 @@ Instance::Instance(const Config& iConfig) {
 
 Instance::~Instance() {
   NE_LOG("Destroying Vulkan Instance and deallocating resources...");
-  vkDestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr);
+  if (mDebugMessenger != VK_NULL_HANDLE) {
+    vkDestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr);
+  }
   // Checked after the messenger is gone so errors raised while tearing down the device are included
   NE_ASSERT(!mHasValidationErrors, "Vulkan validation layer reported errors (see log above)");
   vkDestroyInstance(mInstance, nullptr);
@@ -57,8 +59,23 @@ void Instance::createInstance(const Config& iConfig) {
   std::vector<VkExtensionProperties> availableExtensions(availableExtensionCount);
   vkEnumerateInstanceExtensionProperties(nullptr, &availableExtensionCount, availableExtensions.data());
 
+#if defined(NE_BUILD_DEBUG)
+  uint32_t availableLayerCount = 0;
+  vkEnumerateInstanceLayerProperties(&availableLayerCount, nullptr);
+  std::vector<VkLayerProperties> availableLayers(availableLayerCount);
+  vkEnumerateInstanceLayerProperties(&availableLayerCount, availableLayers.data());
+  mValidationEnabled = std::any_of(availableLayers.begin(), availableLayers.end(), [](const VkLayerProperties& iLayer) {
+    return strcmp(iLayer.layerName, kValidationLayerName) == 0;
+  });
+  if (!mValidationEnabled) {
+    NE_WARN("Validation layer {} is not installed; running without validation. It ships with the Vulkan SDK and with "
+            "distro packages such as vulkan-validationlayers.",
+            kValidationLayerName);
+  }
+#endif
+
   std::vector<const char*> windowExtensions = iConfig.requiredExtensions;
-  if (enableValidationLayers) {
+  if (mValidationEnabled) {
     windowExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
   }
   for (const char* windowExtension : windowExtensions) {
@@ -78,15 +95,7 @@ void Instance::createInstance(const Config& iConfig) {
   createInfo.enabledExtensionCount = static_cast<uint32_t>(windowExtensions.size());
   createInfo.ppEnabledExtensionNames = windowExtensions.data();
 
-  if (enableValidationLayers) {
-    uint32_t availableLayerCount = 0;
-    vkEnumerateInstanceLayerProperties(&availableLayerCount, nullptr);
-    std::vector<VkLayerProperties> availableLayers(availableLayerCount);
-    vkEnumerateInstanceLayerProperties(&availableLayerCount, availableLayers.data());
-    const bool layerFound = std::any_of(availableLayers.begin(), availableLayers.end(), [](const VkLayerProperties& iLayer) {
-      return strcmp(iLayer.layerName, kValidationLayerName) == 0;
-    });
-    NE_ASSERT(layerFound, "Required validation layer not supported: {}", kValidationLayerName);
+  if (mValidationEnabled) {
     createInfo.enabledLayerCount = 1;
     createInfo.ppEnabledLayerNames = &kValidationLayerName;
 
@@ -112,7 +121,7 @@ void Instance::createInstance(const Config& iConfig) {
 }
 
 void Instance::setupDebugMessenger() {
-  if (!enableValidationLayers)
+  if (!mValidationEnabled)
     return;
 
   VkDebugUtilsMessengerCreateInfoEXT createInfo{};

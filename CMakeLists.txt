@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.22.0)
+cmake_minimum_required(VERSION 3.24)
 project(null VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # generate compile_commands.json for nvim's lsp
 set(CMAKE_CXX_STANDARD 20)
@@ -10,7 +10,6 @@ option(NE_PACKAGED_BUILD "Build the application as a packaged standalone build" 
 set(EngineTarget "null_engine")
 set(ThirdPartyDir "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 set(SourceDir "${CMAKE_CURRENT_SOURCE_DIR}/src")
-set(ShadersDir "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 set(BinDir "${CMAKE_BINARY_DIR}/bin")
 set(CompiledShaderRelDir "compiled_shaders")
 set(BinShaderDir "${BinDir}/${CompiledShaderRelDir}")
@@ -18,27 +17,17 @@ set(BinShaderDir "${BinDir}/${CompiledShaderRelDir}")
 # ----------------------------------------------------------------------
 # Thirdparty
 # ----------------------------------------------------------------------
-# Vulkan
-find_package(Vulkan 1.4 REQUIRED COMPONENTS volk)
-find_program(Vulkan_SLANGC_EXECUTABLE slangc HINTS $ENV{VULKAN_SDK}/bin REQUIRED)
-message(STATUS "slang: ${Vulkan_SLANGC_EXECUTABLE}")
+# Vulkan headers, utility headers, volk, and VMA, vendored at Vulkan SDK 1.4.350.1
+add_subdirectory("${ThirdPartyDir}/vulkan")
+add_subdirectory("${ThirdPartyDir}/vulkan_utility")
+add_subdirectory("${ThirdPartyDir}/volk")
+add_subdirectory("${ThirdPartyDir}/vma")
 
-# GLFW
-set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_DOCS OFF) # The docs folder is not vendored
 add_subdirectory("${ThirdPartyDir}/glfw")
-
-# cgltf
 add_subdirectory("${ThirdPartyDir}/cgltf")
-
-# stb
 add_subdirectory("${ThirdPartyDir}/stb")
-
-# spdlog
 add_subdirectory("${ThirdPartyDir}/spdlog")
-
-# Dear ImGui
 add_subdirectory("${ThirdPartyDir}/imgui")
 
 # ----------------------------------------------------------------------
@@ -53,9 +42,9 @@ file(GLOB_RECURSE ENGINE_SOURCE_FILES
 )
 
 file(GLOB_RECURSE ENGINE_SHADERS
-    LIST_DIRECTORIES false
-    RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-    shaders/*.slang  shaders/*.comp
+  LIST_DIRECTORIES false
+  RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+  shaders/*.slang
 )
 
 if(MSVC)
@@ -66,7 +55,10 @@ target_sources(${EngineTarget} PRIVATE ${ENGINE_SOURCE_FILES} ${ENGINE_SHADERS})
 set_source_files_properties(${ENGINE_SHADERS} PROPERTIES HEADER_FILE_ONLY TRUE)
 target_include_directories(${EngineTarget} PRIVATE ${SourceDir})
 target_link_libraries(${EngineTarget} PRIVATE
-  Vulkan::volk
+  vulkan_headers
+  vulkan_utility
+  volk
+  vma
   glfw
   cgltf
   stb
@@ -81,8 +73,6 @@ target_compile_definitions(${EngineTarget} PRIVATE
   $<$<PLATFORM_ID:Windows>:NE_PLATFORM_WINDOWS>
   $<$<PLATFORM_ID:Linux>:NE_PLATFORM_LINUX>
   $<$<PLATFORM_ID:Darwin>:NE_PLATFORM_APPLE>
-
-  NE_BUILD_DIR="${CMAKE_BINARY_DIR}"
 
   # Asset referencing configuration
   NE_CONTENT_DIR="$<IF:$<BOOL:${NE_PACKAGED_BUILD}>,content,../../../content>"
@@ -107,6 +97,15 @@ set_target_properties(${EngineTarget} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${BinD
 # ----------------------------------------------------------------------
 # Shaders
 # ----------------------------------------------------------------------
+# Slang shader compiler, the archive for this platform
+set(SlangArchive_Windows "windows-x86_64.zip")
+set(SlangArchive_Linux "linux-x86_64-glibc-2.28.tar.gz") # No LLVM backend: 20 MB instead of 74 MB
+include(FetchContent)
+FetchContent_Declare(slang URL "https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-${SlangArchive_${CMAKE_HOST_SYSTEM_NAME}}")
+FetchContent_MakeAvailable(slang)
+set(SlangcExecutable "${slang_SOURCE_DIR}/bin/slangc${CMAKE_EXECUTABLE_SUFFIX}")
+message(STATUS "slangc: ${SlangcExecutable}")
+
 file(MAKE_DIRECTORY ${BinShaderDir})
 set(CompiledShaders "")
 
@@ -117,23 +116,19 @@ foreach(shader_file ${ENGINE_SHADERS})
   message(STATUS "SLANGC compile: ${absolute_shader_path}")
   add_custom_command(
     OUTPUT ${spirv_file}
-    COMMAND ${Vulkan_SLANGC_EXECUTABLE} ${absolute_shader_path}
+    COMMAND ${SlangcExecutable} ${absolute_shader_path}
             -target spirv
             -profile spirv_1_4
             -emit-spirv-directly
             -fvk-use-entrypoint-name
             -o ${spirv_file}
-    DEPENDS ${absolute_shader_path}
+    DEPENDS ${absolute_shader_path} ${SlangcExecutable}
     COMMENT "compiling shader ${shader_name} to SPIR-V"
   )
   list(APPEND CompiledShaders ${spirv_file})
 endforeach()
 
-add_custom_target(
- Shaders
- DEPENDS ${CompiledShaders}
-)
-
+add_custom_target(Shaders DEPENDS ${CompiledShaders})
 add_dependencies(${EngineTarget} Shaders)
 
 # Post-build asset copying for packaged builds
@@ -145,21 +140,6 @@ if(NE_PACKAGED_BUILD)
             "${BinDir}/content"
     COMMENT "Copying assets to build binary directory for packaged build..."
   )
-endif()
-
-# ----------------------------------------------------------------------
-# Visual Studio
-# ----------------------------------------------------------------------
-if(MSVC)
-  set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${EngineTarget})
-  set_property(TARGET ${EngineTarget} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${BinDir})
-  source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ENGINE_SOURCE_FILES} ${ENGINE_SHADERS})
-  set_target_properties(glfw PROPERTIES FOLDER "Misc/Thirdparty/GLFW3")
-  set_target_properties(update_mappings PROPERTIES FOLDER "Misc/Thirdparty/GLFW3")
-  set_target_properties(uninstall PROPERTIES FOLDER "Misc/Thirdparty/GLFW3")
-  set_property(GLOBAL PROPERTY PREDEFINED_TARGETS_FOLDER "Misc/CMakeTargets")
-  set_property(TARGET ${EngineTarget} PROPERTY FOLDER Engine)
-  set_property(TARGET Shaders PROPERTY FOLDER Engine)
 endif()
 
 message(STATUS "✅ ${EngineTarget} configured with C++${CMAKE_CXX_STANDARD}")

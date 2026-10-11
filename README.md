@@ -1,6 +1,6 @@
 # Null Engine
 
-A high-performance, modular 3D rendering engine built with modern C++20 and Vulkan 1.4. It is heading toward a robotics digital twin (see Step 5), so design choices favor ROS conventions, headless rendering, and sensor simulation.
+A digital twin platform for robot simulation, built on a Vulkan 1.4 renderer written in C++20. The goal is an easy way to build virtual robots and their environments, simulate them with realistic sensors, train robot behaviors, and connect the results to real robots. Design choices favor ROS conventions, headless operation, and sensor simulation.
 
 <p align="center">
   <a href="https://en.cppreference.com/w/cpp/20"><img src="https://img.shields.io/badge/C%2B%2B-20-blue.svg?logo=cplusplus&logoColor=white&style=flat-square" alt="C++ Standard"></a>
@@ -13,13 +13,19 @@ A high-performance, modular 3D rendering engine built with modern C++20 and Vulk
 
 ---
 
-## 📌 Engine Roadmap & Task Board
+## 📌 Roadmap & Task Board
 
-### Step 1: Foundational Modernization & RHI Core
+The sections below group work by area; their order is not fixed. The open decisions are left for when the platform's first use cases are clear.
+
+### Open Decisions
+- **Physics**: A built-in engine, a physics library inside Null (MuJoCo, PhysX, Jolt, ...), or an external simulator streaming its state in.
+- **Robot & World Formats**: Which of URDF, MJCF, SDF, and USD to support, and whether Null gets its own scene format.
+- **Connectivity**: How Null talks to real robots and other tools (ROS 2, Zenoh, ...).
+- **Training Interface**: How learning code drives Null (Python bindings, a Gym-style API, a network protocol, ...).
+
+### Foundations
 - [x] **Debug Utils Instrumentation**: Name every Vulkan object for RenderDoc and validation messages.
 - [x] **Vulkan 1.3/1.4 Memory2 & Transfer Core**: Memory binding and buffer copies use the newer `*2` Vulkan APIs.
-
-### Step 2: Interactive Camera & GUI
 - [x] **Asset Pipeline**: Load glTF / GLB models straight into GPU memory.
 - [x] **Input Abstraction**: Typed keyboard and mouse input with multicast events.
 - [x] **Camera & Transform Math**: Perspective and orthographic projections, and position / rotation / scale transforms.
@@ -30,8 +36,6 @@ A high-performance, modular 3D rendering engine built with modern C++20 and Vulk
 - [x] **Simulation Time Controls & UI Toggle**: Time scale (0-3x), UI blocks 3D input while in use, `H` toggles the overlay.
 - [x] **Right-Handed Z-Up Convention (ROS REP-103)**: glTF, URDF, ROS, and USD data import without mirroring.
 - [x] **Transform Hierarchy & glTF Scene Import**: Parent / child transforms, glTF node trees, and reusable prefabs.
-
-### Step 3: Materials & Bindless Resources
 - [x] **Transient Per-Draw Data Core**: Per-draw data reaches shaders through GPU pointers, drawn with multi-draw indirect.
 - [x] **Vertex Attribute Modernization**: Position, normal, UV, and color, fetched by the vertex shader itself.
 - [x] **RHI Texture & Sampler Core**: Textures, staging uploads, layout transitions, and samplers.
@@ -39,38 +43,84 @@ A high-performance, modular 3D rendering engine built with modern C++20 and Vulk
 - [x] **Bindless Texture Architecture**: All textures live in one shader array, indexed per draw.
 - [x] **Vulkan Memory Allocator (VMA) Integration**: Every buffer and image is sub-allocated through VMA.
 - [x] **Mipmap Generation**: Every texture gets a full mip chain, built on the CPU at load with an sRGB-correct box filter.
-- [ ] **glTF PBR Material Pipeline**: glTF metal-roughness materials with textures, transparency, and tonemapping (per-instance material index, MikkTSpace tangents, Khronos PBR Neutral).
-- [ ] **GPU Timeline & Deferred Destruction**: Free GPU resources only once the GPU is done with them, and stop uploads from stalling (one timeline semaphore on `Device` plus a deletion queue; no resource handles until something needs them).
 
-### Step 4: GPU-Driven Pipeline & Optimization
-- [ ] **Scene Extraction**: Copy cameras and draw lists out of the ECS before rendering, so the renderer stops reading components directly.
+### Hardening
+- [x] **Self-Contained Vulkan Build**: Vulkan headers, volk, and VMA live in `third_party`, so the C++ build needs no Vulkan SDK.
+- [x] **Downloaded Shader Compiler**: CMake downloads Slang, so building needs no Vulkan SDK.
+- [ ] **In-House Logger**: Replaces spdlog; logging stays on in Shipping builds, filtered at runtime, with one log file per run.
+- [ ] **Up-to-Date Third-Party Libraries**: GLFW, Dear ImGui, cgltf, and stb updated to their latest releases, with each library's source and version recorded.
+- [ ] **Loud Failures in Release Builds**: Vulkan errors, geometry pool overflow, and malformed assets report what went wrong instead of aborting silently or corrupting memory.
+- [ ] **Drift-Free Clock**: Total time accumulates in integer nanoseconds, so long runs don't drift.
+- [ ] **In-App Log Panel**: Recent log lines in an ImGui window.
+
+### Robots & Worlds
+- [ ] **URDF Import**: Robot links and joints (fixed, revolute, continuous, prismatic, and mimic) as a transform hierarchy, with several visuals per link and `package://` mesh paths.
+- [ ] **Mesh Formats**: STL, OBJ, and DAE next to glTF, with duplicate vertices merged and each format's units and up axis respected.
+- [ ] **Primitive Meshes**: Cylinder, sphere, and capsule next to the existing box.
+- [ ] **Robot Materials**: Base colors and textures per submesh, from robot descriptions and glTF.
+- [ ] **World Scenes**: Environments of static meshes, robots, sensors, and lights, loaded from a file.
+
+### Simulation
+- [ ] **Simulation Clock**: Sim time stepped at a fixed rate, separate from the frame rate, and able to run faster or slower than real time.
+- [ ] **Physics**: Rigid bodies, joints, contacts, and actuators, from the source chosen in the physics decision.
+- [ ] **Robot Control**: Command joints by position, velocity, or effort, and read back joint states.
+- [ ] **Determinism**: The same inputs and seed give the same results, so experiments and tests can be repeated.
+- [ ] **Scene Extraction**: Copy cameras and draw lists out of the ECS before rendering, so the renderer stops reading components directly and simulation and rendering can run at different rates.
+
+### Sensors
 - [ ] **Frame Orchestration & UI Pass**: One place runs the whole frame; the UI gets its own pass after the scene and tonemapping.
 - [ ] **Render Views & Offscreen Targets**: Several cameras rendering offscreen at once, headless mode, GPU → CPU readback, and an ImGui viewport panel.
-- [ ] **Push Descriptors for Utility Passes**: Simple post-processing and compute passes without descriptor pools.
-- [ ] **GPU Profiling**: GPU timings per render pass.
-- [ ] **Context-Driven Encoder Pattern & RHI Decoupling**: A clean boundary between the low-level Vulkan layer and the render passes.
+- [ ] **Camera Sensors**: RGB, depth, and segmentation images from cameras mounted on robot frames, with intrinsics and lens distortion.
+- [ ] **Ray-Query LiDAR**: Hardware ray tracing for LiDAR and depth sensors, with a fallback for GPUs without ray tracing.
+- [ ] **Sensor Noise**: Configurable noise and artifacts, so behavior trained in simulation holds up on real sensors.
+- [ ] **glTF PBR Material Pipeline**: glTF metal-roughness materials with textures, transparency, and tonemapping (per-instance material index, MikkTSpace tangents, Khronos PBR Neutral).
+
+### Training
+- [ ] **Parallel Environments**: Many copies of a scene stepping and rendering at once on one GPU.
+- [ ] **Episodes & Resets**: Fast resets to a start state, with randomized poses, materials, lighting, and physics parameters.
+- [ ] **Training API**: Observations, actions, and rewards exposed to learning code through the chosen training interface.
+- [ ] **Datasets**: Record sensor data and robot states for imitation learning and synthetic data.
+
+### Real Robots
+- [ ] **Robot Connection**: Stream joint states and poses from a real robot or another simulator into the scene, timestamped and interpolated, through the chosen connectivity.
+- [ ] **Record & Replay**: Record sessions and replay them for debugging and tests.
+- [ ] **Sim vs Real View**: The simulated and the real robot shown together, to spot where they diverge.
+
+### Tools
+- [ ] **Debug Draw**: Lines, coordinate frames, joint axes, trajectories, and point clouds.
+- [ ] **Picking & Gizmos**: Select entities and move them in the viewport.
+- [ ] **Scene Editor**: Place robots, objects, and sensors in the viewport and save the scene.
+
+### Engine & Performance
+- [ ] **CI**: Build and run the tests on every push, on lavapipe (Mesa's software Vulkan).
+- [ ] **GPU Timeline & Deferred Destruction**: Free GPU resources only once the GPU is done with them, and stop uploads from stalling (one timeline semaphore on `Device` plus a deletion queue; no resource handles until something needs them).
+- [ ] **Reusable Geometry Pools**: Vertex and index pools that free and reuse space (VMA virtual blocks) and grow on demand, so robots can be unloaded and large meshes fit.
+- [ ] **Core Library**: The engine as a library, with separate apps on top (viewer, headless runner, tests).
 - [ ] **Compute Frustum & Occlusion Culling**: Cull on the GPU and build draw commands in compute shaders (Hi-Z depth pyramid from a compute downsampler, with per-mip views and barriers).
 - [ ] **Texture Streaming**: Compressed (KTX) textures loaded in the background (staging ring buffer, reusable bindless slots).
-
-### Step 5: Robotics Digital Twin (Future)
-> Null stays the renderer, visualizer, and sensor simulator. Physics comes from an external source of truth (MuJoCo, Isaac Sim, Gazebo, or the real robot).
-- [ ] **URDF Import**: Robot links and joints as a transform hierarchy, with STL / DAE / OBJ meshes.
-- [ ] **Debug Draw**: Lines, coordinate frames, trajectories, and point clouds.
-- [ ] **External State Bridge**: A ROS 2 / Zenoh bridge, outside the engine core, that streams timestamped, interpolated joint states and poses into the scene.
-- [ ] **Camera Sensor Simulation**: RGB, depth, and segmentation images from simulated cameras.
-- [ ] **Picking & Gizmos**: Select entities and move them in the viewport.
-- [ ] **Ray-Query LiDAR**: Hardware ray tracing for LiDAR and depth sensors.
+- [ ] **GPU Profiling**: GPU timings per render pass.
+- [ ] **Push Descriptors for Utility Passes**: Simple post-processing and compute passes without descriptor pools.
+- [ ] **Context-Driven Encoder Pattern & RHI Decoupling**: A clean boundary between the low-level Vulkan layer and the render passes.
 
 ---
 
 ## 📐 Engine Conventions
 
 * **Coordinates**: ROS REP-103: right-handed, `+X` forward, `+Y` left, `+Z` up; roll / pitch / yaw follow ROS (`Rz * Ry * Rx`).
+* **Camera View Space**: The ROS optical frame (`+X` right, `+Y` down, `+Z` forward), which matches Vulkan NDC.
 * **Units**: SI (meters, seconds), angles in radians.
 
 ---
 
 ## 🛠️ Building & Testing
+
+### Requirements
+* **OS**: Linux (Ubuntu 24.04 or newer, or equivalent) or Windows 10 / 11.
+* **Compiler**: C++20 with `<format>`: GCC 13+, Clang 17+, or MSVC 2022.
+* **Build Tools**: CMake 3.24+ and Ninja.
+* **Shader Compiler**: Nothing to install: the first configure of each build folder downloads Slang.
+* **Validation Layers** (optional, Debug builds): From the Vulkan SDK or a distro package such as `vulkan-validationlayers`; without them, Debug builds run unvalidated.
+* **GPU**: A Vulkan 1.3 driver and loader (`libvulkan1` on Debian / Ubuntu) with dynamic rendering, synchronization2, buffer device address, descriptor indexing, and multi-draw indirect.
 
 ### Linux
 ```bash
