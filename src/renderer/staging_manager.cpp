@@ -1,14 +1,27 @@
 #include "renderer/staging_manager.h"
 #include "core/assert.h"
 #include "core/logger.h"
+#include "core/math/math_utils.h"
 #include "renderer/buffer.h"
 #include "renderer/device.h"
 #include "renderer/image.h"
 #include "renderer/utils.h"
 
+#include <vulkan/utility/vk_format_utils.h>
+
 #include <cstring>
 
 namespace ne {
+
+namespace {
+
+// Tightly packed bytes of one mip level
+VkDeviceSize getLevelSize(const Image::Config& iConfig, uint32_t iLevel) {
+  return static_cast<VkDeviceSize>(math::max(1u, iConfig.width >> iLevel)) * math::max(1u, iConfig.height >> iLevel) *
+         vkuFormatTexelBlockSize(iConfig.format);
+}
+
+} // namespace
 
 StagingManager::StagingManager(Device* iDevice) : mDevice(iDevice) {
   NE_ASSERT(mDevice, "Device must not be null");
@@ -38,107 +51,112 @@ void StagingManager::beginBatch() {
   mPendingImageUploads.clear();
 }
 
-VkDeviceSize StagingManager::stageData(const void* data, VkDeviceSize size) {
-  NE_ASSERT(data && size > 0, "Invalid data or size for staging");
+VkDeviceSize StagingManager::stageData(const void* iData, VkDeviceSize iSize) {
+  NE_ASSERT(iData && iSize > 0, "Invalid data or size for staging");
 
   // Flush the pending batch when it is full
-  if (!mStagingBuffer->canUpload(size)) {
+  if (!mStagingBuffer->canUpload(iSize)) {
     NE_LOG("StagingManager: Staging capacity reached. Auto-flushing batch...");
     flushBatch();
   }
 
-  NE_ASSERT(mStagingBuffer->canUpload(size), "Allocation still exceeds staging buffer capacity after flush!");
+  NE_ASSERT(mStagingBuffer->canUpload(iSize), "Allocation still exceeds staging buffer capacity after flush!");
 
-  return mStagingBuffer->upload(data, size);
+  return mStagingBuffer->upload(iData, iSize);
 }
 
-void StagingManager::stageBufferCopy(VkBuffer dstBuffer, const void* data, VkDeviceSize size, VkDeviceSize dstOffset) {
-  NE_ASSERT(dstBuffer != VK_NULL_HANDLE, "Destination buffer must not be null");
-  if (!data || size == 0) {
+void StagingManager::stageBufferCopy(VkBuffer iDstBuffer, const void* iData, VkDeviceSize iSize, VkDeviceSize iDstOffset) {
+  NE_ASSERT(iDstBuffer != VK_NULL_HANDLE, "Destination buffer must not be null");
+  if (!iData || iSize == 0) {
     return;
   }
 
   // Larger than the whole staging buffer: upload through a temporary buffer
-  if (size > mStagingBuffer->getConfig().size) {
+  if (iSize > mStagingBuffer->getConfig().size) {
     NE_LOG("StagingManager: Staging buffer copy of size {} exceeds capacity {}. Using transient staging buffer.",
-           vk_utils::formatBytes(size), vk_utils::formatBytes(mStagingBuffer->getConfig().size));
+           vk_utils::formatBytes(iSize), vk_utils::formatBytes(mStagingBuffer->getConfig().size));
     if (hasPendingUploads()) {
       flushBatch();
     }
 
     Buffer::Config outlierConfig{
-        .size = size,
+        .size = iSize,
         .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         .memoryUsage = MemoryUsage::Upload,
         .debugName = "StagingManager_OutlierBufferStaging",
     };
     Buffer tempStaging(mDevice, outlierConfig);
-    tempStaging.writeToBuffer(data, size, 0);
+    tempStaging.writeToBuffer(iData, iSize, 0);
 
     VkCommandBuffer cmd = mDevice->beginOneTimeCommand();
-    recordBufferCopy(cmd, tempStaging.getBuffer(), dstBuffer, size, 0, dstOffset);
+    recordBufferCopy(cmd, tempStaging.getBuffer(), iDstBuffer, iSize, 0, iDstOffset);
     mDevice->endOneTimeCommand(cmd);
     return;
   }
 
-  VkDeviceSize srcOffset = stageData(data, size);
+  VkDeviceSize srcOffset = stageData(iData, iSize);
   mPendingBufferCopies.push_back(PendingBufferCopy{
-      .dstBuffer = dstBuffer,
+      .dstBuffer = iDstBuffer,
       .srcOffset = srcOffset,
-      .dstOffset = dstOffset,
-      .size = size,
+      .dstOffset = iDstOffset,
+      .size = iSize,
   });
 }
 
-void StagingManager::stageImageUpload(Image& dstImage, const void* pixelData, VkDeviceSize size) {
-  NE_ASSERT(dstImage.isValid(), "Destination image must be valid");
-  if (!pixelData || size == 0) {
+void StagingManager::stageImageUpload(Image& iDstImage, const void* iPixelData, VkDeviceSize iSize) {
+  NE_ASSERT(iDstImage.isValid(), "Destination image must be valid");
+  if (!iPixelData || iSize == 0) {
     return;
   }
 
+  VkDeviceSize chainSize = 0;
+  for (uint32_t level = 0; level < iDstImage.getConfig().mipLevels; ++level) {
+    chainSize += getLevelSize(iDstImage.getConfig(), level);
+  }
+  NE_ASSERT(iSize == chainSize, "Image upload of {} bytes must hold all {} mip levels ({} bytes)", iSize,
+            iDstImage.getConfig().mipLevels, chainSize);
+
   // Larger than the whole staging buffer: upload through a temporary buffer
-  if (size > mStagingBuffer->getConfig().size) {
+  if (iSize > mStagingBuffer->getConfig().size) {
     NE_LOG("StagingManager: Staging image upload of size {} exceeds capacity {}. Using transient staging buffer.",
-           vk_utils::formatBytes(size), vk_utils::formatBytes(mStagingBuffer->getConfig().size));
+           vk_utils::formatBytes(iSize), vk_utils::formatBytes(mStagingBuffer->getConfig().size));
     if (hasPendingUploads()) {
       flushBatch();
     }
 
     Buffer::Config outlierConfig{
-        .size = size,
+        .size = iSize,
         .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         .memoryUsage = MemoryUsage::Upload,
         .debugName = "StagingManager_OutlierImageStaging",
     };
     Buffer tempStaging(mDevice, outlierConfig);
-    tempStaging.writeToBuffer(pixelData, size, 0);
+    tempStaging.writeToBuffer(iPixelData, iSize, 0);
 
     VkCommandBuffer cmd = mDevice->beginOneTimeCommand();
 
-    vk_utils::transitionImageLayout(cmd, dstImage.getImage(), dstImage.getSubresourceRange(), dstImage.getCurrentLayout(),
-                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, dstImage.getCurrentAccessMask(),
-                                    VK_ACCESS_2_TRANSFER_WRITE_BIT, dstImage.getCurrentStageMask(), VK_PIPELINE_STAGE_2_COPY_BIT);
+    vk_utils::transitionImageLayout(cmd, iDstImage.getImage(), iDstImage.getSubresourceRange(), iDstImage.getCurrentLayout(),
+                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, iDstImage.getCurrentAccessMask(),
+                                    VK_ACCESS_2_TRANSFER_WRITE_BIT, iDstImage.getCurrentStageMask(), VK_PIPELINE_STAGE_2_COPY_BIT);
 
-    recordImageCopy(cmd, tempStaging.getBuffer(), dstImage.getImage(), dstImage.getConfig().width, dstImage.getConfig().height);
+    recordImageCopy(cmd, tempStaging.getBuffer(), iDstImage);
 
-    vk_utils::transitionImageLayout(cmd, dstImage.getImage(), dstImage.getSubresourceRange(),
+    vk_utils::transitionImageLayout(cmd, iDstImage.getImage(), iDstImage.getSubresourceRange(),
                                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                     VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COPY_BIT,
                                     VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
 
     mDevice->endOneTimeCommand(cmd);
 
-    dstImage.setLayoutState(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_2_SHADER_READ_BIT,
+    iDstImage.setLayoutState(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_2_SHADER_READ_BIT,
                             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
     return;
   }
 
-  VkDeviceSize srcOffset = stageData(pixelData, size);
+  VkDeviceSize srcOffset = stageData(iPixelData, iSize);
   mPendingImageUploads.push_back(PendingImageUpload{
-      .image = &dstImage,
+      .image = &iDstImage,
       .srcOffset = srcOffset,
-      .width = dstImage.getConfig().width,
-      .height = dstImage.getConfig().height,
   });
 }
 
@@ -166,13 +184,7 @@ void StagingManager::flushBatch() {
       barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
       barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
       barrier.image = item.image->getImage();
-      barrier.subresourceRange = {
-          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-          .baseMipLevel = 0,
-          .levelCount = item.image->getConfig().mipLevels,
-          .baseArrayLayer = 0,
-          .layerCount = 1,
-      };
+      barrier.subresourceRange = item.image->getSubresourceRange();
       preCopyBarriers.push_back(barrier);
     }
 
@@ -184,7 +196,7 @@ void StagingManager::flushBatch() {
   }
 
   for (const auto& item : mPendingImageUploads) {
-    recordImageCopy(cmd, mStagingBuffer->getBuffer(), item.image->getImage(), item.width, item.height, item.srcOffset);
+    recordImageCopy(cmd, mStagingBuffer->getBuffer(), *item.image, item.srcOffset);
   }
 
   for (const auto& copy : mPendingBufferCopies) {
@@ -207,13 +219,7 @@ void StagingManager::flushBatch() {
       barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
       barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
       barrier.image = item.image->getImage();
-      barrier.subresourceRange = {
-          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-          .baseMipLevel = 0,
-          .levelCount = item.image->getConfig().mipLevels,
-          .baseArrayLayer = 0,
-          .layerCount = 1,
-      };
+      barrier.subresourceRange = item.image->getSubresourceRange();
       postCopyBarriers.push_back(barrier);
     }
 
@@ -244,47 +250,54 @@ void StagingManager::endBatch() {
   mIsBatching = false;
 }
 
-void StagingManager::recordBufferCopy(VkCommandBuffer cmd, VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size,
-                                      VkDeviceSize srcOffset, VkDeviceSize dstOffset) {
+void StagingManager::recordBufferCopy(VkCommandBuffer iCmd, VkBuffer iSrcBuffer, VkBuffer iDstBuffer, VkDeviceSize iSize,
+                                      VkDeviceSize iSrcOffset, VkDeviceSize iDstOffset) {
   VkBufferCopy2 region{};
   region.sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2;
-  region.srcOffset = srcOffset;
-  region.dstOffset = dstOffset;
-  region.size = size;
+  region.srcOffset = iSrcOffset;
+  region.dstOffset = iDstOffset;
+  region.size = iSize;
 
   VkCopyBufferInfo2 copyInfo{};
   copyInfo.sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2;
-  copyInfo.srcBuffer = srcBuffer;
-  copyInfo.dstBuffer = dstBuffer;
+  copyInfo.srcBuffer = iSrcBuffer;
+  copyInfo.dstBuffer = iDstBuffer;
   copyInfo.regionCount = 1;
   copyInfo.pRegions = &region;
 
-  vkCmdCopyBuffer2(cmd, &copyInfo);
+  vkCmdCopyBuffer2(iCmd, &copyInfo);
 }
 
-void StagingManager::recordImageCopy(VkCommandBuffer cmd, VkBuffer srcBuffer, VkImage dstImage, uint32_t width, uint32_t height,
-                                     VkDeviceSize srcOffset, uint32_t mipLevel) {
-  VkBufferImageCopy2 copyRegion{};
-  copyRegion.sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2;
-  copyRegion.bufferOffset = srcOffset;
-  copyRegion.bufferRowLength = 0;
-  copyRegion.bufferImageHeight = 0;
-  copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  copyRegion.imageSubresource.mipLevel = mipLevel;
-  copyRegion.imageSubresource.baseArrayLayer = 0;
-  copyRegion.imageSubresource.layerCount = 1;
-  copyRegion.imageOffset = {0, 0, 0};
-  copyRegion.imageExtent = {width, height, 1};
+void StagingManager::recordImageCopy(VkCommandBuffer iCmd, VkBuffer iSrcBuffer, const Image& iDstImage, VkDeviceSize iSrcOffset) {
+  const Image::Config& config = iDstImage.getConfig();
+
+  // One region per mip level, read back to back from the staging buffer
+  std::vector<VkBufferImageCopy2> copyRegions(config.mipLevels);
+  VkDeviceSize levelOffset = iSrcOffset;
+  for (uint32_t level = 0; level < config.mipLevels; ++level) {
+    VkBufferImageCopy2& copyRegion = copyRegions[level];
+    copyRegion.sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2;
+    copyRegion.bufferOffset = levelOffset;
+    copyRegion.bufferRowLength = 0;
+    copyRegion.bufferImageHeight = 0;
+    copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.imageSubresource.mipLevel = level;
+    copyRegion.imageSubresource.baseArrayLayer = 0;
+    copyRegion.imageSubresource.layerCount = 1;
+    copyRegion.imageOffset = {0, 0, 0};
+    copyRegion.imageExtent = {math::max(1u, config.width >> level), math::max(1u, config.height >> level), 1};
+    levelOffset += getLevelSize(config, level);
+  }
 
   VkCopyBufferToImageInfo2 copyInfo{};
   copyInfo.sType = VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2;
-  copyInfo.srcBuffer = srcBuffer;
-  copyInfo.dstImage = dstImage;
+  copyInfo.srcBuffer = iSrcBuffer;
+  copyInfo.dstImage = iDstImage.getImage();
   copyInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-  copyInfo.regionCount = 1;
-  copyInfo.pRegions = &copyRegion;
+  copyInfo.regionCount = static_cast<uint32_t>(copyRegions.size());
+  copyInfo.pRegions = copyRegions.data();
 
-  vkCmdCopyBufferToImage2(cmd, &copyInfo);
+  vkCmdCopyBufferToImage2(iCmd, &copyInfo);
 }
 
 } // namespace ne

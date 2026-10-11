@@ -1,9 +1,9 @@
 #pragma once
 
+#include "core/math/color.h"
 #include "core/math/mat4.h"
 #include "core/math/vec2.h"
 #include "core/math/vec3.h"
-#include "core/math/vec4.h"
 #include <cstdint>
 #include <type_traits>
 #include <volk/volk.h>
@@ -15,7 +15,7 @@ struct Vertex {
   Vec3 pos{0.0f};
   Vec3 normal{0.0f, 0.0f, 1.0f};
   Vec2 uv{0.0f};
-  Vec4 color{1.0f};
+  LinearColor color = LinearColor::White;
 };
 
 struct GlobalUniforms {
@@ -31,7 +31,7 @@ struct DrawInfo {
 struct InstanceData {
   Mat4 modelMatrix;
   Mat4 normalMatrix;
-  Vec4 color{1.0f};
+  LinearColor color = LinearColor::White;
   uint32_t textureIndex = 0;
   uint32_t samplerIndex = 0;
 };

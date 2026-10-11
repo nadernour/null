@@ -38,7 +38,7 @@ A high-performance, modular 3D rendering engine built with modern C++20 and Vulk
 - [x] **Vulkan Feature Enablement**: Anisotropic filtering and descriptor indexing, checked against hardware limits.
 - [x] **Bindless Texture Architecture**: All textures live in one shader array, indexed per draw.
 - [x] **Vulkan Memory Allocator (VMA) Integration**: Every buffer and image is sub-allocated through VMA.
-- [ ] **Mipmap Generation & Subresource Ranges**: Generate mipmaps on the GPU and support mip ranges in views and barriers.
+- [x] **Mipmap Generation**: Every texture gets a full mip chain, built on the CPU at load with an sRGB-correct box filter.
 - [ ] **glTF PBR Material Pipeline**: glTF metal-roughness materials with textures, transparency, and tonemapping (per-instance material index, MikkTSpace tangents, Khronos PBR Neutral).
 - [ ] **GPU Timeline & Deferred Destruction**: Free GPU resources only once the GPU is done with them, and stop uploads from stalling (one timeline semaphore on `Device` plus a deletion queue; no resource handles until something needs them).
 
@@ -49,7 +49,7 @@ A high-performance, modular 3D rendering engine built with modern C++20 and Vulk
 - [ ] **Push Descriptors for Utility Passes**: Simple post-processing and compute passes without descriptor pools.
 - [ ] **GPU Profiling**: GPU timings per render pass.
 - [ ] **Context-Driven Encoder Pattern & RHI Decoupling**: A clean boundary between the low-level Vulkan layer and the render passes.
-- [ ] **Compute Frustum & Occlusion Culling**: Cull on the GPU and build draw commands in compute shaders.
+- [ ] **Compute Frustum & Occlusion Culling**: Cull on the GPU and build draw commands in compute shaders (Hi-Z depth pyramid from a compute downsampler, with per-mip views and barriers).
 - [ ] **Texture Streaming**: Compressed (KTX) textures loaded in the background (staging ring buffer, reusable bindless slots).
 
 ### Step 5: Robotics Digital Twin (Future)

@@ -48,7 +48,7 @@ Mesh::Submesh GeometryAllocator::stageSubmesh(StagingManager& iStagingManager, c
     vertices[i].pos = iSubmeshData.mPositions[i];
     vertices[i].normal = hasNormals ? iSubmeshData.mNormals[i] : Vec3(0.0f, 0.0f, 1.0f);
     vertices[i].uv = hasTexCoords ? iSubmeshData.mTexCoords[i] : Vec2(0.0f, 0.0f);
-    vertices[i].color = hasColors ? Vec4(iSubmeshData.mColors[i], 1.0f) : Vec4(1.0f);
+    vertices[i].color = hasColors ? iSubmeshData.mColors[i] : LinearColor::White;
   }
 
   VkDeviceSize vertexSize = vertices.size() * sizeof(gpu::Vertex);

@@ -13,7 +13,7 @@ class Material;
 struct MeshComponent {
   std::shared_ptr<Mesh> mMesh;
   std::vector<std::shared_ptr<Material>> mMaterials;
-  Vec4 mColorTint{1.0f};
+  LinearColor mColorTint = LinearColor::White;
 };
 
 } // namespace ne

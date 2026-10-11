@@ -1,82 +1,36 @@
 #pragma once
 
+#include "core/math/math_utils.h"
+
 #include <cstdint>
-#include <cstdlib>
+#include <vector>
 
 namespace ne {
 
-// Owns its pixels, which are freed with std::free
+// Mip levels are packed largest first, each one half the size of the last
 struct ImageData {
   uint32_t mWidth = 0;
   uint32_t mHeight = 0;
   uint32_t mChannels = 4;
-  uint8_t* mPixels = nullptr;
+  uint32_t mMipLevels = 1;
+  std::vector<uint8_t> mPixels{};
 
-  ImageData() = default;
-  ImageData(uint32_t width, uint32_t height, uint32_t channels, uint8_t* pixels)
-      : mWidth(width), mHeight(height), mChannels(channels), mPixels(pixels) {}
-
-  ~ImageData() { std::free(mPixels); }
-
-  ImageData(const ImageData&) = delete;
-  ImageData& operator=(const ImageData&) = delete;
-
-  ImageData(ImageData&& iImageData)
-      : mWidth(iImageData.mWidth),
-        mHeight(iImageData.mHeight),
-        mChannels(iImageData.mChannels),
-        mPixels(iImageData.mPixels) {
-    iImageData.mPixels = nullptr;
-    iImageData.mWidth = 0;
-    iImageData.mHeight = 0;
-    iImageData.mChannels = 0;
+  size_t getLevelSizeInBytes(uint32_t iLevel) const {
+    return static_cast<size_t>(math::max(1u, mWidth >> iLevel)) * math::max(1u, mHeight >> iLevel) * mChannels;
   }
 
-  ImageData& operator=(ImageData&& iImageData) {
-    if (this != &iImageData) {
-      std::free(mPixels);
-
-      mWidth = iImageData.mWidth;
-      mHeight = iImageData.mHeight;
-      mChannels = iImageData.mChannels;
-      mPixels = iImageData.mPixels;
-
-      iImageData.mPixels = nullptr;
-      iImageData.mWidth = 0;
-      iImageData.mHeight = 0;
-      iImageData.mChannels = 0;
+  // All mip levels
+  size_t getSizeInBytes() const {
+    size_t size = 0;
+    for (uint32_t level = 0; level < mMipLevels; ++level) {
+      size += getLevelSizeInBytes(level);
     }
-    return *this;
+    return size;
   }
 
-  size_t getSizeInBytes() const { return static_cast<size_t>(mWidth) * mHeight * mChannels; }
-
-  static ImageData createWhite1x1() {
-    uint8_t* p = static_cast<uint8_t*>(std::malloc(4));
-    p[0] = 255;
-    p[1] = 255;
-    p[2] = 255;
-    p[3] = 255;
-    return ImageData{1, 1, 4, p};
-  }
-
-  static ImageData createFlatNormal1x1() {
-    uint8_t* p = static_cast<uint8_t*>(std::malloc(4));
-    p[0] = 128;
-    p[1] = 128;
-    p[2] = 255;
-    p[3] = 255;
-    return ImageData{1, 1, 4, p};
-  }
-
-  static ImageData createBlack1x1() {
-    uint8_t* p = static_cast<uint8_t*>(std::malloc(4));
-    p[0] = 0;
-    p[1] = 0;
-    p[2] = 0;
-    p[3] = 255;
-    return ImageData{1, 1, 4, p};
-  }
+  static ImageData createWhite1x1() { return {.mWidth = 1, .mHeight = 1, .mPixels = {255, 255, 255, 255}}; }
+  static ImageData createFlatNormal1x1() { return {.mWidth = 1, .mHeight = 1, .mPixels = {128, 128, 255, 255}}; }
+  static ImageData createBlack1x1() { return {.mWidth = 1, .mHeight = 1, .mPixels = {0, 0, 0, 255}}; }
 };
 
 } // namespace ne

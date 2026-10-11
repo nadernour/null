@@ -2,6 +2,7 @@
 #include "core/assert.h"
 #include "core/defines.h"
 #include "core/image_data.h"
+#include "core/image_utils.h"
 #include "core/mesh_data.h"
 #include "renderer/bindless_manager.h"
 #include "renderer/device.h"
@@ -90,18 +91,17 @@ uint32_t ResourceManager::createTexture(const ImageData& iImageData, bool iSrgb,
   if (!mStagingManager->isBatching()) {
     mStagingManager->beginBatch();
   }
+  const ImageData mipChain = ImageUtils::generateMipChain(iImageData, iSrgb);
   Image::Config config{
-      .width = iImageData.mWidth,
-      .height = iImageData.mHeight,
+      .width = mipChain.mWidth,
+      .height = mipChain.mHeight,
       .format = iSrgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
       .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-      .mipLevels = 1,
+      .mipLevels = mipChain.mMipLevels,
       .debugName = iDebugName.empty() ? "Texture" : iDebugName,
   };
   auto image = std::make_unique<Image>(mDevice, config);
-  if (iImageData.mPixels && iImageData.getSizeInBytes() > 0) {
-    mStagingManager->stageImageUpload(*image, iImageData.mPixels, iImageData.getSizeInBytes());
-  }
+  mStagingManager->stageImageUpload(*image, mipChain.mPixels.data(), mipChain.mPixels.size());
 
   uint32_t textureId = mBindlessManager->registerSampledImage(image->getImageView());
   mTextures.push_back(std::move(image));

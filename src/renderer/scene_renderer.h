@@ -46,7 +46,7 @@ private:
     Pipeline* pipeline;
     const Mesh::Submesh* submesh;
     Mat4 transform;
-    Vec4 color;
+    LinearColor color;
     uint32_t textureIndex;
     uint32_t samplerIndex;
   };

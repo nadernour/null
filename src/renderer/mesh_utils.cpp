@@ -49,7 +49,7 @@ MeshData createBoxMeshData(const Vec3& size) {
       meshData.mPositions.push_back(faces[f].positions[v]);
       meshData.mNormals.push_back(faces[f].normal);
       meshData.mTexCoords.push_back(uvs[v]);
-      meshData.mColors.push_back(Vec3(1.0f));
+      meshData.mColors.push_back(LinearColor::White);
     }
 
     meshData.mIndices.push_back(baseIndex + 0);

@@ -1,17 +1,17 @@
 #pragma once
 
-#include <memory>
+#include "core/image_data.h"
+
+#include <optional>
 #include <span>
 #include <string>
 
 namespace ne {
 
-struct ImageData;
-
 namespace ImageImporter {
 
-std::unique_ptr<ImageData> importFromFile(const std::string& path);
-std::unique_ptr<ImageData> importFromMemory(std::span<const uint8_t> data);
+std::optional<ImageData> importFromFile(const std::string& iPath);
+std::optional<ImageData> importFromMemory(std::span<const uint8_t> iData);
 
 } // namespace ImageImporter
 

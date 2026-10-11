@@ -64,6 +64,10 @@ inline float sqrt(float iVal) {
   return std::sqrt(iVal);
 }
 
+inline float pow(float iBase, float iExp) {
+  return std::pow(iBase, iExp);
+}
+
 inline float sin(float iRad) {
   return std::sin(iRad);
 }

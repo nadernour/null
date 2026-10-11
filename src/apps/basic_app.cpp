@@ -27,7 +27,7 @@ BasicApp::BasicApp() : Application("Basic App (MDI Showcase)", 1200, 1000) {
 
   Prefab helmetPrefab(*getResourceManager(), GltfImporter::importModel("models/DamagedHelmet.glb"));
 
-  std::unique_ptr<ImageData> checkerImageData = ImageImporter::importFromFile("textures/uv_checker.png");
+  std::optional<ImageData> checkerImageData = ImageImporter::importFromFile("textures/uv_checker.png");
   uint32_t checkerTextureId = 0;
   if (checkerImageData) {
     checkerTextureId = getResourceManager()->createTexture(*checkerImageData, true, "UV_Checker_Texture");

@@ -25,9 +25,6 @@ public:
   const std::array<VkSampler, static_cast<size_t>(SamplerType::Count)>& getSamplers() const { return mSamplers; }
 
 private:
-  VkSampler createSampler(VkFilter iFilter, VkSamplerMipmapMode iMipMode, VkSamplerAddressMode iAddressMode, bool iAniso,
-                          float iMaxAnisotropy, bool iCompare, const char* iDebugName);
-
   VkDevice mDevice = VK_NULL_HANDLE;
 
   std::array<VkSampler, static_cast<size_t>(SamplerType::Count)> mSamplers{};

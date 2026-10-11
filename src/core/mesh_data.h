@@ -13,7 +13,7 @@ struct SubmeshData {
   std::vector<Vec3> mPositions;
   std::vector<Vec3> mNormals;
   std::vector<Vec2> mTexCoords;
-  std::vector<Vec3> mColors;
+  std::vector<LinearColor> mColors;
   std::vector<uint32_t> mIndices;
 };
 

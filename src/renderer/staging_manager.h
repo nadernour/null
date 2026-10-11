@@ -22,8 +22,9 @@ public:
   StagingManager& operator=(StagingManager&&) = delete;
 
   void beginBatch();
-  void stageBufferCopy(VkBuffer dstBuffer, const void* data, VkDeviceSize size, VkDeviceSize dstOffset = 0);
-  void stageImageUpload(Image& dstImage, const void* pixelData, VkDeviceSize size);
+  void stageBufferCopy(VkBuffer iDstBuffer, const void* iData, VkDeviceSize iSize, VkDeviceSize iDstOffset = 0);
+  // iPixelData holds every mip level of iDstImage, tightly packed, largest first
+  void stageImageUpload(Image& iDstImage, const void* iPixelData, VkDeviceSize iSize);
   void endBatch();
 
   bool hasPendingUploads() const { return !mPendingBufferCopies.empty() || !mPendingImageUploads.empty(); }
@@ -40,17 +41,14 @@ private:
   struct PendingImageUpload {
     Image* image = nullptr;
     VkDeviceSize srcOffset = 0;
-    uint32_t width = 0;
-    uint32_t height = 0;
   };
 
-  VkDeviceSize stageData(const void* data, VkDeviceSize size);
+  VkDeviceSize stageData(const void* iData, VkDeviceSize iSize);
   void flushBatch();
 
-  void recordBufferCopy(VkCommandBuffer cmd, VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size,
-                        VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
-  void recordImageCopy(VkCommandBuffer cmd, VkBuffer srcBuffer, VkImage dstImage, uint32_t width, uint32_t height,
-                       VkDeviceSize srcOffset = 0, uint32_t mipLevel = 0);
+  void recordBufferCopy(VkCommandBuffer iCmd, VkBuffer iSrcBuffer, VkBuffer iDstBuffer, VkDeviceSize iSize,
+                        VkDeviceSize iSrcOffset = 0, VkDeviceSize iDstOffset = 0);
+  void recordImageCopy(VkCommandBuffer iCmd, VkBuffer iSrcBuffer, const Image& iDstImage, VkDeviceSize iSrcOffset = 0);
 
   Device* mDevice = nullptr;
   std::unique_ptr<Buffer> mStagingBuffer;

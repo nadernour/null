@@ -74,7 +74,8 @@ std::optional<SubmeshData> importPrimitive(const cgltf_primitive& iPrimitive) {
     }
 
     if (color_accessor) {
-      cgltf_bool color_success = cgltf_accessor_read_float(color_accessor, v, &submesh.mColors[v].x, 3);
+      // RGB accessors leave alpha at 1
+      cgltf_bool color_success = cgltf_accessor_read_float(color_accessor, v, &submesh.mColors[v].r, 4);
       NE_ASSERT(color_success, "Failed to read vertex color");
     }
   }
