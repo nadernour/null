@@ -162,9 +162,9 @@ void MainUI::drawCameraSettings(BasicApp& iApp) {
       ImGui::Spacing();
       ImGui::Text("Projection (Reverse-Z Depth)");
       ImGui::Separator();
-      ImGui::SliderAngle("FOV", &camera.mFov, 10.0f, 120.0f, "%.1f deg");
-      ImGui::DragFloat("Near Clip (m)", &camera.mNearClip, 0.01f, 0.01f, 10.0f, "%.2f");
-      ImGui::DragFloat("Far Clip (m)", &camera.mFarClip, 1.0f, 1.0f, 1000.0f, "%.1f");
+      ImGui::SliderAngle("FOV", &camera.fov, 10.0f, 120.0f, "%.1f deg");
+      ImGui::DragFloat("Near Clip (m)", &camera.nearClip, 0.01f, 0.01f, 10.0f, "%.2f");
+      ImGui::DragFloat("Far Clip (m)", &camera.farClip, 1.0f, 1.0f, 1000.0f, "%.1f");
 
       ImGui::Spacing();
       ImGui::Text("Controller Parameters");

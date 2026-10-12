@@ -80,8 +80,8 @@ std::shared_ptr<Mesh> ResourceManager::createMesh(const MeshData& iMeshData) {
     mStagingManager->beginBatch();
   }
   std::vector<Mesh::Submesh> submeshes;
-  submeshes.reserve(iMeshData.mSubmeshes.size());
-  for (const SubmeshData& submesh : iMeshData.mSubmeshes) {
+  submeshes.reserve(iMeshData.submeshes.size());
+  for (const SubmeshData& submesh : iMeshData.submeshes) {
     submeshes.push_back(mGeometryAllocator->stageSubmesh(*mStagingManager, submesh));
   }
   return std::make_shared<Mesh>(std::move(submeshes));
@@ -93,15 +93,15 @@ uint32_t ResourceManager::createTexture(const ImageData& iImageData, const std::
   }
   const ImageData mipChain = ImageUtils::generateMipChain(iImageData);
   Image::Config config{
-      .width = mipChain.mWidth,
-      .height = mipChain.mHeight,
-      .format = mipChain.mSrgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
+      .width = mipChain.width,
+      .height = mipChain.height,
+      .format = mipChain.srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
       .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-      .mipLevels = mipChain.mMipLevels,
+      .mipLevels = mipChain.mipLevels,
       .debugName = iDebugName.empty() ? "Texture" : iDebugName,
   };
   auto image = std::make_unique<Image>(mDevice, config);
-  mStagingManager->stageImageUpload(*image, mipChain.mPixels.data(), mipChain.mPixels.size());
+  mStagingManager->stageImageUpload(*image, mipChain.pixels.data(), mipChain.pixels.size());
 
   uint32_t textureId = mBindlessManager->registerSampledImage(image->getImageView());
   mTextures.push_back(std::move(image));

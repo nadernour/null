@@ -14,21 +14,21 @@ class Application;
 namespace ne::test {
 
 struct TestContext {
-  Application* mApp{nullptr}; // For tests that need the device or GPU resources
-  uint32_t mPasses{0};
-  uint32_t mFailures{0};
+  Application* app{nullptr}; // For tests that need the device or GPU resources
+  uint32_t passes{0};
+  uint32_t failures{0};
 
-  bool isSuccess() const { return mFailures == 0; }
+  bool isSuccess() const { return failures == 0; }
 };
 
 using TestFn = void (*)(TestContext& ioContext);
 
 struct TestCase {
-  const char* mSuiteName;
-  const char* mTestName;
-  const char* mFile;
-  int mLine;
-  TestFn mFunc;
+  const char* suiteName;
+  const char* testName;
+  const char* file;
+  int line;
+  TestFn func;
 };
 
 class TestRegistry {
@@ -67,9 +67,9 @@ int runAllTests(Application& ioApp);
 #define NE_TEST_ASSERT(condition, ...)                                                                                                \
   do {                                                                                                                                \
     if (condition) {                                                                                                                  \
-      ioContext.mPasses++;                                                                                                            \
+      ioContext.passes++;                                                                                                             \
     } else {                                                                                                                          \
-      ioContext.mFailures++;                                                                                                          \
+      ioContext.failures++;                                                                                                           \
       std::string user_msg;                                                                                                           \
       __VA_OPT__(user_msg = std::format(__VA_ARGS__);)                                                                                \
       ne::Logger::log(ne::Logger::LogType::Error, "[TEST FAIL] {}\n  Condition: {}\n  File: {}\n  Line: {}", user_msg,       \

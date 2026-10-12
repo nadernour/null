@@ -46,53 +46,53 @@ std::optional<SubmeshData> importPrimitive(const cgltf_primitive& iPrimitive) {
   }
 
   SubmeshData submesh;
-  submesh.mPositions.resize(pos_accessor->count);
+  submesh.positions.resize(pos_accessor->count);
   if (normal_accessor) {
-    submesh.mNormals.resize(pos_accessor->count);
+    submesh.normals.resize(pos_accessor->count);
   }
   if (texcoord_accessor) {
-    submesh.mTexCoords.resize(pos_accessor->count);
+    submesh.texCoords.resize(pos_accessor->count);
   }
   if (color_accessor) {
-    submesh.mColors.resize(pos_accessor->count);
+    submesh.colors.resize(pos_accessor->count);
   }
 
   for (cgltf_size v = 0; v < pos_accessor->count; ++v) {
-    cgltf_bool pos_success = cgltf_accessor_read_float(pos_accessor, v, &submesh.mPositions[v].x, 3);
+    cgltf_bool pos_success = cgltf_accessor_read_float(pos_accessor, v, &submesh.positions[v].x, 3);
     NE_ASSERT(pos_success, "Failed to read vertex position");
-    submesh.mPositions[v] = toEngineAxes(submesh.mPositions[v]);
+    submesh.positions[v] = toEngineAxes(submesh.positions[v]);
 
     if (normal_accessor) {
-      cgltf_bool normal_success = cgltf_accessor_read_float(normal_accessor, v, &submesh.mNormals[v].x, 3);
+      cgltf_bool normal_success = cgltf_accessor_read_float(normal_accessor, v, &submesh.normals[v].x, 3);
       NE_ASSERT(normal_success, "Failed to read vertex normal");
-      submesh.mNormals[v] = toEngineAxes(submesh.mNormals[v]);
+      submesh.normals[v] = toEngineAxes(submesh.normals[v]);
     }
 
     if (texcoord_accessor) {
-      cgltf_bool texcoord_success = cgltf_accessor_read_float(texcoord_accessor, v, &submesh.mTexCoords[v].x, 2);
+      cgltf_bool texcoord_success = cgltf_accessor_read_float(texcoord_accessor, v, &submesh.texCoords[v].x, 2);
       NE_ASSERT(texcoord_success, "Failed to read vertex texture coordinates");
     }
 
     if (color_accessor) {
       // RGB accessors leave alpha at 1
-      cgltf_bool color_success = cgltf_accessor_read_float(color_accessor, v, &submesh.mColors[v].r, 4);
+      cgltf_bool color_success = cgltf_accessor_read_float(color_accessor, v, &submesh.colors[v].r, 4);
       NE_ASSERT(color_success, "Failed to read vertex color");
     }
   }
 
   if (iPrimitive.indices) {
-    submesh.mIndices.resize(iPrimitive.indices->count);
+    submesh.indices.resize(iPrimitive.indices->count);
     for (cgltf_size idx = 0; idx < iPrimitive.indices->count; ++idx) {
-      submesh.mIndices[idx] = static_cast<uint32_t>(cgltf_accessor_read_index(iPrimitive.indices, idx));
+      submesh.indices[idx] = static_cast<uint32_t>(cgltf_accessor_read_index(iPrimitive.indices, idx));
     }
   } else {
-    submesh.mIndices.resize(pos_accessor->count);
+    submesh.indices.resize(pos_accessor->count);
     for (uint32_t idx = 0; idx < pos_accessor->count; ++idx) {
-      submesh.mIndices[idx] = idx;
+      submesh.indices[idx] = idx;
     }
   }
 
-  if (submesh.mPositions.size() < 3 || submesh.mIndices.size() < 3) {
+  if (submesh.positions.size() < 3 || submesh.indices.size() < 3) {
     return std::nullopt;
   }
   return submesh;
@@ -123,15 +123,15 @@ Transform importNodeTransform(const cgltf_node& iNode) {
 void importNode(const cgltf_data& iData, const cgltf_node& iNode, int32_t iParentIndex,
                 const std::vector<int32_t>& iMeshIndices, ModelData& ioModel) {
   ModelNode node;
-  node.mName = iNode.name ? iNode.name : "";
-  node.mLocalTransform = importNodeTransform(iNode);
-  node.mParentIndex = iParentIndex;
+  node.name = iNode.name ? iNode.name : "";
+  node.localTransform = importNodeTransform(iNode);
+  node.parentIndex = iParentIndex;
   if (iNode.mesh) {
-    node.mMeshIndex = iMeshIndices[static_cast<size_t>(iNode.mesh - iData.meshes)];
+    node.meshIndex = iMeshIndices[static_cast<size_t>(iNode.mesh - iData.meshes)];
   }
 
-  const int32_t nodeIndex = static_cast<int32_t>(ioModel.mNodes.size());
-  ioModel.mNodes.push_back(std::move(node));
+  const int32_t nodeIndex = static_cast<int32_t>(ioModel.nodes.size());
+  ioModel.nodes.push_back(std::move(node));
 
   for (cgltf_size i = 0; i < iNode.children_count; ++i) {
     importNode(iData, *iNode.children[i], nodeIndex, iMeshIndices, ioModel);
@@ -162,7 +162,7 @@ ModelData importModel(const std::string& iPath) {
   }
 
   ModelData model;
-  model.mName = iPath;
+  model.name = iPath;
 
   // A glTF mesh used by several nodes is imported once; meshes without triangle primitives get index -1
   std::vector<int32_t> meshIndices(data->meshes_count, -1);
@@ -170,12 +170,12 @@ ModelData importModel(const std::string& iPath) {
     MeshData mesh;
     for (cgltf_size j = 0; j < data->meshes[i].primitives_count; ++j) {
       if (std::optional<SubmeshData> submesh = importPrimitive(data->meshes[i].primitives[j])) {
-        mesh.mSubmeshes.push_back(std::move(*submesh));
+        mesh.submeshes.push_back(std::move(*submesh));
       }
     }
-    if (!mesh.mSubmeshes.empty()) {
-      meshIndices[i] = static_cast<int32_t>(model.mMeshes.size());
-      model.mMeshes.push_back(std::move(mesh));
+    if (!mesh.submeshes.empty()) {
+      meshIndices[i] = static_cast<int32_t>(model.meshes.size());
+      model.meshes.push_back(std::move(mesh));
     }
   }
 
@@ -194,7 +194,7 @@ ModelData importModel(const std::string& iPath) {
   }
 
   cgltf_free(data);
-  NE_LOG("GltfImporter: Imported {} with {} nodes and {} meshes", fullPath, model.mNodes.size(), model.mMeshes.size());
+  NE_LOG("GltfImporter: Imported {} with {} nodes and {} meshes", fullPath, model.nodes.size(), model.meshes.size());
   return model;
 }
 

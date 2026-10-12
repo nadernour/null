@@ -10,9 +10,9 @@
 namespace ne {
 
 Prefab::Prefab(ResourceManager& ioResourceManager, const ModelData& iModelData)
-    : mName(iModelData.mName), mMaterial(ioResourceManager.createMaterial()), mNodes(iModelData.mNodes) {
-  mMeshes.reserve(iModelData.mMeshes.size());
-  for (const MeshData& mesh : iModelData.mMeshes) {
+    : mName(iModelData.name), mMaterial(ioResourceManager.createMaterial()), mNodes(iModelData.nodes) {
+  mMeshes.reserve(iModelData.meshes.size());
+  for (const MeshData& mesh : iModelData.meshes) {
     mMeshes.push_back(ioResourceManager.createMesh(mesh));
   }
 }
@@ -27,17 +27,17 @@ Entity Prefab::instantiate(Registry& ioRegistry, const Transform& iRootTransform
 
   for (const ModelNode& node : mNodes) {
     Entity entity = ioRegistry.createEntity();
-    ioRegistry.addComponent<TransformComponent>(entity, node.mLocalTransform);
-    ioRegistry.addComponent<NameComponent>(entity, node.mName);
+    ioRegistry.addComponent<TransformComponent>(entity, node.localTransform);
+    ioRegistry.addComponent<NameComponent>(entity, node.name);
 
-    if (node.mMeshIndex >= 0) {
-      NE_ASSERT(node.mMeshIndex < static_cast<int32_t>(mMeshes.size()), "Node references a mesh outside the prefab");
-      const std::shared_ptr<Mesh>& mesh = mMeshes[node.mMeshIndex];
+    if (node.meshIndex >= 0) {
+      NE_ASSERT(node.meshIndex < static_cast<int32_t>(mMeshes.size()), "Node references a mesh outside the prefab");
+      const std::shared_ptr<Mesh>& mesh = mMeshes[node.meshIndex];
       ioRegistry.addComponent<MeshComponent>(entity, mesh, std::vector(mesh->getSubmeshes().size(), mMaterial));
     }
 
-    NE_ASSERT(node.mParentIndex < static_cast<int32_t>(nodeEntities.size()), "Prefab nodes must list parents before children");
-    TransformSystem::setParent(ioRegistry, entity, node.mParentIndex >= 0 ? nodeEntities[node.mParentIndex] : root);
+    NE_ASSERT(node.parentIndex < static_cast<int32_t>(nodeEntities.size()), "Prefab nodes must list parents before children");
+    TransformSystem::setParent(ioRegistry, entity, node.parentIndex >= 0 ? nodeEntities[node.parentIndex] : root);
 
     nodeEntities.push_back(entity);
   }

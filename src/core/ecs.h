@@ -15,11 +15,11 @@ struct Entity {
   static constexpr uint32_t kInvalidId = ~0U;
   static const Entity Null; // Also the default value
 
-  uint32_t mId{kInvalidId};
-  uint32_t mVersion{0};
+  uint32_t id{kInvalidId};
+  uint32_t version{0};
 
-  constexpr bool isValid() const { return mId != kInvalidId; }
-  constexpr bool operator==(const Entity& iOther) const { return mId == iOther.mId && mVersion == iOther.mVersion; }
+  constexpr bool isValid() const { return id != kInvalidId; }
+  constexpr bool operator==(const Entity& iOther) const { return id == iOther.id && version == iOther.version; }
   constexpr bool operator!=(const Entity& iOther) const { return !(*this == iOther); }
 };
 
@@ -31,7 +31,7 @@ namespace std {
 template <>
 struct hash<ne::Entity> {
   size_t operator()(const ne::Entity& iEntity) const noexcept {
-    return (static_cast<size_t>(iEntity.mId) << 32) | static_cast<size_t>(iEntity.mVersion);
+    return (static_cast<size_t>(iEntity.id) << 32) | static_cast<size_t>(iEntity.version);
   }
 };
 } // namespace std
@@ -75,13 +75,13 @@ public:
   template <typename... Args>
   ComponentType& emplace(Entity iEntity, Args&&... iArgs) {
     NE_ASSERT(iEntity.isValid(), "Entity handle is invalid.");
-    if (iEntity.mId >= mSparse.size()) {
-      mSparse.resize(iEntity.mId + 1, kInvalidIndex);
+    if (iEntity.id >= mSparse.size()) {
+      mSparse.resize(iEntity.id + 1, kInvalidIndex);
     }
-    NE_ASSERT(mSparse[iEntity.mId] == kInvalidIndex, "Entity already has this component.");
+    NE_ASSERT(mSparse[iEntity.id] == kInvalidIndex, "Entity already has this component.");
 
     uint32_t denseIdx = static_cast<uint32_t>(mDenseComponents.size());
-    mSparse[iEntity.mId] = denseIdx;
+    mSparse[iEntity.id] = denseIdx;
     mDenseEntities.push_back(iEntity);
     mDenseComponents.emplace_back(std::forward<Args>(iArgs)...);
     return mDenseComponents.back();
@@ -101,19 +101,19 @@ public:
   // Swap-and-pop: moves the last component into the hole, invalidating references to it
   void remove(Entity iEntity) {
     NE_ASSERT(has(iEntity), "Entity does not have specified component.");
-    uint32_t removedDenseIdx = mSparse[iEntity.mId];
+    uint32_t removedDenseIdx = mSparse[iEntity.id];
     uint32_t lastDenseIdx = static_cast<uint32_t>(mDenseComponents.size()) - 1;
 
     if (removedDenseIdx != lastDenseIdx) {
       Entity lastEntity = mDenseEntities[lastDenseIdx];
       mDenseComponents[removedDenseIdx] = std::move(mDenseComponents[lastDenseIdx]);
       mDenseEntities[removedDenseIdx] = lastEntity;
-      mSparse[lastEntity.mId] = removedDenseIdx;
+      mSparse[lastEntity.id] = removedDenseIdx;
     }
 
     mDenseComponents.pop_back();
     mDenseEntities.pop_back();
-    mSparse[iEntity.mId] = kInvalidIndex;
+    mSparse[iEntity.id] = kInvalidIndex;
   }
 
   void invokeRemoveHook([[maybe_unused]] Registry& ioRegistry, [[maybe_unused]] Entity iEntity) override {
@@ -132,18 +132,18 @@ public:
 
   // Compares the full handle, so a stale handle never matches the entity that recycled its id
   bool has(Entity iEntity) const override {
-    return iEntity.isValid() && iEntity.mId < mSparse.size() && mSparse[iEntity.mId] != kInvalidIndex &&
-           mDenseEntities[mSparse[iEntity.mId]] == iEntity;
+    return iEntity.isValid() && iEntity.id < mSparse.size() && mSparse[iEntity.id] != kInvalidIndex &&
+           mDenseEntities[mSparse[iEntity.id]] == iEntity;
   }
 
   ComponentType& get(Entity iEntity) {
     NE_ASSERT(has(iEntity), "Entity does not have specified component.");
-    return mDenseComponents[mSparse[iEntity.mId]];
+    return mDenseComponents[mSparse[iEntity.id]];
   }
 
   const ComponentType& get(Entity iEntity) const {
     NE_ASSERT(has(iEntity), "Entity does not have specified component.");
-    return mDenseComponents[mSparse[iEntity.mId]];
+    return mDenseComponents[mSparse[iEntity.id]];
   }
 
   void clear() override {
@@ -264,12 +264,12 @@ public:
       }
     }
 
-    mGenerations[iEntity.mId]++;
-    mFreeEntities.push_back(iEntity.mId);
+    mGenerations[iEntity.id]++;
+    mFreeEntities.push_back(iEntity.id);
   }
 
   bool isValid(Entity iEntity) const {
-    return iEntity.isValid() && iEntity.mId < mGenerations.size() && mGenerations[iEntity.mId] == iEntity.mVersion;
+    return iEntity.isValid() && iEntity.id < mGenerations.size() && mGenerations[iEntity.id] == iEntity.version;
   }
 
   template <typename ComponentType>

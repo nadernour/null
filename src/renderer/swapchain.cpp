@@ -50,20 +50,20 @@ void Swapchain::cleanup() {
 
 void Swapchain::createSwapchain(VkSwapchainKHR iOldSwapchain) {
   Device::SwapChainSupportDetails swapChainSupport = mDevice->querySwapChainSupport(mConfig.surface);
-  const VkSurfaceCapabilitiesKHR& surfaceCapabilities = swapChainSupport.mCapabilities;
+  const VkSurfaceCapabilitiesKHR& surfaceCapabilities = swapChainSupport.capabilities;
 
-  NE_ASSERT(!swapChainSupport.mFormats.empty(), "No surface formats found");
-  VkSurfaceFormatKHR selectedSurfaceFormat = swapChainSupport.mFormats[0];
-  for (const auto& surfaceFormat : swapChainSupport.mFormats) {
+  NE_ASSERT(!swapChainSupport.formats.empty(), "No surface formats found");
+  VkSurfaceFormatKHR selectedSurfaceFormat = swapChainSupport.formats[0];
+  for (const auto& surfaceFormat : swapChainSupport.formats) {
     if (surfaceFormat.format == mConfig.preferredFormat && surfaceFormat.colorSpace == mConfig.preferredColorSpace) {
       selectedSurfaceFormat = surfaceFormat;
       break;
     }
   }
 
-  NE_ASSERT(!swapChainSupport.mPresentModes.empty(), "No present modes found");
-  VkPresentModeKHR selectedPresentMode = swapChainSupport.mPresentModes[0];
-  for (const auto& presentMode : swapChainSupport.mPresentModes) {
+  NE_ASSERT(!swapChainSupport.presentModes.empty(), "No present modes found");
+  VkPresentModeKHR selectedPresentMode = swapChainSupport.presentModes[0];
+  for (const auto& presentMode : swapChainSupport.presentModes) {
     if (presentMode == mConfig.preferredPresentMode) {
       selectedPresentMode = presentMode;
       break;

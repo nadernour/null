@@ -56,33 +56,33 @@ private:
   static void scrollCallback(GLFWwindow* iWindow, double iXoffset, double iYoffset);
 
   struct State {
-    Window* mWindow{nullptr};
-    CallbackId mFocusCallbackId{0};
-    CursorMode mCursorMode{CursorMode::Normal};
+    Window* window{nullptr};
+    CallbackId focusCallbackId{0};
+    CursorMode cursorMode{CursorMode::Normal};
 
-    std::bitset<kMaxKeys> mCurrentKeys;
-    std::bitset<kMaxKeys> mJustPressedKeys;
-    std::bitset<kMaxKeys> mJustReleasedKeys;
+    std::bitset<kMaxKeys> currentKeys;
+    std::bitset<kMaxKeys> justPressedKeys;
+    std::bitset<kMaxKeys> justReleasedKeys;
 
-    std::bitset<kMaxMouseButtons> mCurrentMouse;
-    std::bitset<kMaxMouseButtons> mJustPressedMouse;
-    std::bitset<kMaxMouseButtons> mJustReleasedMouse;
+    std::bitset<kMaxMouseButtons> currentMouse;
+    std::bitset<kMaxMouseButtons> justPressedMouse;
+    std::bitset<kMaxMouseButtons> justReleasedMouse;
 
-    KeyMods mActiveMods{KeyMods::None};
+    KeyMods activeMods{KeyMods::None};
 
-    double mMouseX{0.0};
-    double mMouseY{0.0};
-    double mLastMouseX{0.0};
-    double mLastMouseY{0.0};
-    Vec2 mMouseDelta{0.0f, 0.0f};
-    Vec2 mMouseScroll{0.0f, 0.0f};
+    double mouseX{0.0};
+    double mouseY{0.0};
+    double lastMouseX{0.0};
+    double lastMouseY{0.0};
+    Vec2 mouseDelta{0.0f, 0.0f};
+    Vec2 mouseScroll{0.0f, 0.0f};
 
-    bool mUIMouseCaptured{false};
-    bool mUIKeyboardCaptured{false};
+    bool uiMouseCaptured{false};
+    bool uiKeyboardCaptured{false};
 
-    bool mFirstMouse{true};
-    bool mFirstMouseAfterCapture{false};
-    bool mInitialized{false};
+    bool firstMouse{true};
+    bool firstMouseAfterCapture{false};
+    bool initialized{false};
   };
 
   static State sState;

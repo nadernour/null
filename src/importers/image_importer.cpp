@@ -12,8 +12,8 @@ namespace {
 constexpr int kChannels = 4; // Always load RGBA8 for Vulkan
 
 ImageData copyPixels(const stbi_uc* iPixels, int iWidth, int iHeight) {
-  ImageData image{.mWidth = static_cast<uint32_t>(iWidth), .mHeight = static_cast<uint32_t>(iHeight), .mChannels = kChannels};
-  image.mPixels.assign(iPixels, iPixels + image.getSizeInBytes());
+  ImageData image{.width = static_cast<uint32_t>(iWidth), .height = static_cast<uint32_t>(iHeight), .channels = kChannels};
+  image.pixels.assign(iPixels, iPixels + image.getSizeInBytes());
   return image;
 }
 

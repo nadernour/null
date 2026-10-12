@@ -47,25 +47,25 @@ void storeColor(uint8_t* oTexel, Color iColor) {
 uint32_t calculateMipLevels(uint32_t iWidth, uint32_t iHeight) { return std::bit_width(math::max(iWidth, iHeight)); }
 
 ImageData generateMipChain(const ImageData& iImage) {
-  NE_ASSERT(iImage.mWidth > 0 && iImage.mHeight > 0 && iImage.mPixels.size() >= iImage.getLevelSizeInBytes(0),
+  NE_ASSERT(iImage.width > 0 && iImage.height > 0 && iImage.pixels.size() >= iImage.getLevelSizeInBytes(0),
             "Image needs pixels to build a mip chain");
-  NE_ASSERT(iImage.mChannels == 4, "Mip chains are built from RGBA8 images, got {} channels", iImage.mChannels);
+  NE_ASSERT(iImage.channels == 4, "Mip chains are built from RGBA8 images, got {} channels", iImage.channels);
 
   ImageData chain{
-      .mWidth = iImage.mWidth,
-      .mHeight = iImage.mHeight,
-      .mChannels = iImage.mChannels,
-      .mMipLevels = calculateMipLevels(iImage.mWidth, iImage.mHeight),
-      .mSrgb = iImage.mSrgb,
+      .width = iImage.width,
+      .height = iImage.height,
+      .channels = iImage.channels,
+      .mipLevels = calculateMipLevels(iImage.width, iImage.height),
+      .srgb = iImage.srgb,
   };
-  chain.mPixels.resize(chain.getSizeInBytes());
-  std::memcpy(chain.mPixels.data(), iImage.mPixels.data(), chain.getLevelSizeInBytes(0));
+  chain.pixels.resize(chain.getSizeInBytes());
+  std::memcpy(chain.pixels.data(), iImage.pixels.data(), chain.getLevelSizeInBytes(0));
 
   std::vector<Taps> columnTaps;
-  uint8_t* src = chain.mPixels.data();
-  uint32_t srcWidth = chain.mWidth;
-  uint32_t srcHeight = chain.mHeight;
-  for (uint32_t level = 1; level < chain.mMipLevels; ++level) {
+  uint8_t* src = chain.pixels.data();
+  uint32_t srcWidth = chain.width;
+  uint32_t srcHeight = chain.height;
+  for (uint32_t level = 1; level < chain.mipLevels; ++level) {
     const uint32_t dstWidth = math::max(1u, srcWidth / 2);
     const uint32_t dstHeight = math::max(1u, srcHeight / 2);
     uint8_t* dst = src + chain.getLevelSizeInBytes(level - 1);
@@ -84,11 +84,11 @@ ImageData generateMipChain(const ImageData& iImage) {
           const uint8_t* row = src + static_cast<size_t>(rowTaps.first + ty) * srcWidth * 4;
           for (uint32_t tx = 0; tx < colTaps.count; ++tx) {
             const Color texel = loadColor(row + static_cast<size_t>(colTaps.first + tx) * 4);
-            const LinearColor linear = chain.mSrgb ? LinearColor::fromSrgb(texel) : LinearColor::fromUnorm(texel);
+            const LinearColor linear = chain.srgb ? LinearColor::fromSrgb(texel) : LinearColor::fromUnorm(texel);
             sum += linear * (rowTaps.weights[ty] * colTaps.weights[tx]);
           }
         }
-        storeColor(dst + (static_cast<size_t>(y) * dstWidth + x) * 4, chain.mSrgb ? sum.toSrgb() : sum.toUnorm());
+        storeColor(dst + (static_cast<size_t>(y) * dstWidth + x) * 4, chain.srgb ? sum.toSrgb() : sum.toUnorm());
       }
     }
     src = dst;

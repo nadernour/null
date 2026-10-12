@@ -19,15 +19,15 @@ float clipDepth(const Mat4& iProjection, float iViewDepth) {
 
 NE_TEST_CASE("camera", "CameraComponent Default Perspective Projection") {
   CameraComponent camera;
-  NE_TEST_ASSERT(camera.mProjectionType == CameraComponent::ProjectionType::Perspective, "Default projection type must be Perspective.");
+  NE_TEST_ASSERT(camera.projectionType == CameraComponent::ProjectionType::Perspective, "Default projection type must be Perspective.");
 
   Mat4 projection = camera.getProjectionMatrix(kAspectRatio);
   NE_TEST_ASSERT((projection * projection.inversed()).equals(Mat4::Identity, 1e-3f), "Default projection must be invertible.");
-  NE_TEST_ASSERT(math::equals(clipDepth(projection, camera.mNearClip), 1.0f, 1e-4f), "Default near plane must map to depth 1.0.");
+  NE_TEST_ASSERT(math::equals(clipDepth(projection, camera.nearClip), 1.0f, 1e-4f), "Default near plane must map to depth 1.0.");
 }
 
 NE_TEST_CASE("camera", "CameraComponent Perspective Reverse-Z Projection") {
-  CameraComponent camera{.mFov = math::radians(45.0f), .mNearClip = 0.1f, .mFarClip = 1000.0f};
+  CameraComponent camera{.fov = math::radians(45.0f), .nearClip = 0.1f, .farClip = 1000.0f};
   Mat4 projection = camera.getProjectionMatrix(kAspectRatio);
 
   NE_TEST_ASSERT(math::equals(clipDepth(projection, 0.1f), 1.0f, 1e-4f), "Near plane clip depth in Reverse-Z must map to 1.0.");
@@ -37,7 +37,7 @@ NE_TEST_CASE("camera", "CameraComponent Perspective Reverse-Z Projection") {
 }
 
 NE_TEST_CASE("camera", "CameraComponent Perspective Infinite Far Clip") {
-  CameraComponent camera{.mNearClip = 0.1f, .mFarClip = 0.0f}; // Far clip <= 0 selects the infinite far plane
+  CameraComponent camera{.nearClip = 0.1f, .farClip = 0.0f}; // Far clip <= 0 selects the infinite far plane
   Mat4 projection = camera.getProjectionMatrix(kAspectRatio);
 
   NE_TEST_ASSERT(math::equals(clipDepth(projection, 0.1f), 1.0f, 1e-4f), "Near plane clip depth in Infinite Far Reverse-Z must map to 1.0.");
@@ -45,10 +45,10 @@ NE_TEST_CASE("camera", "CameraComponent Perspective Infinite Far Clip") {
 }
 
 NE_TEST_CASE("camera", "CameraComponent Orthographic Projection") {
-  CameraComponent camera{.mProjectionType = CameraComponent::ProjectionType::Orthographic,
-                         .mOrthoSize = 10.0f,
-                         .mNearClip = 0.1f,
-                         .mFarClip = 100.0f};
+  CameraComponent camera{.projectionType = CameraComponent::ProjectionType::Orthographic,
+                         .orthoSize = 10.0f,
+                         .nearClip = 0.1f,
+                         .farClip = 100.0f};
   Mat4 projection = camera.getProjectionMatrix(kAspectRatio);
 
   NE_TEST_ASSERT((projection * projection.inversed()).equals(Mat4::Identity, 1e-3f), "Orthographic projection must be invertible.");
@@ -57,7 +57,7 @@ NE_TEST_CASE("camera", "CameraComponent Orthographic Projection") {
 }
 
 NE_TEST_CASE("camera", "CameraComponent View and View-Projection Matrix Calculation") {
-  CameraComponent camera{.mFov = math::radians(45.0f), .mNearClip = 0.1f, .mFarClip = 1000.0f};
+  CameraComponent camera{.fov = math::radians(45.0f), .nearClip = 0.1f, .farClip = 1000.0f};
 
   // Aligned camera looking along +X, +Z up
   Transform pose(Vec3(-4.0f, 0.0f, 0.0f));
@@ -92,7 +92,7 @@ NE_TEST_CASE("camera", "CameraComponent View and View-Projection Matrix Calculat
 }
 
 NE_TEST_CASE("camera", "CameraComponent Screen Orientation Is Not Mirrored") {
-  CameraComponent camera{.mFov = math::radians(60.0f), .mNearClip = 0.1f, .mFarClip = 100.0f};
+  CameraComponent camera{.fov = math::radians(60.0f), .nearClip = 0.1f, .farClip = 100.0f};
   Mat4 pose = Transform(Vec3(-4.0f, 0.0f, 0.0f)).toMatrix();
 
   // Vulkan NDC: +X right, +Y down. World +Y (Left) must land on the left half, world +Z (Up) on the top half.
@@ -105,8 +105,8 @@ NE_TEST_CASE("camera", "CameraComponent Screen Orientation Is Not Mirrored") {
   NE_TEST_ASSERT(math::equals(upClip.x / upClip.w, 0.0f, 1e-4f), "World +Z must stay on the vertical center line.");
 
   // Orthographic projection must keep the same orientation
-  camera.mProjectionType = CameraComponent::ProjectionType::Orthographic;
-  camera.mOrthoSize = 10.0f;
+  camera.projectionType = CameraComponent::ProjectionType::Orthographic;
+  camera.orthoSize = 10.0f;
   viewProj = camera.getViewProjectionMatrix(pose, kAspectRatio);
   leftClip = viewProj * Vec4(0.0f, 1.0f, 0.0f, 1.0f);
   upClip = viewProj * Vec4(0.0f, 0.0f, 1.0f, 1.0f);

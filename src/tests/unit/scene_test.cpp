@@ -162,26 +162,26 @@ NE_TEST_CASE("scene", "Parented Camera Uses World Pose") {
 
 NE_TEST_CASE("scene", "Prefab Instantiates Node Tree") {
   SubmeshData triangle;
-  triangle.mPositions = {Vec3(0.0f), Vec3(0.0f, 1.0f, 0.0f), Vec3(0.0f, 0.0f, 1.0f)};
-  triangle.mIndices = {0, 1, 2};
+  triangle.positions = {Vec3(0.0f), Vec3(0.0f, 1.0f, 0.0f), Vec3(0.0f, 0.0f, 1.0f)};
+  triangle.indices = {0, 1, 2};
   ModelData data;
-  data.mName = "Robot";
-  data.mMeshes = {MeshData{.mSubmeshes = {triangle}}, MeshData{.mSubmeshes = {triangle, triangle}}};
-  data.mNodes = {
-      ModelNode{.mName = "base", .mLocalTransform = Transform(Vec3(1.0f, 0.0f, 0.0f)), .mParentIndex = -1, .mMeshIndex = 0},
-      ModelNode{.mName = "arm", .mLocalTransform = Transform(Vec3(0.0f, 0.0f, 1.0f)), .mParentIndex = 0, .mMeshIndex = 1},
-      ModelNode{.mName = "tool", .mLocalTransform = Transform(Vec3(0.0f, 1.0f, 0.0f)), .mParentIndex = 1, .mMeshIndex = -1},
+  data.name = "Robot";
+  data.meshes = {MeshData{.submeshes = {triangle}}, MeshData{.submeshes = {triangle, triangle}}};
+  data.nodes = {
+      ModelNode{.name = "base", .localTransform = Transform(Vec3(1.0f, 0.0f, 0.0f)), .parentIndex = -1, .meshIndex = 0},
+      ModelNode{.name = "arm", .localTransform = Transform(Vec3(0.0f, 0.0f, 1.0f)), .parentIndex = 0, .meshIndex = 1},
+      ModelNode{.name = "tool", .localTransform = Transform(Vec3(0.0f, 1.0f, 0.0f)), .parentIndex = 1, .meshIndex = -1},
   };
 
   Registry registry;
-  Prefab prefab(*ioContext.mApp->getResourceManager(), data);
+  Prefab prefab(*ioContext.app->getResourceManager(), data);
 
   Entity first = prefab.instantiate(registry, Transform(Vec3(10.0f, 0.0f, 0.0f)));
   Entity second = prefab.instantiate(registry);
   TransformSystem::update(registry);
 
   NE_TEST_ASSERT(registry.size() == 8, "Each instance creates a root plus one entity per node.");
-  NE_TEST_ASSERT(registry.getComponent<NameComponent>(first).mName == "Robot", "Root is named after the prefab.");
+  NE_TEST_ASSERT(registry.getComponent<NameComponent>(first).name == "Robot", "Root is named after the prefab.");
 
   const auto& rootChildren = transformOf(registry, first).getChildren();
   NE_TEST_ASSERT(rootChildren.size() == 1, "Root has the single root node as child.");
@@ -189,17 +189,17 @@ NE_TEST_CASE("scene", "Prefab Instantiates Node Tree") {
   Entity arm = transformOf(registry, base).getChildren()[0];
   Entity tool = transformOf(registry, arm).getChildren()[0];
 
-  NE_TEST_ASSERT(registry.getComponent<NameComponent>(base).mName == "base", "Node names are carried over.");
-  NE_TEST_ASSERT(registry.getComponent<NameComponent>(tool).mName == "tool", "Node names are carried over.");
+  NE_TEST_ASSERT(registry.getComponent<NameComponent>(base).name == "base", "Node names are carried over.");
+  NE_TEST_ASSERT(registry.getComponent<NameComponent>(tool).name == "tool", "Node names are carried over.");
 
   const MeshComponent& armMesh = registry.getComponent<MeshComponent>(arm);
-  NE_TEST_ASSERT(armMesh.mMesh->getSubmeshes().size() == 2, "Arm draws one mesh with both submeshes.");
-  NE_TEST_ASSERT(armMesh.mMaterials.size() == 2, "Arm has one material per submesh.");
+  NE_TEST_ASSERT(armMesh.mesh->getSubmeshes().size() == 2, "Arm draws one mesh with both submeshes.");
+  NE_TEST_ASSERT(armMesh.materials.size() == 2, "Arm has one material per submesh.");
   NE_TEST_ASSERT(!registry.hasComponent<MeshComponent>(tool), "A node without geometry has no MeshComponent.");
   NE_TEST_ASSERT(worldPosition(registry, tool).equals(Vec3(11.0f, 1.0f, 1.0f)), "Node world position composes the whole chain.");
 
   Entity secondArm = transformOf(registry, transformOf(registry, second).getChildren()[0]).getChildren()[0];
-  NE_TEST_ASSERT(registry.getComponent<MeshComponent>(secondArm).mMesh == armMesh.mMesh, "Instances share the same GPU mesh.");
+  NE_TEST_ASSERT(registry.getComponent<MeshComponent>(secondArm).mesh == armMesh.mesh, "Instances share the same GPU mesh.");
 }
 
 } // namespace ne::test

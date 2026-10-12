@@ -5,11 +5,11 @@ namespace ne::MeshUtils {
 
 MeshData createBoxMeshData(const Vec3& iSize) {
   SubmeshData meshData;
-  meshData.mPositions.reserve(24);
-  meshData.mNormals.reserve(24);
-  meshData.mTexCoords.reserve(24);
-  meshData.mColors.reserve(24);
-  meshData.mIndices.reserve(36);
+  meshData.positions.reserve(24);
+  meshData.normals.reserve(24);
+  meshData.texCoords.reserve(24);
+  meshData.colors.reserve(24);
+  meshData.indices.reserve(36);
 
   const float hx = iSize.x * 0.5f;
   const float hy = iSize.y * 0.5f;
@@ -44,24 +44,24 @@ MeshData createBoxMeshData(const Vec3& iSize) {
   };
 
   for (size_t f = 0; f < faces.size(); ++f) {
-    const uint32_t baseIndex = static_cast<uint32_t>(meshData.mPositions.size());
+    const uint32_t baseIndex = static_cast<uint32_t>(meshData.positions.size());
     for (size_t v = 0; v < 4; ++v) {
-      meshData.mPositions.push_back(faces[f].positions[v]);
-      meshData.mNormals.push_back(faces[f].normal);
-      meshData.mTexCoords.push_back(uvs[v]);
-      meshData.mColors.push_back(LinearColor::White);
+      meshData.positions.push_back(faces[f].positions[v]);
+      meshData.normals.push_back(faces[f].normal);
+      meshData.texCoords.push_back(uvs[v]);
+      meshData.colors.push_back(LinearColor::White);
     }
 
-    meshData.mIndices.push_back(baseIndex + 0);
-    meshData.mIndices.push_back(baseIndex + 1);
-    meshData.mIndices.push_back(baseIndex + 2);
+    meshData.indices.push_back(baseIndex + 0);
+    meshData.indices.push_back(baseIndex + 1);
+    meshData.indices.push_back(baseIndex + 2);
 
-    meshData.mIndices.push_back(baseIndex + 0);
-    meshData.mIndices.push_back(baseIndex + 2);
-    meshData.mIndices.push_back(baseIndex + 3);
+    meshData.indices.push_back(baseIndex + 0);
+    meshData.indices.push_back(baseIndex + 2);
+    meshData.indices.push_back(baseIndex + 3);
   }
 
-  return MeshData{.mSubmeshes = {std::move(meshData)}};
+  return MeshData{.submeshes = {std::move(meshData)}};
 }
 
 } // namespace ne::MeshUtils

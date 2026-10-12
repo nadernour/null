@@ -35,24 +35,24 @@ GeometryAllocator::GeometryAllocator(Device* iDevice, VkDeviceSize iVertexPoolSi
 GeometryAllocator::~GeometryAllocator() = default;
 
 Mesh::Submesh GeometryAllocator::stageSubmesh(StagingManager& iStagingManager, const SubmeshData& iSubmeshData) {
-  NE_ASSERT(!iSubmeshData.mPositions.empty(), "Mesh positions cannot be empty");
-  NE_ASSERT(!iSubmeshData.mIndices.empty(), "Mesh indices cannot be empty");
+  NE_ASSERT(!iSubmeshData.positions.empty(), "Mesh positions cannot be empty");
+  NE_ASSERT(!iSubmeshData.indices.empty(), "Mesh indices cannot be empty");
 
-  const size_t vertexCount = iSubmeshData.mPositions.size();
-  const bool hasNormals = (iSubmeshData.mNormals.size() == vertexCount);
-  const bool hasTexCoords = (iSubmeshData.mTexCoords.size() == vertexCount);
-  const bool hasColors = (iSubmeshData.mColors.size() == vertexCount);
+  const size_t vertexCount = iSubmeshData.positions.size();
+  const bool hasNormals = (iSubmeshData.normals.size() == vertexCount);
+  const bool hasTexCoords = (iSubmeshData.texCoords.size() == vertexCount);
+  const bool hasColors = (iSubmeshData.colors.size() == vertexCount);
 
   std::vector<gpu::Vertex> vertices(vertexCount);
   for (size_t i = 0; i < vertexCount; ++i) {
-    vertices[i].pos = iSubmeshData.mPositions[i];
-    vertices[i].normal = hasNormals ? iSubmeshData.mNormals[i] : Vec3(0.0f, 0.0f, 1.0f);
-    vertices[i].uv = hasTexCoords ? iSubmeshData.mTexCoords[i] : Vec2(0.0f, 0.0f);
-    vertices[i].color = hasColors ? iSubmeshData.mColors[i] : LinearColor::White;
+    vertices[i].pos = iSubmeshData.positions[i];
+    vertices[i].normal = hasNormals ? iSubmeshData.normals[i] : Vec3(0.0f, 0.0f, 1.0f);
+    vertices[i].uv = hasTexCoords ? iSubmeshData.texCoords[i] : Vec2(0.0f, 0.0f);
+    vertices[i].color = hasColors ? iSubmeshData.colors[i] : LinearColor::White;
   }
 
   VkDeviceSize vertexSize = vertices.size() * sizeof(gpu::Vertex);
-  VkDeviceSize indexSize = iSubmeshData.mIndices.size() * sizeof(uint32_t);
+  VkDeviceSize indexSize = iSubmeshData.indices.size() * sizeof(uint32_t);
 
   VkDeviceSize vertexOffset = mVertexBuffer->suballocate(vertexSize);
   VkDeviceSize indexOffset = mIndexBuffer->suballocate(indexSize);
@@ -65,12 +65,12 @@ Mesh::Submesh GeometryAllocator::stageSubmesh(StagingManager& iStagingManager, c
          (static_cast<double>(mIndexBuffer->getUploadOffset()) / mIndexBuffer->getConfig().size) * 100.0);
 
   iStagingManager.stageBufferCopy(mVertexBuffer->getBuffer(), vertices.data(), vertexSize, vertexOffset);
-  iStagingManager.stageBufferCopy(mIndexBuffer->getBuffer(), iSubmeshData.mIndices.data(), indexSize, indexOffset);
+  iStagingManager.stageBufferCopy(mIndexBuffer->getBuffer(), iSubmeshData.indices.data(), indexSize, indexOffset);
 
   return Mesh::Submesh{
-      .mVertexAddress = mVertexBuffer->getDeviceAddress(vertexOffset),
-      .mFirstIndex = static_cast<uint32_t>(indexOffset / sizeof(uint32_t)),
-      .mIndexCount = static_cast<uint32_t>(iSubmeshData.mIndices.size()),
+      .vertexAddress = mVertexBuffer->getDeviceAddress(vertexOffset),
+      .firstIndex = static_cast<uint32_t>(indexOffset / sizeof(uint32_t)),
+      .indexCount = static_cast<uint32_t>(iSubmeshData.indices.size()),
   };
 }
 

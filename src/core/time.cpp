@@ -7,31 +7,31 @@ Time::State Time::sState{};
 
 void Time::init() {
   const auto now = Clock::now();
-  sState.mStartTime = now;
-  sState.mCurrentTime = now;
-  sState.mPreviousTime = now;
-  sState.mDeltaTime = 0.0f;
-  sState.mUnscaledDeltaTime = 0.0f;
-  sState.mTimeSeconds = 0.0f;
-  sState.mInitialized = true;
+  sState.startTime = now;
+  sState.currentTime = now;
+  sState.previousTime = now;
+  sState.deltaTime = 0.0f;
+  sState.unscaledDeltaTime = 0.0f;
+  sState.timeSeconds = 0.0f;
+  sState.initialized = true;
 }
 
 void Time::reset() { init(); }
 
 void Time::tick() {
-  if (!sState.mInitialized) {
+  if (!sState.initialized) {
     init();
     return;
   }
 
   const auto now = Clock::now();
-  sState.mPreviousTime = sState.mCurrentTime;
-  sState.mCurrentTime = now;
+  sState.previousTime = sState.currentTime;
+  sState.currentTime = now;
 
-  const float rawDelta = std::chrono::duration<float>(sState.mCurrentTime - sState.mPreviousTime).count();
-  sState.mUnscaledDeltaTime = std::min(std::max(0.0f, rawDelta), kMaxDeltaTime);
-  sState.mDeltaTime = sState.mUnscaledDeltaTime * sState.mTimeScale;
-  sState.mTimeSeconds += sState.mDeltaTime;
+  const float rawDelta = std::chrono::duration<float>(sState.currentTime - sState.previousTime).count();
+  sState.unscaledDeltaTime = std::min(std::max(0.0f, rawDelta), kMaxDeltaTime);
+  sState.deltaTime = sState.unscaledDeltaTime * sState.timeScale;
+  sState.timeSeconds += sState.deltaTime;
 }
 
 } // namespace ne

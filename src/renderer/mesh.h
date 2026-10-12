@@ -10,9 +10,9 @@ namespace ne {
 class Mesh {
 public:
   struct Submesh {
-    VkDeviceAddress mVertexAddress = 0;
-    uint32_t mFirstIndex = 0;
-    uint32_t mIndexCount = 0;
+    VkDeviceAddress vertexAddress = 0;
+    uint32_t firstIndex = 0;
+    uint32_t indexCount = 0;
   };
 
   explicit Mesh(std::vector<Submesh> iSubmeshes);

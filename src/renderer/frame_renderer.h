@@ -38,7 +38,7 @@ public:
   VkImage getActiveImage() const;
   VkImageView getActiveImageView() const;
 
-  Buffer* getUploadBuffer() const { return mFrames[mFrameIndex].mUploadBuffer.get(); }
+  Buffer* getUploadBuffer() const { return mFrames[mFrameIndex].uploadBuffer.get(); }
   void recreateUploadBuffer(VkDeviceSize iNewSize);
 
 private:
@@ -58,11 +58,11 @@ private:
   std::unique_ptr<Image> mDepthImage;
 
   struct FrameResources {
-    VkCommandPool mCommandPool = VK_NULL_HANDLE;
-    VkCommandBuffer mCommandBuffer = VK_NULL_HANDLE;
-    VkSemaphore mPresentCompleteSemaphore = VK_NULL_HANDLE;
-    VkFence mDrawFence = VK_NULL_HANDLE;
-    std::unique_ptr<Buffer> mUploadBuffer;
+    VkCommandPool commandPool = VK_NULL_HANDLE;
+    VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+    VkSemaphore presentCompleteSemaphore = VK_NULL_HANDLE;
+    VkFence drawFence = VK_NULL_HANDLE;
+    std::unique_ptr<Buffer> uploadBuffer;
   };
   std::vector<FrameResources> mFrames;
 

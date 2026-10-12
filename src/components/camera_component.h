@@ -7,12 +7,12 @@ namespace ne {
 struct CameraComponent {
   enum class ProjectionType { Perspective, Orthographic };
 
-  ProjectionType mProjectionType{ProjectionType::Perspective};
-  float mFov{math::radians(45.0f)}; // Perspective: vertical field of view in radians
-  float mOrthoSize{5.0f};           // Orthographic: vertical view size
-  float mNearClip{0.1f};
-  float mFarClip{1000.0f};          // Perspective: <= 0 selects an infinite far plane
-  bool mIsPrimary{true};            // Renders to the window; at most one camera may be primary
+  ProjectionType projectionType{ProjectionType::Perspective};
+  float fov{math::radians(45.0f)}; // Perspective: vertical field of view in radians
+  float orthoSize{5.0f};           // Orthographic: vertical view size
+  float nearClip{0.1f};
+  float farClip{1000.0f};          // Perspective: <= 0 selects an infinite far plane
+  bool primary{true};              // Renders to the window; at most one camera may be primary
 
   // The aspect ratio (width / height) comes from the render target, not the camera
   Mat4 getProjectionMatrix(float iAspectRatio) const;

@@ -15,17 +15,17 @@ namespace ne {
 static Device::SwapChainSupportDetails querySwapChainSupportHelper(VkPhysicalDevice iDevice, VkSurfaceKHR iSurface) {
   Device::SwapChainSupportDetails oSwapChainSupportDetails;
 
-  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(iDevice, iSurface, &oSwapChainSupportDetails.mCapabilities);
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(iDevice, iSurface, &oSwapChainSupportDetails.capabilities);
 
   uint32_t formatCount;
   vkGetPhysicalDeviceSurfaceFormatsKHR(iDevice, iSurface, &formatCount, nullptr);
-  oSwapChainSupportDetails.mFormats.resize(formatCount);
-  vkGetPhysicalDeviceSurfaceFormatsKHR(iDevice, iSurface, &formatCount, oSwapChainSupportDetails.mFormats.data());
+  oSwapChainSupportDetails.formats.resize(formatCount);
+  vkGetPhysicalDeviceSurfaceFormatsKHR(iDevice, iSurface, &formatCount, oSwapChainSupportDetails.formats.data());
 
   uint32_t presentModeCount;
   vkGetPhysicalDeviceSurfacePresentModesKHR(iDevice, iSurface, &presentModeCount, nullptr);
-  oSwapChainSupportDetails.mPresentModes.resize(presentModeCount);
-  vkGetPhysicalDeviceSurfacePresentModesKHR(iDevice, iSurface, &presentModeCount, oSwapChainSupportDetails.mPresentModes.data());
+  oSwapChainSupportDetails.presentModes.resize(presentModeCount);
+  vkGetPhysicalDeviceSurfacePresentModesKHR(iDevice, iSurface, &presentModeCount, oSwapChainSupportDetails.presentModes.data());
 
   return oSwapChainSupportDetails;
 }
@@ -119,7 +119,7 @@ void Device::pickPhysicalDevice(VkInstance iInstance, const Config& iConfig) {
       supportsSwapChain = true;
     } else if (supportsAllRequiredExtensions) {
       SwapChainSupportDetails swapChainSupport = querySwapChainSupportHelper(physicalDevice, iConfig.surface);
-      supportsSwapChain = !swapChainSupport.mFormats.empty() && !swapChainSupport.mPresentModes.empty();
+      supportsSwapChain = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
     }
 
     VkPhysicalDeviceVulkan13Features vulkan13Features{};

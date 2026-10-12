@@ -44,8 +44,8 @@ NE_TEST_CASE("ecs", "Entity Handle Allocation & Recycling") {
   NE_TEST_ASSERT(!registry.isValid(e1), "e1 handle must be invalid after destruction.");
 
   Entity e3 = registry.createEntity();
-  NE_TEST_ASSERT(e3.mId == e1.mId, "e3 should recycle e1's ID index.");
-  NE_TEST_ASSERT(e3.mVersion == e1.mVersion + 1, "e3 must have incremented version.");
+  NE_TEST_ASSERT(e3.id == e1.id, "e3 should recycle e1's ID index.");
+  NE_TEST_ASSERT(e3.version == e1.version + 1, "e3 must have incremented version.");
   NE_TEST_ASSERT(!registry.isValid(e1), "e1 handle must remain invalid.");
 }
 
@@ -210,7 +210,7 @@ NE_TEST_CASE("ecs", "Stale Handles Do Not Alias Recycled Entities") {
 
   Entity recycled = registry.createEntity();
   registry.addComponent<TagComponent>(recycled, 7);
-  NE_TEST_ASSERT(recycled.mId == stale.mId, "The id is recycled.");
+  NE_TEST_ASSERT(recycled.id == stale.id, "The id is recycled.");
   NE_TEST_ASSERT(registry.hasComponent<TagComponent>(recycled), "The new entity has its component.");
   NE_TEST_ASSERT(!registry.hasComponent<TagComponent>(stale), "A stale handle must not see the recycled entity's components.");
 }
@@ -240,7 +240,7 @@ NE_TEST_CASE("ecs", "Camera and Mesh Component View Queries") {
   Entity cam = registry.createEntity();
   registry.addComponent<TransformComponent>(cam, Transform(Vec3(-5.0f, 0.0f, 1.0f)));
   auto& camComp = registry.addComponent<CameraComponent>(cam);
-  camComp.mIsPrimary = true;
+  camComp.primary = true;
 
   Entity meshObj = registry.createEntity();
   registry.addComponent<TransformComponent>(meshObj, Transform(Vec3(0.0f, 2.0f, 0.0f)));
@@ -250,7 +250,7 @@ NE_TEST_CASE("ecs", "Camera and Mesh Component View Queries") {
   int camCount = 0;
   registry.view<TransformComponent, CameraComponent>().each(
       [&](Entity, const TransformComponent& iTransform, const CameraComponent& iCamera) {
-        if (iCamera.mIsPrimary) {
+        if (iCamera.primary) {
           resolvedViewProj = iCamera.getViewProjectionMatrix(iTransform.getLocal().toMatrix(), 16.0f / 9.0f);
           camCount++;
         }
@@ -280,9 +280,9 @@ NE_TEST_CASE("ecs", "In-Place Component Construction") {
 
   // Aggregate component through designated initializers
   Entity e2 = registry.createEntity();
-  auto& camera = registry.addComponent<CameraComponent>(e2, CameraComponent{.mFov = math::radians(60.0f), .mNearClip = 0.5f});
-  NE_TEST_ASSERT(math::equals(camera.mFov, math::radians(60.0f)) && math::equals(camera.mNearClip, 0.5f), "Initialized fields forwarded correctly.");
-  NE_TEST_ASSERT(math::equals(camera.mFarClip, 1000.0f), "Omitted fields keep their defaults.");
+  auto& camera = registry.addComponent<CameraComponent>(e2, CameraComponent{.fov = math::radians(60.0f), .nearClip = 0.5f});
+  NE_TEST_ASSERT(math::equals(camera.fov, math::radians(60.0f)) && math::equals(camera.nearClip, 0.5f), "Initialized fields forwarded correctly.");
+  NE_TEST_ASSERT(math::equals(camera.farClip, 1000.0f), "Omitted fields keep their defaults.");
 }
 
 } // namespace ne::test

@@ -15,7 +15,7 @@ namespace {
 
 // RGBA8 image holding a copy of the texels
 ImageData makeImage(uint32_t iWidth, uint32_t iHeight, bool iSrgb, const std::vector<uint8_t>& iTexels) {
-  return ImageData{.mWidth = iWidth, .mHeight = iHeight, .mSrgb = iSrgb, .mPixels = iTexels};
+  return ImageData{.width = iWidth, .height = iHeight, .srgb = iSrgb, .pixels = iTexels};
 }
 
 const uint8_t* getLevelPixels(const ImageData& iImage, uint32_t iLevel) {
@@ -23,7 +23,7 @@ const uint8_t* getLevelPixels(const ImageData& iImage, uint32_t iLevel) {
   for (uint32_t level = 0; level < iLevel; ++level) {
     offset += iImage.getLevelSizeInBytes(level);
   }
-  return iImage.mPixels.data() + offset;
+  return iImage.pixels.data() + offset;
 }
 
 bool isWithinOne(uint8_t iValue, uint8_t iExpected) { return math::abs(static_cast<int>(iValue) - static_cast<int>(iExpected)) <= 1; }
@@ -45,12 +45,12 @@ NE_TEST_CASE("image", "Mip Chain Layout") {
   ImageData image = makeImage(5, 3, false, texels);
   ImageData chain = ImageUtils::generateMipChain(image);
 
-  NE_TEST_ASSERT(!chain.mSrgb, "The chain keeps the source color space.");
-  NE_TEST_ASSERT(chain.mMipLevels == 3, "5x3 chains to 2x1 and 1x1, got {} levels.", chain.mMipLevels);
+  NE_TEST_ASSERT(!chain.srgb, "The chain keeps the source color space.");
+  NE_TEST_ASSERT(chain.mipLevels == 3, "5x3 chains to 2x1 and 1x1, got {} levels.", chain.mipLevels);
   NE_TEST_ASSERT(chain.getLevelSizeInBytes(1) == 2 * 1 * 4, "Level 1 is 2x1.");
   NE_TEST_ASSERT(chain.getLevelSizeInBytes(2) == 1 * 1 * 4, "Level 2 is 1x1.");
   NE_TEST_ASSERT(chain.getSizeInBytes() == (15 + 2 + 1) * 4, "Levels are packed back to back, got {} bytes.", chain.getSizeInBytes());
-  NE_TEST_ASSERT(std::memcmp(chain.mPixels.data(), image.mPixels.data(), texels.size()) == 0, "Level 0 is copied unchanged.");
+  NE_TEST_ASSERT(std::memcmp(chain.pixels.data(), image.pixels.data(), texels.size()) == 0, "Level 0 is copied unchanged.");
 }
 
 NE_TEST_CASE("image", "sRGB Mips Average In Linear Light") {
@@ -83,7 +83,7 @@ NE_TEST_CASE("image", "Constant Image Stays Constant") {
     ImageData chain = ImageUtils::generateMipChain(makeImage(7, 5, srgb, texels));
     bool isConstant = true;
     for (size_t i = 0; i < chain.getSizeInBytes(); ++i) {
-      isConstant = isConstant && chain.mPixels[i] == color[i % 4];
+      isConstant = isConstant && chain.pixels[i] == color[i % 4];
     }
     NE_TEST_ASSERT(isConstant, "Every {} level keeps the source color.", srgb ? "sRGB" : "UNORM");
   }

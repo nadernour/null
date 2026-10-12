@@ -5,7 +5,7 @@
 namespace ne {
 
 struct NameComponent {
-  std::string mName;
+  std::string name;
 };
 
 } // namespace ne

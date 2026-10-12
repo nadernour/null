@@ -29,7 +29,7 @@ public:
 
 private:
   std::string mName;
-  std::vector<std::shared_ptr<Mesh>> mMeshes; // Indexed by ModelNode::mMeshIndex
+  std::vector<std::shared_ptr<Mesh>> mMeshes; // Indexed by ModelNode::meshIndex
   std::shared_ptr<Material> mMaterial;        // Shared by every submesh until glTF materials are imported
   std::vector<ModelNode> mNodes;              // Parents always precede their children
 };

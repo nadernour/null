@@ -9,11 +9,11 @@ namespace ne {
 class Mesh;
 class Material;
 
-// Submesh i is drawn with mMaterials[i]; submeshes without a material are skipped
+// Submesh i is drawn with materials[i]; submeshes without a material are skipped
 struct MeshComponent {
-  std::shared_ptr<Mesh> mMesh;
-  std::vector<std::shared_ptr<Material>> mMaterials;
-  LinearColor mColorTint = LinearColor::White;
+  std::shared_ptr<Mesh> mesh;
+  std::vector<std::shared_ptr<Material>> materials;
+  LinearColor colorTint = LinearColor::White;
 };
 
 } // namespace ne

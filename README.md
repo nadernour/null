@@ -49,7 +49,7 @@ The sections below group work by area; their order is not fixed. The open decisi
 - [x] **Downloaded Shader Compiler**: CMake downloads Slang, so building needs no Vulkan SDK.
 - [x] **In-House Logger**: Replaces spdlog, with colored console output and one log file per run (the last 10 are kept).
 - [x] **Up-to-Date Third-Party Libraries**: GLFW, Dear ImGui, cgltf, and stb updated to their latest versions, with each library's source and version recorded.
-- [ ] **Consistent Member Naming**: `m` prefix for class members, plain camelCase for struct fields (components, `ImageData`, mesh data, `Entity`, test structs).
+- [x] **Consistent Naming**: Types with private state are `class`es with `m`-prefixed members; plain data types (all fields public, nothing to protect) are `struct`s with plain camelCase fields. Every parameter, lambdas included, has an `i` / `o` / `io` prefix.
 - [ ] **Loud Failures in Release Builds**: Logging stays on in Shipping builds, filtered at runtime, and Vulkan errors, geometry pool overflow, and malformed assets report what went wrong instead of aborting silently or corrupting memory.
 - [ ] **Drift-Free Clock**: Total time accumulates in integer nanoseconds, so long runs don't drift.
 - [ ] **In-App Log Panel**: Recent log lines in an ImGui window.

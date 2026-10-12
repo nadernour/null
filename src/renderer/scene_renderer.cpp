@@ -106,7 +106,7 @@ void SceneRenderer::render(VkCommandBuffer iCommandBuffer, Registry* iRegistry, 
   std::optional<Mat4> viewProj;
   iRegistry->view<TransformComponent, CameraComponent>().each(
       [&](const TransformComponent& iTransform, const CameraComponent& iCamera) {
-        if (iCamera.mIsPrimary) {
+        if (iCamera.primary) {
           NE_ASSERT(!viewProj, "At most one camera may be primary");
           viewProj = iCamera.getViewProjectionMatrix(iTransform.getWorldMatrix(), aspectRatio);
         }
@@ -114,18 +114,18 @@ void SceneRenderer::render(VkCommandBuffer iCommandBuffer, Registry* iRegistry, 
 
   iRegistry->view<TransformComponent, MeshComponent>().each(
       [&](Entity, const TransformComponent& iTransform, const MeshComponent& iMesh) {
-        if (!iMesh.mMesh) {
+        if (!iMesh.mesh) {
           return;
         }
-        const std::vector<Mesh::Submesh>& submeshes = iMesh.mMesh->getSubmeshes();
-        const size_t drawnCount = std::min(submeshes.size(), iMesh.mMaterials.size());
+        const std::vector<Mesh::Submesh>& submeshes = iMesh.mesh->getSubmeshes();
+        const size_t drawnCount = std::min(submeshes.size(), iMesh.materials.size());
         for (size_t i = 0; i < drawnCount; ++i) {
-          const Material* material = iMesh.mMaterials[i].get();
+          const Material* material = iMesh.materials[i].get();
           if (material && material->getPipeline()) {
             mDrawCalls.push_back(DrawCall{.pipeline = material->getPipeline(),
                                           .submesh = &submeshes[i],
                                           .transform = iTransform.getWorldMatrix(),
-                                          .color = iMesh.mColorTint,
+                                          .color = iMesh.colorTint,
                                           .textureIndex = material->getTextureIndex(),
                                           .samplerIndex = static_cast<uint32_t>(material->getSamplerType())});
           }
@@ -235,14 +235,14 @@ void SceneRenderer::submit(VkCommandBuffer iCommandBuffer, const Mat4& iViewProj
       }
 
       gpu::DrawInfo drawInfo{};
-      drawInfo.vertices = currentSubmesh->mVertexAddress;
+      drawInfo.vertices = currentSubmesh->vertexAddress;
       drawInfo.instanceBaseOffset = startInstanceOffset;
       drawInfos.push_back(drawInfo);
 
       VkDrawIndexedIndirectCommand indirectCmd{};
-      indirectCmd.indexCount = currentSubmesh->mIndexCount;
+      indirectCmd.indexCount = currentSubmesh->indexCount;
       indirectCmd.instanceCount = instanceCount;
-      indirectCmd.firstIndex = currentSubmesh->mFirstIndex;
+      indirectCmd.firstIndex = currentSubmesh->firstIndex;
       indirectCmd.vertexOffset = 0;
       indirectCmd.firstInstance = 0;
       indirectCommands.push_back(indirectCmd);

@@ -14,9 +14,9 @@ class MemoryAllocator;
 class Device {
 public:
   struct SwapChainSupportDetails {
-    VkSurfaceCapabilitiesKHR mCapabilities;
-    std::vector<VkSurfaceFormatKHR> mFormats;
-    std::vector<VkPresentModeKHR> mPresentModes;
+    VkSurfaceCapabilitiesKHR capabilities;
+    std::vector<VkSurfaceFormatKHR> formats;
+    std::vector<VkPresentModeKHR> presentModes;
   };
 
   struct Config {

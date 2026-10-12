@@ -49,15 +49,15 @@ std::vector<Vec3> rawGltfWorldPositions(const std::string& iPath) {
 // World matrix of a node by composing local transforms up to the model root
 Mat4 nodeWorldMatrix(const ModelData& iModel, int32_t iNodeIndex) {
   Mat4 world = Mat4::Identity;
-  for (int32_t i = iNodeIndex; i >= 0; i = iModel.mNodes[i].mParentIndex) {
-    world = iModel.mNodes[i].mLocalTransform.toMatrix() * world;
+  for (int32_t i = iNodeIndex; i >= 0; i = iModel.nodes[i].parentIndex) {
+    world = iModel.nodes[i].localTransform.toMatrix() * world;
   }
   return world;
 }
 
 int32_t firstMeshNode(const ModelData& iModel) {
-  for (size_t i = 0; i < iModel.mNodes.size(); ++i) {
-    if (iModel.mNodes[i].mMeshIndex >= 0) {
+  for (size_t i = 0; i < iModel.nodes.size(); ++i) {
+    if (iModel.nodes[i].meshIndex >= 0) {
       return static_cast<int32_t>(i);
     }
   }
@@ -70,13 +70,13 @@ bool matchesGltfWorldPositions(const ModelData& iModel, const std::vector<Vec3>&
   if (nodeIndex < 0 || iGltfWorld.empty()) {
     return false;
   }
-  const SubmeshData& submesh = iModel.mMeshes[iModel.mNodes[nodeIndex].mMeshIndex].mSubmeshes[0];
-  if (submesh.mPositions.size() != iGltfWorld.size()) {
+  const SubmeshData& submesh = iModel.meshes[iModel.nodes[nodeIndex].meshIndex].submeshes[0];
+  if (submesh.positions.size() != iGltfWorld.size()) {
     return false;
   }
   Mat4 world = nodeWorldMatrix(iModel, nodeIndex);
   for (size_t v = 0; v < iGltfWorld.size(); ++v) {
-    Vec4 engine = world * Vec4(submesh.mPositions[v], 1.0f);
+    Vec4 engine = world * Vec4(submesh.positions[v], 1.0f);
     Vec3 expected(iGltfWorld[v].z, iGltfWorld[v].x, iGltfWorld[v].y);
     if (!Vec3(engine.x, engine.y, engine.z).equals(expected, 1e-3f)) {
       return false;
@@ -90,14 +90,14 @@ bool matchesGltfWorldPositions(const ModelData& iModel, const std::vector<Vec3>&
 NE_TEST_CASE("importer", "glTF Box: Node Matrix Hierarchy & Axis Conversion") {
   ModelData model = GltfImporter::importModel("models/Box.gltf");
 
-  NE_TEST_ASSERT(model.mNodes.size() == 2 && model.mMeshes.size() == 1, "Box has two nodes and one mesh.");
-  NE_TEST_ASSERT(model.mMeshes[0].mSubmeshes.size() == 1, "Box mesh has one submesh.");
-  NE_TEST_ASSERT(model.mNodes[0].mParentIndex == -1 && model.mNodes[0].mMeshIndex == -1, "Node 0 is the root without geometry.");
-  NE_TEST_ASSERT(model.mNodes[1].mParentIndex == 0 && model.mNodes[1].mMeshIndex == 0, "Node 1 draws the box.");
+  NE_TEST_ASSERT(model.nodes.size() == 2 && model.meshes.size() == 1, "Box has two nodes and one mesh.");
+  NE_TEST_ASSERT(model.meshes[0].submeshes.size() == 1, "Box mesh has one submesh.");
+  NE_TEST_ASSERT(model.nodes[0].parentIndex == -1 && model.nodes[0].meshIndex == -1, "Node 0 is the root without geometry.");
+  NE_TEST_ASSERT(model.nodes[1].parentIndex == 0 && model.nodes[1].meshIndex == 0, "Node 1 draws the box.");
 
   // The root's glTF matrix is -90 deg about glTF +X, which is engine +Y (Left)
   Quat expectedRoot = Quat::angleAxis(math::radians(-90.0f), Vec3::Left);
-  const Quat& rootRotation = model.mNodes[0].mLocalTransform.rotation;
+  const Quat& rootRotation = model.nodes[0].localTransform.rotation;
   Quat negatedRoot(-rootRotation.x, -rootRotation.y, -rootRotation.z, -rootRotation.w);
   NE_TEST_ASSERT(rootRotation.equals(expectedRoot, 1e-4f) || negatedRoot.equals(expectedRoot, 1e-4f),
                  "Root matrix must decompose to -90 deg about engine +Y: {}", rootRotation.toString());
@@ -106,12 +106,12 @@ NE_TEST_CASE("importer", "glTF Box: Node Matrix Hierarchy & Axis Conversion") {
                  "Box world positions must equal glTF world positions with axes permuted.");
 
   // Counter-clockwise winding must agree with the authored normals (front faces under VK_FRONT_FACE_COUNTER_CLOCKWISE)
-  const SubmeshData& box = model.mMeshes[0].mSubmeshes[0];
-  bool windingMatchesNormals = !box.mNormals.empty();
-  for (size_t i = 0; i + 2 < box.mIndices.size(); i += 3) {
-    const Vec3& p0 = box.mPositions[box.mIndices[i]];
-    Vec3 faceNormal = (box.mPositions[box.mIndices[i + 1]] - p0).cross(box.mPositions[box.mIndices[i + 2]] - p0);
-    windingMatchesNormals &= faceNormal.dot(box.mNormals[box.mIndices[i]]) > 0.0f;
+  const SubmeshData& box = model.meshes[0].submeshes[0];
+  bool windingMatchesNormals = !box.normals.empty();
+  for (size_t i = 0; i + 2 < box.indices.size(); i += 3) {
+    const Vec3& p0 = box.positions[box.indices[i]];
+    Vec3 faceNormal = (box.positions[box.indices[i + 1]] - p0).cross(box.positions[box.indices[i + 2]] - p0);
+    windingMatchesNormals &= faceNormal.dot(box.normals[box.indices[i]]) > 0.0f;
   }
   NE_TEST_ASSERT(windingMatchesNormals, "Every triangle's counter-clockwise normal must point along its vertex normal.");
 }
@@ -119,12 +119,12 @@ NE_TEST_CASE("importer", "glTF Box: Node Matrix Hierarchy & Axis Conversion") {
 NE_TEST_CASE("importer", "glTF DamagedHelmet: Node TRS & Axis Conversion") {
   ModelData model = GltfImporter::importModel("models/DamagedHelmet.glb");
 
-  NE_TEST_ASSERT(model.mNodes.size() == 1 && model.mMeshes.size() == 1, "Helmet has one node and one mesh.");
+  NE_TEST_ASSERT(model.nodes.size() == 1 && model.meshes.size() == 1, "Helmet has one node and one mesh.");
 
   // glTF rotation (0.7071, 0, 0, 0.7071) is +90 deg about glTF +X, which is engine +Y (Left)
   Quat expected = Quat::angleAxis(math::radians(90.0f), Vec3::Left);
-  NE_TEST_ASSERT(model.mNodes[0].mLocalTransform.rotation.equals(expected, 1e-4f), "Node rotation must be converted to engine axes: {}",
-                 model.mNodes[0].mLocalTransform.rotation.toString());
+  NE_TEST_ASSERT(model.nodes[0].localTransform.rotation.equals(expected, 1e-4f), "Node rotation must be converted to engine axes: {}",
+                 model.nodes[0].localTransform.rotation.toString());
 
   NE_TEST_ASSERT(matchesGltfWorldPositions(model, rawGltfWorldPositions("models/DamagedHelmet.glb")),
                  "Helmet world positions must equal glTF world positions with axes permuted.");

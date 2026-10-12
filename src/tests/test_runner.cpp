@@ -26,33 +26,33 @@ int TestRegistry::runAll(Application& ioApp) {
   TestContext totalCtx;
   std::map<std::string, std::vector<const TestCase*>> suiteMap;
   for (const auto& testCase : mTests) {
-    suiteMap[testCase.mSuiteName].push_back(&testCase);
+    suiteMap[testCase.suiteName].push_back(&testCase);
   }
 
   for (const auto& [suiteName, tests] : suiteMap) {
     NE_LOG("[RUNNING SUITE] {}", suiteName);
-    TestContext suiteCtx{.mApp = &ioApp};
+    TestContext suiteCtx{.app = &ioApp};
     for (const auto* testCase : tests) {
-      NE_LOG("  [RUNNING TEST] {}", testCase->mTestName);
-      testCase->mFunc(suiteCtx);
+      NE_LOG("  [RUNNING TEST] {}", testCase->testName);
+      testCase->func(suiteCtx);
     }
-    totalCtx.mPasses += suiteCtx.mPasses;
-    totalCtx.mFailures += suiteCtx.mFailures;
+    totalCtx.passes += suiteCtx.passes;
+    totalCtx.failures += suiteCtx.failures;
 
     if (suiteCtx.isSuccess()) {
-      NE_LOG("[PASSED] {} (Tests: {}, Checks Passed: {})", suiteName, tests.size(), suiteCtx.mPasses);
+      NE_LOG("[PASSED] {} (Tests: {}, Checks Passed: {})", suiteName, tests.size(), suiteCtx.passes);
     } else {
-      NE_WARN("[FAILED] {} (Tests: {}, Passed: {}, Failed: {})", suiteName, tests.size(), suiteCtx.mPasses, suiteCtx.mFailures);
+      NE_WARN("[FAILED] {} (Tests: {}, Passed: {}, Failed: {})", suiteName, tests.size(), suiteCtx.passes, suiteCtx.failures);
     }
   }
 
   NE_LOG("==================================================");
   if (totalCtx.isSuccess()) {
-    NE_LOG("ALL UNIT TEST SUITES PASSED (Total Tests: {}, Total Checks: {})", mTests.size(), totalCtx.mPasses);
+    NE_LOG("ALL UNIT TEST SUITES PASSED (Total Tests: {}, Total Checks: {})", mTests.size(), totalCtx.passes);
     NE_LOG("==================================================");
     return 0;
   } else {
-    NE_WARN("TEST SUITE FAILED (Total Tests: {}, Passed: {}, Failed: {})", mTests.size(), totalCtx.mPasses, totalCtx.mFailures);
+    NE_WARN("TEST SUITE FAILED (Total Tests: {}, Passed: {}, Failed: {})", mTests.size(), totalCtx.passes, totalCtx.failures);
     NE_LOG("==================================================");
     return 1;
   }

@@ -42,10 +42,10 @@ FrameRenderer::~FrameRenderer() {
     mWindow->removeFrameBufferResizeCallback(mFrameBufferResizeCallbackId);
 
   for (FrameResources& frame : mFrames) {
-    vkDestroyCommandPool(mDevice->getDevice(), frame.mCommandPool, nullptr);
-    vkDestroySemaphore(mDevice->getDevice(), frame.mPresentCompleteSemaphore, nullptr);
-    vkDestroyFence(mDevice->getDevice(), frame.mDrawFence, nullptr);
-    frame.mUploadBuffer.reset();
+    vkDestroyCommandPool(mDevice->getDevice(), frame.commandPool, nullptr);
+    vkDestroySemaphore(mDevice->getDevice(), frame.presentCompleteSemaphore, nullptr);
+    vkDestroyFence(mDevice->getDevice(), frame.drawFence, nullptr);
+    frame.uploadBuffer.reset();
   }
 
   mDepthImage.reset();
@@ -74,41 +74,41 @@ void FrameRenderer::createFramesResources() {
     VkCommandPoolCreateInfo commandPoolCreateInfo{};
     commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     commandPoolCreateInfo.queueFamilyIndex = mDevice->getQueueFamilyIndex();
-    VK_CHECK(vkCreateCommandPool(mDevice->getDevice(), &commandPoolCreateInfo, nullptr, &mFrames[i].mCommandPool));
+    VK_CHECK(vkCreateCommandPool(mDevice->getDevice(), &commandPoolCreateInfo, nullptr, &mFrames[i].commandPool));
 
     VkCommandBufferAllocateInfo commandBufferAllocateInfo{};
     commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    commandBufferAllocateInfo.commandPool = mFrames[i].mCommandPool;
+    commandBufferAllocateInfo.commandPool = mFrames[i].commandPool;
     commandBufferAllocateInfo.commandBufferCount = 1;
-    VK_CHECK(vkAllocateCommandBuffers(mDevice->getDevice(), &commandBufferAllocateInfo, &mFrames[i].mCommandBuffer));
+    VK_CHECK(vkAllocateCommandBuffers(mDevice->getDevice(), &commandBufferAllocateInfo, &mFrames[i].commandBuffer));
 
     VkSemaphoreCreateInfo semaphoreCreateInfo{};
     semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    VK_CHECK(vkCreateSemaphore(mDevice->getDevice(), &semaphoreCreateInfo, nullptr, &mFrames[i].mPresentCompleteSemaphore));
+    VK_CHECK(vkCreateSemaphore(mDevice->getDevice(), &semaphoreCreateInfo, nullptr, &mFrames[i].presentCompleteSemaphore));
 
     VkFenceCreateInfo fenceCreateInfo{};
     fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    VK_CHECK(vkCreateFence(mDevice->getDevice(), &fenceCreateInfo, nullptr, &mFrames[i].mDrawFence));
+    VK_CHECK(vkCreateFence(mDevice->getDevice(), &fenceCreateInfo, nullptr, &mFrames[i].drawFence));
 
-    mFrames[i].mUploadBuffer = createUploadBuffer(vk_utils::kUploadBufferSize, std::format("UploadBuffer_Frame_{}", i));
+    mFrames[i].uploadBuffer = createUploadBuffer(vk_utils::kUploadBufferSize, std::format("UploadBuffer_Frame_{}", i));
 
-    vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].mCommandPool, std::format("Frame_CommandPool_{}", i).c_str());
-    vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].mCommandBuffer,
+    vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].commandPool, std::format("Frame_CommandPool_{}", i).c_str());
+    vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].commandBuffer,
                                  std::format("Frame_CommandBuffer_{}", i).c_str());
-    vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].mPresentCompleteSemaphore,
+    vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].presentCompleteSemaphore,
                                  std::format("PresentComplete_Semaphore_{}", i).c_str());
-    vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].mDrawFence, std::format("Draw_Fence_{}", i).c_str());
+    vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].drawFence, std::format("Draw_Fence_{}", i).c_str());
   }
 }
 
 VkCommandBuffer FrameRenderer::beginFrame() {
   auto& currentFrame = mFrames[mFrameIndex];
 
-  VK_CHECK(vkWaitForFences(mDevice->getDevice(), 1, &currentFrame.mDrawFence, VK_TRUE, UINT64_MAX));
+  VK_CHECK(vkWaitForFences(mDevice->getDevice(), 1, &currentFrame.drawFence, VK_TRUE, UINT64_MAX));
 
-  VkResult result = mSwapchain->acquireNextImage(currentFrame.mPresentCompleteSemaphore, &mActiveImageIndex);
+  VkResult result = mSwapchain->acquireNextImage(currentFrame.presentCompleteSemaphore, &mActiveImageIndex);
 
   if (result == VK_ERROR_OUT_OF_DATE_KHR) {
     recreateSwapChain(true);
@@ -118,41 +118,41 @@ VkCommandBuffer FrameRenderer::beginFrame() {
     NE_ASSERT(false, "failed to acquire swap chain image!");
   }
 
-  vkResetFences(mDevice->getDevice(), 1, &currentFrame.mDrawFence);
+  vkResetFences(mDevice->getDevice(), 1, &currentFrame.drawFence);
 
-  vkResetCommandPool(mDevice->getDevice(), currentFrame.mCommandPool, 0);
+  vkResetCommandPool(mDevice->getDevice(), currentFrame.commandPool, 0);
 
-  currentFrame.mUploadBuffer->resetUploadOffset();
+  currentFrame.uploadBuffer->resetUploadOffset();
 
   VkCommandBufferBeginInfo commandBufferBeginInfo{};
   commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  VK_CHECK(vkBeginCommandBuffer(currentFrame.mCommandBuffer, &commandBufferBeginInfo));
+  VK_CHECK(vkBeginCommandBuffer(currentFrame.commandBuffer, &commandBufferBeginInfo));
 
-  return currentFrame.mCommandBuffer;
+  return currentFrame.commandBuffer;
 }
 
 void FrameRenderer::recreateUploadBuffer(VkDeviceSize iNewSize) {
   auto& currentFrame = mFrames[mFrameIndex];
 
-  NE_LOG("Upload buffer resizing from {} to {} bytes", currentFrame.mUploadBuffer->getConfig().size, iNewSize);
+  NE_LOG("Upload buffer resizing from {} to {} bytes", currentFrame.uploadBuffer->getConfig().size, iNewSize);
 
-  currentFrame.mUploadBuffer = createUploadBuffer(iNewSize, std::format("UploadBuffer_Frame_{}", mFrameIndex));
+  currentFrame.uploadBuffer = createUploadBuffer(iNewSize, std::format("UploadBuffer_Frame_{}", mFrameIndex));
 }
 
 void FrameRenderer::endFrame() {
   auto& currentFrame = mFrames[mFrameIndex];
-  VK_CHECK(vkEndCommandBuffer(currentFrame.mCommandBuffer));
+  VK_CHECK(vkEndCommandBuffer(currentFrame.commandBuffer));
 
   VkSemaphore renderFinishedSemaphore = mSwapchain->getImages()[mActiveImageIndex].renderFinishedSemaphore;
 
   VkSemaphoreSubmitInfo waitSemaphoreInfo{};
   waitSemaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-  waitSemaphoreInfo.semaphore = currentFrame.mPresentCompleteSemaphore;
+  waitSemaphoreInfo.semaphore = currentFrame.presentCompleteSemaphore;
   waitSemaphoreInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 
   VkCommandBufferSubmitInfo commandBufferInfo{};
   commandBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-  commandBufferInfo.commandBuffer = currentFrame.mCommandBuffer;
+  commandBufferInfo.commandBuffer = currentFrame.commandBuffer;
 
   VkSemaphoreSubmitInfo signalSemaphoreInfo{};
   signalSemaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
@@ -169,7 +169,7 @@ void FrameRenderer::endFrame() {
   submitInfo2.pCommandBufferInfos = &commandBufferInfo;
   submitInfo2.signalSemaphoreInfoCount = 1;
   submitInfo2.pSignalSemaphoreInfos = &signalSemaphoreInfo;
-  VK_CHECK(vkQueueSubmit2(mDevice->getQueue(), 1, &submitInfo2, currentFrame.mDrawFence));
+  VK_CHECK(vkQueueSubmit2(mDevice->getQueue(), 1, &submitInfo2, currentFrame.drawFence));
 
   VkResult result = mSwapchain->present(mDevice->getQueue(), mActiveImageIndex, renderFinishedSemaphore);
 
