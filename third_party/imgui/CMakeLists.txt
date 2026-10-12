@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.22.0)
+
+# Dear ImGui 1.93.0 WIP, master at commit 2859f67 of 2026-10-07 (https://github.com/ocornut/imgui)
 project(imgui LANGUAGES CXX)
 
 add_library(imgui INTERFACE)
