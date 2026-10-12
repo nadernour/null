@@ -8,6 +8,7 @@
 #include "components/transform_component.h"
 #include "core/ecs.h"
 #include "renderer/mesh.h"
+#include "renderer/resource_manager.h"
 #include "scene/prefab.h"
 #include "scene/transform_system.h"
 
@@ -200,6 +201,32 @@ NE_TEST_CASE("scene", "Prefab Instantiates Node Tree") {
 
   Entity secondArm = transformOf(registry, transformOf(registry, second).getChildren()[0]).getChildren()[0];
   NE_TEST_ASSERT(registry.getComponent<MeshComponent>(secondArm).mesh == armMesh.mesh, "Instances share the same GPU mesh.");
+}
+
+NE_TEST_CASE("scene", "Malformed Meshes Are Rejected") {
+  ResourceManager& resources = *ioContext.app->getResourceManager();
+  SubmeshData triangle;
+  triangle.positions = {Vec3(0.0f), Vec3(0.0f, 1.0f, 0.0f), Vec3(0.0f, 0.0f, 1.0f)};
+  triangle.indices = {0, 1, 2};
+  SubmeshData outOfRange = triangle;
+  outOfRange.indices = {0, 1, 3};
+
+  NE_TEST_ASSERT(resources.createMesh(MeshData{.submeshes = {triangle}}), "A well-formed mesh is created.");
+  NE_TEST_ASSERT(!resources.createMesh(MeshData{.submeshes = {triangle, outOfRange}}),
+                 "An index past its submesh's vertices rejects the whole mesh.");
+  NE_TEST_ASSERT(!resources.createMesh(MeshData{.submeshes = {SubmeshData{}}}), "An empty submesh is rejected.");
+  NE_TEST_ASSERT(!resources.createMesh(MeshData{}), "A mesh without submeshes is rejected.");
+
+  ModelData data;
+  data.name = "Broken";
+  data.meshes = {MeshData{.submeshes = {outOfRange}}};
+  data.nodes = {ModelNode{.name = "link", .localTransform = Transform{}, .parentIndex = -1, .meshIndex = 0}};
+  Registry registry;
+  Entity root = Prefab(resources, data).instantiate(registry);
+
+  const auto& rootChildren = transformOf(registry, root).getChildren();
+  NE_TEST_ASSERT(rootChildren.size() == 1, "The node of a rejected mesh is still instantiated.");
+  NE_TEST_ASSERT(!registry.hasComponent<MeshComponent>(rootChildren[0]), "A node whose mesh was rejected has no MeshComponent.");
 }
 
 } // namespace ne::test

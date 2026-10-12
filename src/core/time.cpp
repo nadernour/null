@@ -1,5 +1,5 @@
 #include "core/time.h"
-#include <algorithm>
+#include "core/math/math_utils.h"
 
 namespace ne {
 
@@ -29,7 +29,7 @@ void Time::tick() {
   sState.currentTime = now;
 
   const float rawDelta = std::chrono::duration<float>(sState.currentTime - sState.previousTime).count();
-  sState.unscaledDeltaTime = std::min(std::max(0.0f, rawDelta), kMaxDeltaTime);
+  sState.unscaledDeltaTime = math::clamp(rawDelta, 0.0f, kMaxDeltaTime);
   sState.deltaTime = sState.unscaledDeltaTime * sState.timeScale;
   sState.timeSeconds += sState.deltaTime;
 }

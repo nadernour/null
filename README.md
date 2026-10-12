@@ -50,9 +50,11 @@ The sections below group work by area; their order is not fixed. The open decisi
 - [x] **In-House Logger**: Replaces spdlog, with colored console output and one log file per run (the last 10 are kept).
 - [x] **Up-to-Date Third-Party Libraries**: GLFW, Dear ImGui, cgltf, and stb updated to their latest versions, with each library's source and version recorded.
 - [x] **Consistent Naming**: Types with private state are `class`es with `m`-prefixed members; plain data types (all fields public, nothing to protect) are `struct`s with plain camelCase fields. Every parameter, lambdas included, has an `i` / `o` / `io` prefix.
-- [ ] **Loud Failures in Release Builds**: Logging stays on in Shipping builds, filtered at runtime, and Vulkan errors, geometry pool overflow, and malformed assets report what went wrong instead of aborting silently or corrupting memory.
+- [x] **Mesh Index Validation**: A mesh whose indices run past its vertices is rejected with a logged reason instead of making the GPU read another mesh's memory: `ResourceManager::createMesh` runs `MeshData::validate` on every mesh, and glTF files also pass `cgltf_validate`.
+- [ ] **Logging in Shipping Builds**: Shipping keeps its log output, and a failed Vulkan call logs what failed before aborting, so a headless run that dies leaves a reason behind.
+- [ ] **Bad Input Is an Error, Not an Assert**: Asserts catch only engine bugs; bad input is rejected with a logged reason in every build. Left: glTF accessor reads, geometry pool overflow (until Reusable Geometry Pools grows the pools), and the bindless texture limit.
 - [ ] **Drift-Free Clock**: Total time accumulates in integer nanoseconds, so long runs don't drift.
-- [ ] **In-App Log Panel**: Recent log lines in an ImGui window.
+- [ ] **In-App Log Panel**: Recent log lines in an ImGui window, filtered by level at runtime.
 
 ### Robots & Worlds
 - [ ] **URDF Import**: Robot links and joints (fixed, revolute, continuous, prismatic, and mimic) as a transform hierarchy, with several visuals per link and `package://` mesh paths.
@@ -94,8 +96,9 @@ The sections below group work by area; their order is not fixed. The open decisi
 
 ### Engine & Performance
 - [ ] **CI**: Build and run the tests on every push, on lavapipe (Mesa's software Vulkan).
-- [ ] **GPU Timeline & Deferred Destruction**: Free GPU resources only once the GPU is done with them, and stop uploads from stalling (one timeline semaphore on `Device` plus a deletion queue; no resource handles until something needs them).
+- [ ] **GPU Timeline & Deferred Destruction**: Free GPU resources only once the GPU is done with them, and stop uploads from stalling (one timeline semaphore on `Device` plus a deletion queue).
 - [ ] **Reusable Geometry Pools**: Vertex and index pools that free and reuse space (VMA virtual blocks) and grow on demand, so robots can be unloaded and large meshes fit.
+- [ ] **Resource Handles**: Meshes and materials (now `std::shared_ptr`) and textures (now bare bindless indices) are referred to by generational handles (like `Entity`), owned by whatever loaded them (a prefab, a world) and freed through the deferred-destruction queue, so components stay plain data. Lands with GPU Timeline & Deferred Destruction and Reusable Geometry Pools.
 - [ ] **Core Library**: The engine as a library, with separate apps on top (viewer, headless runner, tests).
 - [ ] **Compute Frustum & Occlusion Culling**: Cull on the GPU and build draw commands in compute shaders (Hi-Z depth pyramid from a compute downsampler, with per-mip views and barriers).
 - [ ] **Texture Streaming**: Compressed (KTX) textures loaded in the background (staging ring buffer, reusable bindless slots).

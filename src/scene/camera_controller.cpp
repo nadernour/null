@@ -1,7 +1,6 @@
 #include "scene/camera_controller.h"
 #include "components/transform_component.h"
 #include "platform/input.h"
-#include "core/defines.h"
 
 namespace ne {
 

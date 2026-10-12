@@ -1,6 +1,5 @@
 #include "renderer/device.h"
 #include "core/assert.h"
-#include "core/defines.h"
 #include "core/logger.h"
 #include "renderer/instance.h"
 #include "renderer/memory_allocator.h"

@@ -4,6 +4,7 @@
 #include "components/transform_component.h"
 #include "core/assert.h"
 #include "core/ecs.h"
+#include "core/math/math_utils.h"
 #include "renderer/bindless_manager.h"
 #include "renderer/buffer.h"
 #include "renderer/device.h"
@@ -118,7 +119,7 @@ void SceneRenderer::render(VkCommandBuffer iCommandBuffer, Registry* iRegistry, 
           return;
         }
         const std::vector<Mesh::Submesh>& submeshes = iMesh.mesh->getSubmeshes();
-        const size_t drawnCount = std::min(submeshes.size(), iMesh.materials.size());
+        const size_t drawnCount = math::min(submeshes.size(), iMesh.materials.size());
         for (size_t i = 0; i < drawnCount; ++i) {
           const Material* material = iMesh.materials[i].get();
           if (material && material->getPipeline()) {
@@ -196,7 +197,7 @@ void SceneRenderer::submit(VkCommandBuffer iCommandBuffer, const Mat4& iViewProj
 
   Buffer* uploadBuffer = mFrameRenderer->getUploadBuffer();
   if (uploadBuffer->getConfig().size < totalRequiredSize) {
-    VkDeviceSize newSize = std::max(totalRequiredSize, uploadBuffer->getConfig().size * 2);
+    VkDeviceSize newSize = math::max(totalRequiredSize, uploadBuffer->getConfig().size * 2);
     mFrameRenderer->recreateUploadBuffer(newSize);
     uploadBuffer = mFrameRenderer->getUploadBuffer();
   }

@@ -2,6 +2,7 @@
 
 #include "core/math/simd.h"
 #include <cmath>
+#include <concepts>
 
 namespace ne::math {
 
@@ -60,35 +61,44 @@ constexpr bool equals(double iA, double iB, double iTolerance = static_cast<doub
   return abs(iA - iB) <= iTolerance;
 }
 
-inline float sqrt(float iVal) {
+// Scalar math goes through here so a deterministic implementation can replace std in one place
+template <std::floating_point T>
+T sqrt(T iVal) {
   return std::sqrt(iVal);
 }
 
-inline float pow(float iBase, float iExp) {
+template <std::floating_point T>
+T pow(T iBase, T iExp) {
   return std::pow(iBase, iExp);
 }
 
-inline float sin(float iRad) {
+template <std::floating_point T>
+T sin(T iRad) {
   return std::sin(iRad);
 }
 
-inline float cos(float iRad) {
+template <std::floating_point T>
+T cos(T iRad) {
   return std::cos(iRad);
 }
 
-inline float tan(float iRad) {
+template <std::floating_point T>
+T tan(T iRad) {
   return std::tan(iRad);
 }
 
-inline float asin(float iVal) {
+template <std::floating_point T>
+T asin(T iVal) {
   return std::asin(iVal);
 }
 
-inline float acos(float iVal) {
+template <std::floating_point T>
+T acos(T iVal) {
   return std::acos(iVal);
 }
 
-inline float atan2(float iY, float iX) {
+template <std::floating_point T>
+T atan2(T iY, T iX) {
   return std::atan2(iY, iX);
 }
 

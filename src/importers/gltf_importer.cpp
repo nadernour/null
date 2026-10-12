@@ -18,6 +18,34 @@ namespace {
 Vec3 toEngineAxes(const Vec3& iGltf) { return Vec3(iGltf.z, iGltf.x, iGltf.y); }
 Quat toEngineAxes(const Quat& iGltf) { return Quat(iGltf.z, iGltf.x, iGltf.y, iGltf.w); }
 
+[[maybe_unused]] const char* resultToString(cgltf_result iResult) {
+  switch (iResult) {
+    case cgltf_result_success:
+      return "success";
+    case cgltf_result_data_too_short:
+      return "data too short";
+    case cgltf_result_unknown_format:
+      return "unknown format";
+    case cgltf_result_invalid_json:
+      return "invalid JSON";
+    case cgltf_result_invalid_gltf:
+      return "invalid glTF";
+    case cgltf_result_invalid_options:
+      return "invalid options";
+    case cgltf_result_file_not_found:
+      return "file not found";
+    case cgltf_result_io_error:
+      return "I/O error";
+    case cgltf_result_out_of_memory:
+      return "out of memory";
+    case cgltf_result_legacy_gltf:
+      return "legacy glTF 1.0";
+    case cgltf_result_max_enum:
+      break;
+  }
+  return "unknown error";
+}
+
 std::optional<SubmeshData> importPrimitive(const cgltf_primitive& iPrimitive) {
   if (iPrimitive.type != cgltf_primitive_type_triangles) {
     return std::nullopt;
@@ -150,13 +178,21 @@ ModelData importModel(const std::string& iPath) {
   cgltf_data* data = nullptr;
   cgltf_result result = cgltf_parse_file(&options, fullPath.c_str(), &data);
   if (result != cgltf_result_success) {
-    NE_ERROR("GltfImporter: Failed to parse glTF file {} with error {}", fullPath, static_cast<int>(result));
+    NE_ERROR("GltfImporter: Failed to parse glTF file {}: {}", fullPath, resultToString(result));
     return {};
   }
 
   result = cgltf_load_buffers(&options, data, fullPath.c_str());
   if (result != cgltf_result_success) {
-    NE_ERROR("GltfImporter: Failed to load buffers for glTF file {} with error {}", fullPath, static_cast<int>(result));
+    NE_ERROR("GltfImporter: Failed to load buffers for glTF file {}: {}", fullPath, resultToString(result));
+    cgltf_free(data);
+    return {};
+  }
+
+  // Checks accessors against their buffers and indices against their primitive's vertex count, which needs the buffers loaded
+  result = cgltf_validate(data);
+  if (result != cgltf_result_success) {
+    NE_ERROR("GltfImporter: glTF file {} failed validation: {}", fullPath, resultToString(result));
     cgltf_free(data);
     return {};
   }

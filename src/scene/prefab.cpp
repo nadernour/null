@@ -32,8 +32,10 @@ Entity Prefab::instantiate(Registry& ioRegistry, const Transform& iRootTransform
 
     if (node.meshIndex >= 0) {
       NE_ASSERT(node.meshIndex < static_cast<int32_t>(mMeshes.size()), "Node references a mesh outside the prefab");
-      const std::shared_ptr<Mesh>& mesh = mMeshes[node.meshIndex];
-      ioRegistry.addComponent<MeshComponent>(entity, mesh, std::vector(mesh->getSubmeshes().size(), mMaterial));
+      // A mesh rejected by ResourceManager::createMesh() is null; its node keeps only its transform and name
+      if (const std::shared_ptr<Mesh>& mesh = mMeshes[node.meshIndex]) {
+        ioRegistry.addComponent<MeshComponent>(entity, mesh, std::vector(mesh->getSubmeshes().size(), mMaterial));
+      }
     }
 
     NE_ASSERT(node.parentIndex < static_cast<int32_t>(nodeEntities.size()), "Prefab nodes must list parents before children");

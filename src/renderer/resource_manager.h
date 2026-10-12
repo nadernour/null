@@ -30,6 +30,7 @@ public:
   ResourceManager(ResourceManager&&) = delete;
   ResourceManager& operator=(ResourceManager&&) = delete;
 
+  // Null when MeshData::validate() fails, which logs why
   std::shared_ptr<Mesh> createMesh(const MeshData& iMeshData);
   uint32_t createTexture(const ImageData& iImageData, const std::string& iDebugName = "");
   std::shared_ptr<Pipeline> getOrCreatePipeline(const std::string& iShaderName = "");

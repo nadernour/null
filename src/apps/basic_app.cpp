@@ -3,7 +3,6 @@
 #include "components/mesh_component.h"
 #include "components/name_component.h"
 #include "components/transform_component.h"
-#include "core/defines.h"
 #include "core/image_data.h"
 #include "core/logger.h"
 #include "core/math/math.h"

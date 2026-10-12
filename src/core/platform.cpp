@@ -1,5 +1,4 @@
 #include "core/platform.h"
-#include "core/defines.h"
 #include <filesystem>
 
 #if defined(NE_PLATFORM_WINDOWS)

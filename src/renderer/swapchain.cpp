@@ -1,12 +1,11 @@
 #include "renderer/swapchain.h"
 #include "core/assert.h"
-#include "core/defines.h"
 #include "core/logger.h"
+#include "core/math/math_utils.h"
 #include "renderer/device.h"
 #include "renderer/utils.h"
 
 // std
-#include <algorithm>
 #include <format>
 
 namespace ne {
@@ -78,15 +77,15 @@ void Swapchain::createSwapchain(VkSwapchainKHR iOldSwapchain) {
   VkExtent2D selectedSwapExtent = surfaceCapabilities.currentExtent;
   if (surfaceCapabilities.currentExtent.width == UINT32_MAX) {
     selectedSwapExtent = {
-        .width = std::clamp<uint32_t>(mConfig.width, surfaceCapabilities.minImageExtent.width,
-                                      surfaceCapabilities.maxImageExtent.width),
-        .height = std::clamp<uint32_t>(mConfig.height, surfaceCapabilities.minImageExtent.height,
-                                       surfaceCapabilities.maxImageExtent.height),
+        .width = math::clamp<uint32_t>(mConfig.width, surfaceCapabilities.minImageExtent.width,
+                                       surfaceCapabilities.maxImageExtent.width),
+        .height = math::clamp<uint32_t>(mConfig.height, surfaceCapabilities.minImageExtent.height,
+                                        surfaceCapabilities.maxImageExtent.height),
     };
   }
 
   // Prefer triple buffering
-  uint32_t minImageCount = std::max(3u, surfaceCapabilities.minImageCount);
+  uint32_t minImageCount = math::max(3u, surfaceCapabilities.minImageCount);
   if (surfaceCapabilities.maxImageCount > 0 && minImageCount > surfaceCapabilities.maxImageCount) {
     minImageCount = surfaceCapabilities.maxImageCount;
   }

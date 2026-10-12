@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/assert.h"
-#include "core/defines.h"
 
 // std
 #include <memory>

@@ -76,6 +76,12 @@ std::shared_ptr<Material> ResourceManager::createMaterial(const std::string& iSh
 }
 
 std::shared_ptr<Mesh> ResourceManager::createMesh(const MeshData& iMeshData) {
+  // Malformed data is rejected before anything is staged. The vertex shader fetches vertices through a raw device
+  // address, so an index past its submesh's vertices would read another mesh's vertices or fault the GPU.
+  if (!iMeshData.validate()) {
+    return nullptr;
+  }
+
   if (!mStagingManager->isBatching()) {
     mStagingManager->beginBatch();
   }

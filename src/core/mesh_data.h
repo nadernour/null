@@ -20,6 +20,10 @@ struct SubmeshData {
 // A glTF mesh; each submesh is drawn with its own material
 struct MeshData {
   std::vector<SubmeshData> submeshes;
+
+  // False, with the reason logged, when the mesh is unsafe to draw: it needs a submesh, and every submesh needs vertices
+  // and indices that stay within them
+  bool validate() const;
 };
 
 struct ModelNode {

@@ -7,6 +7,11 @@
 
 #include <cgltf.h>
 
+// std
+#include <array>
+#include <filesystem>
+#include <fstream>
+
 namespace ne::test {
 
 namespace {
@@ -85,6 +90,34 @@ bool matchesGltfWorldPositions(const ModelData& iModel, const std::vector<Vec3>&
   return true;
 }
 
+// Writes a one-triangle glTF and its .bin buffer to the temp directory and returns the .gltf path
+std::filesystem::path writeTriangleGltf(const std::string& iName, const std::array<uint16_t, 3>& iIndices) {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path();
+  const std::array<float, 9> positions = {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f};
+  std::ofstream bin(dir / (iName + ".bin"), std::ios::binary);
+  bin.write(reinterpret_cast<const char*>(positions.data()), sizeof(positions));
+  bin.write(reinterpret_cast<const char*>(iIndices.data()), sizeof(iIndices));
+  bin.close();
+
+  std::ofstream(dir / (iName + ".gltf")) << R"({
+  "asset": {"version": "2.0"},
+  "scene": 0,
+  "scenes": [{"nodes": [0]}],
+  "nodes": [{"mesh": 0}],
+  "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1}]}],
+  "buffers": [{"uri": ")" + iName + R"(.bin", "byteLength": 42}],
+  "bufferViews": [
+    {"buffer": 0, "byteOffset": 0, "byteLength": 36},
+    {"buffer": 0, "byteOffset": 36, "byteLength": 6}
+  ],
+  "accessors": [
+    {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0, 0, 0], "max": [1, 1, 0]},
+    {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}
+  ]
+})";
+  return dir / (iName + ".gltf");
+}
+
 } // namespace
 
 NE_TEST_CASE("importer", "glTF Box: Node Matrix Hierarchy & Axis Conversion") {
@@ -128,6 +161,20 @@ NE_TEST_CASE("importer", "glTF DamagedHelmet: Node TRS & Axis Conversion") {
 
   NE_TEST_ASSERT(matchesGltfWorldPositions(model, rawGltfWorldPositions("models/DamagedHelmet.glb")),
                  "Helmet world positions must equal glTF world positions with axes permuted.");
+}
+
+NE_TEST_CASE("importer", "glTF With An Out-Of-Range Index Fails Validation") {
+  const std::filesystem::path path = writeTriangleGltf("null_importer_test_triangle", {0, 1, 2});
+  ModelData valid = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(valid.meshes.size() == 1 && valid.nodes.size() == 1, "A well-formed triangle imports.");
+
+  writeTriangleGltf("null_importer_test_triangle", {0, 1, 3});
+  ModelData invalid = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(invalid.meshes.empty() && invalid.nodes.empty(),
+                 "Index 3 into 3 vertices fails validation and imports nothing.");
+
+  std::filesystem::remove(path);
+  std::filesystem::remove(std::filesystem::path(path).replace_extension(".bin"));
 }
 
 } // namespace ne::test

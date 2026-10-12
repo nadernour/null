@@ -1,5 +1,4 @@
 #include "platform/window.h"
-#include "core/defines.h"
 #include "core/logger.h"
 
 #include <GLFW/glfw3.h>
