@@ -25,6 +25,7 @@ public:
   VkDescriptorSet getDescriptorSet() const { return mDescriptorSet; }
   uint32_t getRegisteredSampledImageCount() const { return mNextSampledImageIndex; }
   uint32_t getMaxSampledImages() const { return mMaxSampledImages; }
+  bool isFull() const { return mNextSampledImageIndex >= mMaxSampledImages; }
 
 private:
   VkDevice mDevice = VK_NULL_HANDLE;

@@ -40,8 +40,8 @@ BasicApp::BasicApp() : Application("Basic App (MDI Showcase)", 1200, 1000) {
 
   mCameraEntity = getRegistry()->createEntity();
   getRegistry()->addComponent<TransformComponent>(mCameraEntity, Transform(Vec3(-4.0f, 0.0f, 0.0f)));
-  getRegistry()->addComponent<CameraComponent>(
-      mCameraEntity, CameraComponent{.fov = math::radians(45.0f), .nearClip = 0.1f, .farClip = 100.0f});
+  getRegistry()->addComponent<CameraComponent>(mCameraEntity,
+                                               CameraComponent{.fov = math::radians(45.0f), .nearClip = 0.1f, .farClip = 100.0f});
   getRegistry()->addComponent<NameComponent>(mCameraEntity, "Camera");
 
   // Left (+Y)

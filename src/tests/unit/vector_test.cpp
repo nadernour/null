@@ -12,8 +12,10 @@ NE_TEST_CASE("vector", "Vec2 Operations & Member Functions") {
   NE_TEST_ASSERT(math::equals(a.length(), 5.0f), "Vec2 member length of (3,4) must be 5.");
   NE_TEST_ASSERT(math::equals(a.lengthSquared(), 25.0f), "Vec2 member lengthSquared must be 25.");
   NE_TEST_ASSERT(a.getUnsafeNormal().isNormalized(), "Vec2 getUnsafeNormal must be normalized.");
-  NE_TEST_ASSERT(Vec2::Zero.getSafeNormal(math::kSmallNumber, Vec2::UnitX).equals(Vec2::UnitX), "Safe normalize zero vector must return fallback.");
-  NE_TEST_ASSERT(math::equals(Vec2(1.0f, 0.0f).dot(Vec2(0.0f, 1.0f)), 0.0f), "Member dot product of orthogonal vectors must be 0.");
+  NE_TEST_ASSERT(Vec2::Zero.getSafeNormal(math::kSmallNumber, Vec2::UnitX).equals(Vec2::UnitX),
+                 "Safe normalize zero vector must return fallback.");
+  NE_TEST_ASSERT(math::equals(Vec2(1.0f, 0.0f).dot(Vec2(0.0f, 1.0f)), 0.0f),
+                 "Member dot product of orthogonal vectors must be 0.");
 
   NE_TEST_ASSERT(math::equals(a[0], 3.0f) && math::equals(a[1], 4.0f), "Vec2 operator[] indexing.");
   NE_TEST_ASSERT(a.data() == &a.x, "Vec2 data() pointer points to x component.");
@@ -120,8 +122,10 @@ NE_TEST_CASE("vector", "Vec4 Operations & Member Functions") {
   Vec4 a(0.0f, 3.0f, 0.0f, 4.0f);
   Vec4 b(1.0f, 1.0f, 1.0f, 1.0f);
 
-  NE_TEST_ASSERT(Vec4(Vec3(1.0f, 2.0f, 3.0f), 4.0f).equals(Vec4(1.0f, 2.0f, 3.0f, 4.0f)), "Vec4 composition constructor from Vec3.");
-  NE_TEST_ASSERT(Vec4(Vec2(1.0f, 2.0f), 3.0f, 4.0f).equals(Vec4(1.0f, 2.0f, 3.0f, 4.0f)), "Vec4 composition constructor from Vec2.");
+  NE_TEST_ASSERT(Vec4(Vec3(1.0f, 2.0f, 3.0f), 4.0f).equals(Vec4(1.0f, 2.0f, 3.0f, 4.0f)),
+                 "Vec4 composition constructor from Vec3.");
+  NE_TEST_ASSERT(Vec4(Vec2(1.0f, 2.0f), 3.0f, 4.0f).equals(Vec4(1.0f, 2.0f, 3.0f, 4.0f)),
+                 "Vec4 composition constructor from Vec2.");
 
   NE_TEST_ASSERT(math::equals(a.length(), 5.0f), "Vec4 member length of (0,3,0,4) must be 5.");
   NE_TEST_ASSERT(math::equals(a.lengthSquared(), 25.0f), "Vec4 member lengthSquared must be 25.");

@@ -1,8 +1,8 @@
 #include "renderer/resource_manager.h"
 #include "core/assert.h"
-#include "core/defines.h"
 #include "core/image_data.h"
 #include "core/image_utils.h"
+#include "core/logger.h"
 #include "core/mesh_data.h"
 #include "renderer/bindless_manager.h"
 #include "renderer/device.h"
@@ -35,10 +35,10 @@ ResourceManager::ResourceManager(Device* iDevice, VkFormat iDefaultColorFormat, 
   mScenePipelineLayout =
       Pipeline::createPipelineLayout(mDevice->getDevice(), {setLayout}, {pushConstantRange}, "Scene_PipelineLayout");
 
-  // Materials default to texture index 0, so it must be the white fallback
+  // New materials start on kFallbackTextureIndex, so the white texture must be created first
   ImageData whiteData = ImageData::createWhite1x1();
   uint32_t defaultTexIdx = createTexture(whiteData, "Default_White_Texture");
-  NE_ASSERT(defaultTexIdx == 0, "Fallback white texture must occupy bindless texture index 0");
+  NE_ASSERT(defaultTexIdx == kFallbackTextureIndex, "Fallback white texture must occupy bindless index kFallbackTextureIndex");
 }
 
 ResourceManager::~ResourceManager() {
@@ -72,7 +72,7 @@ std::shared_ptr<Pipeline> ResourceManager::getOrCreatePipeline(const std::string
 }
 
 std::shared_ptr<Material> ResourceManager::createMaterial(const std::string& iShaderName) {
-  return std::make_shared<Material>(getOrCreatePipeline(iShaderName));
+  return std::make_shared<Material>(getOrCreatePipeline(iShaderName), kFallbackTextureIndex);
 }
 
 std::shared_ptr<Mesh> ResourceManager::createMesh(const MeshData& iMeshData) {
@@ -85,15 +85,28 @@ std::shared_ptr<Mesh> ResourceManager::createMesh(const MeshData& iMeshData) {
   if (!mStagingManager->isBatching()) {
     mStagingManager->beginBatch();
   }
-  std::vector<Mesh::Submesh> submeshes;
-  submeshes.reserve(iMeshData.submeshes.size());
-  for (const SubmeshData& submesh : iMeshData.submeshes) {
-    submeshes.push_back(mGeometryAllocator->stageSubmesh(*mStagingManager, submesh));
+  std::optional<Mesh> mesh = mGeometryAllocator->stageMesh(*mStagingManager, iMeshData);
+  if (!mesh) {
+    return nullptr;
   }
-  return std::make_shared<Mesh>(std::move(submeshes));
+  return std::make_shared<Mesh>(std::move(*mesh));
 }
 
 uint32_t ResourceManager::createTexture(const ImageData& iImageData, const std::string& iDebugName) {
+  // Checked before anything is created, so a rejected texture costs no GPU memory
+  const std::string name = iDebugName.empty() ? "Texture" : iDebugName;
+  const uint32_t maxDimension = mDevice->getPhysicalDeviceProperties().limits.maxImageDimension2D;
+  if (iImageData.width > maxDimension || iImageData.height > maxDimension) {
+    NE_ERROR("ResourceManager: Texture '{}' is {}x{}, past the GPU's {}x{} limit; using the white fallback", name,
+             iImageData.width, iImageData.height, maxDimension, maxDimension);
+    return kFallbackTextureIndex;
+  }
+  if (mBindlessManager->isFull()) {
+    NE_ERROR("ResourceManager: Texture '{}' has no bindless slot left (all {} are taken); using the white fallback", name,
+             mBindlessManager->getMaxSampledImages());
+    return kFallbackTextureIndex;
+  }
+
   if (!mStagingManager->isBatching()) {
     mStagingManager->beginBatch();
   }
@@ -104,7 +117,7 @@ uint32_t ResourceManager::createTexture(const ImageData& iImageData, const std::
       .format = mipChain.srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
       .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
       .mipLevels = mipChain.mipLevels,
-      .debugName = iDebugName.empty() ? "Texture" : iDebugName,
+      .debugName = name,
   };
   auto image = std::make_unique<Image>(mDevice, config);
   mStagingManager->stageImageUpload(*image, mipChain.pixels.data(), mipChain.pixels.size());

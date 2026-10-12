@@ -71,7 +71,7 @@ BindlessManager::BindlessManager(VkDevice iDevice, SamplerManager* iSamplerManag
   VK_CHECK(vkAllocateDescriptorSets(mDevice, &allocInfo, &mDescriptorSet));
   vk_utils::setDebugObjectName(mDevice, mDescriptorSet, "Bindless_DescriptorSet");
 
-  NE_LOG("Initialized BindlessManager: {} samplers, {} max sampled images", samplerCount, mMaxSampledImages);
+  NE_VERBOSE("Initialized BindlessManager: {} samplers, {} max sampled images", samplerCount, mMaxSampledImages);
 }
 
 BindlessManager::~BindlessManager() {
@@ -84,12 +84,12 @@ BindlessManager::~BindlessManager() {
     vkDestroyDescriptorSetLayout(mDevice, mDescriptorSetLayout, nullptr);
     mDescriptorSetLayout = VK_NULL_HANDLE;
   }
-  NE_LOG("Destroyed BindlessManager resources");
+  NE_VERBOSE("Destroyed BindlessManager resources");
 }
 
 uint32_t BindlessManager::registerSampledImage(VkImageView iImageView) {
   NE_ASSERT(iImageView != VK_NULL_HANDLE, "ImageView must be valid to register for bindless sampling");
-  NE_ASSERT(mNextSampledImageIndex < mMaxSampledImages, "Exceeded maximum bindless sampled images");
+  NE_ASSERT(!isFull(), "Exceeded maximum bindless sampled images");
 
   uint32_t index = mNextSampledImageIndex++;
 

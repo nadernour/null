@@ -3,6 +3,7 @@
 #include "renderer/mesh.h"
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 #include <volk/volk.h>
 
@@ -11,7 +12,7 @@ namespace ne {
 class Device;
 class Buffer;
 class StagingManager;
-struct SubmeshData;
+struct MeshData;
 
 class GeometryAllocator {
 public:
@@ -23,8 +24,9 @@ public:
   GeometryAllocator(GeometryAllocator&&) = delete;
   GeometryAllocator& operator=(GeometryAllocator&&) = delete;
 
-  // Sub-allocates the submesh in the vertex and index pools and stages its copies into StagingManager
-  Mesh::Submesh stageSubmesh(StagingManager& iStagingManager, const SubmeshData& iSubmeshData);
+  // Sub-allocates one vertex and one index range for the whole mesh and stages their copies into StagingManager. Null,
+  // with the shortfall logged, when the mesh doesn't fit in the space left; nothing is allocated then.
+  std::optional<Mesh> stageMesh(StagingManager& iStagingManager, const MeshData& iMeshData);
 
   void bindIndexBuffer(VkCommandBuffer iCommandBuffer) const;
 

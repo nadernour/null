@@ -105,14 +105,14 @@ SamplerManager::SamplerManager(Device* iDevice) : mDevice(iDevice->getDevice()) 
     sampler = createSampler(mDevice, config);
   }
 
-  NE_LOG("Initialized SamplerManager: {} standard samplers created", mSamplers.size());
+  NE_VERBOSE("Initialized SamplerManager: {} standard samplers created", mSamplers.size());
 }
 
 SamplerManager::~SamplerManager() {
   for (VkSampler sampler : mSamplers) {
     vkDestroySampler(mDevice, sampler, nullptr);
   }
-  NE_LOG("Destroyed SamplerManager: cleaned up standard samplers");
+  NE_VERBOSE("Destroyed SamplerManager: cleaned up standard samplers");
 }
 
 VkSampler SamplerManager::get(SamplerType iType) const {

@@ -36,11 +36,7 @@ enum class MouseButton : uint8_t {
   Left = Button0, Right = Button1, Middle = Button2
 };
 
-enum class InputAction : uint8_t {
-  Release = 0,
-  Press = 1,
-  Repeat = 2
-};
+enum class InputAction : uint8_t { Release = 0, Press = 1, Repeat = 2 };
 
 enum class KeyMods : uint8_t {
   None = 0,
@@ -56,14 +52,8 @@ inline KeyMods operator|(KeyMods iA, KeyMods iB) {
   return static_cast<KeyMods>(static_cast<uint8_t>(iA) | static_cast<uint8_t>(iB));
 }
 
-inline bool operator&(KeyMods iA, KeyMods iB) {
-  return (static_cast<uint8_t>(iA) & static_cast<uint8_t>(iB)) != 0;
-}
+inline bool operator&(KeyMods iA, KeyMods iB) { return (static_cast<uint8_t>(iA) & static_cast<uint8_t>(iB)) != 0; }
 
-enum class CursorMode : uint8_t {
-  Normal = 0,
-  Hidden = 1,
-  Disabled = 2
-};
+enum class CursorMode : uint8_t { Normal = 0, Hidden = 1, Disabled = 2 };
 
 } // namespace ne

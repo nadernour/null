@@ -39,9 +39,7 @@ NE_TEST_CASE("core", "Event Bus Lifecycle & Dispatch") {
 
   // Multiple listeners
   int listener2Count = 0;
-  testEvent.add([&](int, float) {
-    listener2Count++;
-  });
+  testEvent.add([&](int, float) { listener2Count++; });
 
   testEvent.broadcast(1, 2.0f);
   NE_TEST_ASSERT(receivedInt == 1 && listener2Count == 1, "Both listeners invoked on broadcast.");

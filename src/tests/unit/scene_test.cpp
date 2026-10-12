@@ -7,6 +7,11 @@
 #include "components/name_component.h"
 #include "components/transform_component.h"
 #include "core/ecs.h"
+#include "core/image_data.h"
+#include "renderer/bindless_manager.h"
+#include "renderer/buffer.h"
+#include "renderer/geometry_allocator.h"
+#include "renderer/gpu_types.h"
 #include "renderer/mesh.h"
 #include "renderer/resource_manager.h"
 #include "scene/prefab.h"
@@ -27,7 +32,9 @@ Entity makeNode(Registry& ioRegistry, const Transform& iLocal = Transform{}, Ent
   return entity;
 }
 
-TransformComponent& transformOf(Registry& ioRegistry, Entity iEntity) { return ioRegistry.getComponent<TransformComponent>(iEntity); }
+TransformComponent& transformOf(Registry& ioRegistry, Entity iEntity) {
+  return ioRegistry.getComponent<TransformComponent>(iEntity);
+}
 
 Vec3 worldPosition(Registry& ioRegistry, Entity iEntity) {
   const Mat4& world = transformOf(ioRegistry, iEntity).getWorldMatrix();
@@ -52,14 +59,18 @@ NE_TEST_CASE("scene", "TransformSystem World Matrix Propagation") {
   const Mat4 rootLocal = transformOf(registry, root).getLocal().toMatrix();
   const Mat4 childLocal = transformOf(registry, child).getLocal().toMatrix();
   const Mat4 grandLocal = transformOf(registry, grandchild).getLocal().toMatrix();
-  NE_TEST_ASSERT(transformOf(registry, root).getWorldMatrix().equals(rootLocal), "Root world matrix must equal its local matrix.");
-  NE_TEST_ASSERT(transformOf(registry, child).getWorldMatrix().equals(rootLocal * childLocal), "Child world = parent world * local.");
+  NE_TEST_ASSERT(transformOf(registry, root).getWorldMatrix().equals(rootLocal),
+                 "Root world matrix must equal its local matrix.");
+  NE_TEST_ASSERT(transformOf(registry, child).getWorldMatrix().equals(rootLocal * childLocal),
+                 "Child world = parent world * local.");
   NE_TEST_ASSERT(transformOf(registry, grandchild).getWorldMatrix().equals(rootLocal * childLocal * grandLocal),
                  "Grandchild world = parent world * local.");
 
   // Root yawed 90 deg (forward -> +Y): child sits one unit along the root's forward; parent scale 2 doubles the grandchild offset
-  NE_TEST_ASSERT(worldPosition(registry, child).equals(Vec3(1.0f, 1.0f, 0.0f), 1e-4f), "Child world position follows root rotation.");
-  NE_TEST_ASSERT(worldPosition(registry, grandchild).equals(Vec3(1.0f, 1.0f, 2.0f), 1e-4f), "Grandchild world position follows parent scale.");
+  NE_TEST_ASSERT(worldPosition(registry, child).equals(Vec3(1.0f, 1.0f, 0.0f), 1e-4f),
+                 "Child world position follows root rotation.");
+  NE_TEST_ASSERT(worldPosition(registry, grandchild).equals(Vec3(1.0f, 1.0f, 2.0f), 1e-4f),
+                 "Grandchild world position follows parent scale.");
 }
 
 NE_TEST_CASE("scene", "TransformSystem Recomputes Only What Changed") {
@@ -72,13 +83,15 @@ NE_TEST_CASE("scene", "TransformSystem Recomputes Only What Changed") {
   // A clean child of a moved root must still follow it
   transformOf(registry, root).setLocalPosition(Vec3(5.0f, 0.0f, 0.0f));
   TransformSystem::update(registry);
-  NE_TEST_ASSERT(worldPosition(registry, grandchild).equals(Vec3(5.0f, 1.0f, 1.0f)), "Descendants of a changed root are recomputed.");
+  NE_TEST_ASSERT(worldPosition(registry, grandchild).equals(Vec3(5.0f, 1.0f, 1.0f)),
+                 "Descendants of a changed root are recomputed.");
 
   // Changing a mid node updates its subtree and leaves its parent alone
   transformOf(registry, child).setLocalPosition(Vec3(0.0f, 2.0f, 0.0f));
   TransformSystem::update(registry);
   NE_TEST_ASSERT(worldPosition(registry, root).equals(Vec3(5.0f, 0.0f, 0.0f)), "Ancestors of a changed node keep their world.");
-  NE_TEST_ASSERT(worldPosition(registry, grandchild).equals(Vec3(5.0f, 2.0f, 1.0f)), "Descendants of a changed node are recomputed.");
+  NE_TEST_ASSERT(worldPosition(registry, grandchild).equals(Vec3(5.0f, 2.0f, 1.0f)),
+                 "Descendants of a changed node are recomputed.");
 
   // Re-parenting alone (no local change) must also refresh the world matrix
   Entity other = makeNode(registry, Transform(Vec3(0.0f, 0.0f, 10.0f)));
@@ -93,20 +106,23 @@ NE_TEST_CASE("scene", "TransformSystem Re-parenting & Detaching") {
   Entity parentA = makeNode(registry, Transform(Vec3(10.0f, 0.0f, 0.0f)));
   Entity parentB = makeNode(registry, Transform(Vec3(0.0f, 20.0f, 0.0f), Quat::angleAxis(math::radians(90.0f), Vec3::Up)));
   Entity child = makeNode(registry, Transform(Vec3(0.0f, 0.0f, 1.0f)), parentA);
-  NE_TEST_ASSERT(transformOf(registry, child).getParent() == parentA && hasChild(registry, parentA, child), "Child is linked under A.");
+  NE_TEST_ASSERT(transformOf(registry, child).getParent() == parentA && hasChild(registry, parentA, child),
+                 "Child is linked under A.");
 
   // KeepLocal: the local transform is kept and becomes relative to B
   TransformSystem::setParent(registry, child, parentB);
   NE_TEST_ASSERT(transformOf(registry, child).getParent() == parentB, "Child parent must be B.");
   NE_TEST_ASSERT(!hasChild(registry, parentA, child) && hasChild(registry, parentB, child), "Only B must list the child.");
   TransformSystem::update(registry);
-  NE_TEST_ASSERT(worldPosition(registry, child).equals(Vec3(0.0f, 20.0f, 1.0f), 1e-4f), "KeepLocal places the child relative to B.");
+  NE_TEST_ASSERT(worldPosition(registry, child).equals(Vec3(0.0f, 20.0f, 1.0f), 1e-4f),
+                 "KeepLocal places the child relative to B.");
 
   // KeepWorld: the child stays where it is in the world
   const Mat4 worldBefore = transformOf(registry, child).getWorldMatrix();
   TransformSystem::setParent(registry, child, parentA, TransformSystem::AttachRule::KeepWorld);
   TransformSystem::update(registry);
-  NE_TEST_ASSERT(transformOf(registry, child).getWorldMatrix().equals(worldBefore, 1e-4f), "KeepWorld preserves the world matrix.");
+  NE_TEST_ASSERT(transformOf(registry, child).getWorldMatrix().equals(worldBefore, 1e-4f),
+                 "KeepWorld preserves the world matrix.");
   NE_TEST_ASSERT(transformOf(registry, child).getLocal().position.equals(Vec3(-10.0f, 20.0f, 1.0f), 1e-4f),
                  "KeepWorld recomputes the local transform relative to A.");
 
@@ -115,7 +131,8 @@ NE_TEST_CASE("scene", "TransformSystem Re-parenting & Detaching") {
   NE_TEST_ASSERT(!transformOf(registry, child).getParent().isValid(), "Detached child has no parent.");
   NE_TEST_ASSERT(transformOf(registry, parentA).getChildren().empty(), "A must have no children after detach.");
   TransformSystem::update(registry);
-  NE_TEST_ASSERT(transformOf(registry, child).getWorldMatrix().equals(worldBefore, 1e-4f), "Detached child keeps its world matrix.");
+  NE_TEST_ASSERT(transformOf(registry, child).getWorldMatrix().equals(worldBefore, 1e-4f),
+                 "Detached child keeps its world matrix.");
 }
 
 NE_TEST_CASE("scene", "Destroying A Node Destroys Its Subtree") {
@@ -128,7 +145,8 @@ NE_TEST_CASE("scene", "Destroying A Node Destroys Its Subtree") {
   registry.destroyEntity(mid);
   NE_TEST_ASSERT(!registry.isValid(mid) && !registry.isValid(leaf), "Destroyed node and its descendants must be invalid.");
   NE_TEST_ASSERT(registry.isValid(root) && registry.isValid(sibling), "Ancestors and siblings must survive.");
-  NE_TEST_ASSERT(transformOf(registry, root).getChildren() == std::vector<Entity>{sibling}, "Parent must only list the surviving sibling.");
+  NE_TEST_ASSERT(transformOf(registry, root).getChildren() == std::vector<Entity>{sibling},
+                 "Parent must only list the surviving sibling.");
   TransformSystem::update(registry); // Must not hit stale links
 
   registry.destroyEntity(root);
@@ -142,7 +160,8 @@ NE_TEST_CASE("scene", "Removing A Node's Transform Detaches It And Destroys Its 
   Entity leaf = makeNode(registry, Transform{}, mid);
 
   registry.removeComponent<TransformComponent>(mid);
-  NE_TEST_ASSERT(registry.isValid(mid) && !registry.hasComponent<TransformComponent>(mid), "The entity survives without its transform.");
+  NE_TEST_ASSERT(registry.isValid(mid) && !registry.hasComponent<TransformComponent>(mid),
+                 "The entity survives without its transform.");
   NE_TEST_ASSERT(!registry.isValid(leaf), "Its children are destroyed.");
   NE_TEST_ASSERT(transformOf(registry, root).getChildren().empty(), "Its parent no longer lists it.");
   TransformSystem::update(registry); // Must not hit stale links
@@ -227,6 +246,48 @@ NE_TEST_CASE("scene", "Malformed Meshes Are Rejected") {
   const auto& rootChildren = transformOf(registry, root).getChildren();
   NE_TEST_ASSERT(rootChildren.size() == 1, "The node of a rejected mesh is still instantiated.");
   NE_TEST_ASSERT(!registry.hasComponent<MeshComponent>(rootChildren[0]), "A node whose mesh was rejected has no MeshComponent.");
+}
+
+NE_TEST_CASE("scene", "A Mesh's Submeshes Share One Vertex And One Index Range") {
+  ResourceManager& resources = *ioContext.app->getResourceManager();
+  SubmeshData triangle;
+  triangle.positions = {Vec3(0.0f), Vec3(0.0f, 1.0f, 0.0f), Vec3(0.0f, 0.0f, 1.0f)};
+  triangle.indices = {0, 1, 2};
+  std::shared_ptr<Mesh> mesh = resources.createMesh(MeshData{.submeshes = {triangle, triangle}});
+
+  const std::vector<Mesh::Submesh>& submeshes = mesh->getSubmeshes();
+  NE_TEST_ASSERT(submeshes[1].vertexAddress == submeshes[0].vertexAddress + 3 * sizeof(gpu::Vertex),
+                 "The second submesh's vertices follow the first's.");
+  NE_TEST_ASSERT(submeshes[1].firstIndex == submeshes[0].firstIndex + 3, "The second submesh's indices follow the first's.");
+}
+
+NE_TEST_CASE("scene", "A Mesh Past The Geometry Pools Is Rejected Whole") {
+  ResourceManager& resources = *ioContext.app->getResourceManager();
+  const Buffer& vertexPool = *resources.getGeometryAllocator()->getVertexBuffer();
+  SubmeshData triangle;
+  triangle.positions = {Vec3(0.0f), Vec3(0.0f, 1.0f, 0.0f), Vec3(0.0f, 0.0f, 1.0f)};
+  triangle.indices = {0, 1, 2};
+  // More vertices than the whole pool holds, however full it already is; rejected before anything reaches the GPU
+  SubmeshData huge;
+  huge.positions.resize(vertexPool.getConfig().size / sizeof(gpu::Vertex) + 1);
+  huge.indices = {0, 1, 2};
+
+  const VkDeviceSize usedBefore = vertexPool.getUploadOffset();
+  NE_TEST_ASSERT(!resources.createMesh(MeshData{.submeshes = {triangle, huge}}), "A mesh past the vertex pool is rejected.");
+  NE_TEST_ASSERT(vertexPool.getUploadOffset() == usedBefore,
+                 "A rejected mesh takes no pool space, not even for the submesh that fit.");
+}
+
+NE_TEST_CASE("scene", "A Texture Past The GPU Size Limit Falls Back To White") {
+  ResourceManager& resources = *ioContext.app->getResourceManager();
+  const uint32_t registeredBefore = resources.getBindlessManager()->getRegisteredSampledImageCount();
+  // No GPU allows 65536 texels on a side (32768 is the most today); a single row keeps it at 256 KB
+  ImageData wide{.width = 65536, .height = 1, .pixels = std::vector<uint8_t>(65536 * 4, 255)};
+
+  NE_TEST_ASSERT(resources.createTexture(wide) == ResourceManager::kFallbackTextureIndex,
+                 "An oversized texture returns the white fallback.");
+  NE_TEST_ASSERT(resources.getBindlessManager()->getRegisteredSampledImageCount() == registeredBefore,
+                 "An oversized texture takes no bindless slot.");
 }
 
 } // namespace ne::test

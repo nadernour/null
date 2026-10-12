@@ -34,7 +34,7 @@ StagingManager::StagingManager(Device* iDevice) : mDevice(iDevice) {
   };
   mStagingBuffer = std::make_unique<Buffer>(mDevice, stagingConfig);
 
-  NE_LOG("Initialized StagingManager: Staging Arena Size: {}", vk_utils::formatBytes(mStagingBuffer->getConfig().size));
+  NE_VERBOSE("Initialized StagingManager: Staging Arena Size: {}", vk_utils::formatBytes(mStagingBuffer->getConfig().size));
 }
 
 StagingManager::~StagingManager() {
@@ -56,7 +56,7 @@ VkDeviceSize StagingManager::stageData(const void* iData, VkDeviceSize iSize) {
 
   // Flush the pending batch when it is full
   if (!mStagingBuffer->canUpload(iSize)) {
-    NE_LOG("StagingManager: Staging capacity reached. Auto-flushing batch...");
+    NE_VERBOSE("StagingManager: Staging capacity reached. Auto-flushing batch...");
     flushBatch();
   }
 
@@ -73,8 +73,8 @@ void StagingManager::stageBufferCopy(VkBuffer iDstBuffer, const void* iData, VkD
 
   // Larger than the whole staging buffer: upload through a temporary buffer
   if (iSize > mStagingBuffer->getConfig().size) {
-    NE_LOG("StagingManager: Staging buffer copy of size {} exceeds capacity {}. Using transient staging buffer.",
-           vk_utils::formatBytes(iSize), vk_utils::formatBytes(mStagingBuffer->getConfig().size));
+    NE_VERBOSE("StagingManager: Staging buffer copy of size {} exceeds capacity {}. Using transient staging buffer.",
+               vk_utils::formatBytes(iSize), vk_utils::formatBytes(mStagingBuffer->getConfig().size));
     if (hasPendingUploads()) {
       flushBatch();
     }
@@ -118,8 +118,8 @@ void StagingManager::stageImageUpload(Image& iDstImage, const void* iPixelData, 
 
   // Larger than the whole staging buffer: upload through a temporary buffer
   if (iSize > mStagingBuffer->getConfig().size) {
-    NE_LOG("StagingManager: Staging image upload of size {} exceeds capacity {}. Using transient staging buffer.",
-           vk_utils::formatBytes(iSize), vk_utils::formatBytes(mStagingBuffer->getConfig().size));
+    NE_VERBOSE("StagingManager: Staging image upload of size {} exceeds capacity {}. Using transient staging buffer.",
+               vk_utils::formatBytes(iSize), vk_utils::formatBytes(mStagingBuffer->getConfig().size));
     if (hasPendingUploads()) {
       flushBatch();
     }
@@ -137,7 +137,8 @@ void StagingManager::stageImageUpload(Image& iDstImage, const void* iPixelData, 
 
     vk_utils::transitionImageLayout(cmd, iDstImage.getImage(), iDstImage.getSubresourceRange(), iDstImage.getCurrentLayout(),
                                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, iDstImage.getCurrentAccessMask(),
-                                    VK_ACCESS_2_TRANSFER_WRITE_BIT, iDstImage.getCurrentStageMask(), VK_PIPELINE_STAGE_2_COPY_BIT);
+                                    VK_ACCESS_2_TRANSFER_WRITE_BIT, iDstImage.getCurrentStageMask(),
+                                    VK_PIPELINE_STAGE_2_COPY_BIT);
 
     recordImageCopy(cmd, tempStaging.getBuffer(), iDstImage);
 
@@ -149,7 +150,7 @@ void StagingManager::stageImageUpload(Image& iDstImage, const void* iPixelData, 
     mDevice->endOneTimeCommand(cmd);
 
     iDstImage.setLayoutState(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_2_SHADER_READ_BIT,
-                            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
+                             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
     return;
   }
 

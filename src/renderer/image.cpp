@@ -54,8 +54,9 @@ Image::Image(Device* iDevice, const Config& iConfig) : mDevice(iDevice), mConfig
     vk_utils::setDebugObjectName(mDevice->getDevice(), mImageView, mConfig.debugName + "_View");
   }
 
-  NE_LOG("Allocated Image{}: Extent {}x{} | Format: {}", mConfig.debugName.empty() ? "" : std::format(" '{}'", mConfig.debugName),
-         mConfig.width, mConfig.height, string_VkFormat(mConfig.format));
+  NE_VERBOSE("Allocated Image{}: Extent {}x{} | Format: {}",
+             mConfig.debugName.empty() ? "" : std::format(" '{}'", mConfig.debugName), mConfig.width, mConfig.height,
+             string_VkFormat(mConfig.format));
 }
 
 Image::~Image() {

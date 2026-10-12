@@ -19,13 +19,9 @@ public:
     return id;
   }
 
-  bool remove(CallbackId iId) {
-    return mCallbacks.erase(iId) > 0;
-  }
+  bool remove(CallbackId iId) { return mCallbacks.erase(iId) > 0; }
 
-  void clear() {
-    mCallbacks.clear();
-  }
+  void clear() { mCallbacks.clear(); }
 
   void broadcast(Args... iArgs) const {
     for (const auto& [id, callback] : mCallbacks) {

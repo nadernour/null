@@ -10,7 +10,7 @@ class Pipeline;
 
 class Material {
 public:
-  Material(std::shared_ptr<Pipeline> iPipeline) : mPipeline(iPipeline) {}
+  Material(std::shared_ptr<Pipeline> iPipeline, uint32_t iTextureIndex) : mPipeline(iPipeline), mTextureIndex(iTextureIndex) {}
   ~Material() = default;
 
   Pipeline* getPipeline() const { return mPipeline.get(); }
@@ -27,7 +27,7 @@ public:
 
 private:
   std::shared_ptr<Pipeline> mPipeline;
-  uint32_t mTextureIndex = 0; // 0 = default 1x1 fallback white texture
+  uint32_t mTextureIndex;
   SamplerType mSamplerType = SamplerType::LinearRepeat;
 };
 

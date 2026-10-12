@@ -38,7 +38,8 @@ NE_TEST_CASE("transform", "Transform Pure TRS & Basis Vector Correctness") {
 
   // Transform direction vector (should ignore translation, only apply scale & rotation)
   Vec3 transformedVector = t.transformVector(Vec3(1.0f, 0.0f, 0.0f));
-  NE_TEST_ASSERT(transformedVector.equals(Vec3(2.0f, 0.0f, 0.0f)), "transformVector must ignore translation and scale direction.");
+  NE_TEST_ASSERT(transformedVector.equals(Vec3(2.0f, 0.0f, 0.0f)),
+                 "transformVector must ignore translation and scale direction.");
 }
 
 NE_TEST_CASE("transform", "Transform Interpolation & Inverse") {
@@ -93,7 +94,8 @@ NE_TEST_CASE("transform", "TransformComponent Local Setters") {
   tc.setLocalPosition(Vec3(1.0f, 2.0f, 3.0f));
   tc.setLocalRotation(rot);
   tc.setLocalScale(Vec3(4.0f, 5.0f, 6.0f));
-  NE_TEST_ASSERT(tc.getLocal().equals(Transform(Vec3(1.0f, 2.0f, 3.0f), rot, Vec3(4.0f, 5.0f, 6.0f))), "Setters update the local transform.");
+  NE_TEST_ASSERT(tc.getLocal().equals(Transform(Vec3(1.0f, 2.0f, 3.0f), rot, Vec3(4.0f, 5.0f, 6.0f))),
+                 "Setters update the local transform.");
 
   tc.setLocal(Transform());
   NE_TEST_ASSERT(tc.getLocal().equals(Transform()), "setLocal replaces the whole local transform.");
@@ -125,7 +127,8 @@ NE_TEST_CASE("transform", "Transform Rigid Inverse (inverseNoScale)") {
   Vec3 pt(5.0f, -2.0f, 8.0f);
   Vec4 transformed = forwardMat * Vec4(pt.x, pt.y, pt.z, 1.0f);
   Vec4 restored = invMat * transformed;
-  NE_TEST_ASSERT(Vec3(restored.x, restored.y, restored.z).equals(pt, 1e-4f), "Transforming point through forward then inverse restores original.");
+  NE_TEST_ASSERT(Vec3(restored.x, restored.y, restored.z).equals(pt, 1e-4f),
+                 "Transforming point through forward then inverse restores original.");
 }
 
 NE_TEST_CASE("transform", "Transform Memory Layout & POD Properties") {
@@ -148,7 +151,8 @@ NE_TEST_CASE("transform", "Transform fromMatrix Decomposition") {
   Transform mirrored(Vec3(1.0f, 2.0f, 3.0f), Quat::fromEuler(math::radians(Vec3(0.0f, 0.0f, 45.0f))), Vec3(1.0f, -2.0f, 1.0f));
   Transform mirroredDecomposed = Transform::fromMatrix(mirrored.toMatrix());
   NE_TEST_ASSERT(mirroredDecomposed.scale.x < 0.0f, "Mirroring matrix must decompose to a negative X scale.");
-  NE_TEST_ASSERT(mirroredDecomposed.toMatrix().equals(mirrored.toMatrix(), 1e-4f), "Mirrored decomposition must reproduce the matrix.");
+  NE_TEST_ASSERT(mirroredDecomposed.toMatrix().equals(mirrored.toMatrix(), 1e-4f),
+                 "Mirrored decomposition must reproduce the matrix.");
 }
 
 } // namespace ne::test

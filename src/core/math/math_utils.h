@@ -53,9 +53,7 @@ constexpr T degrees(T iRad) {
   return iRad * static_cast<T>(kRadToDeg);
 }
 
-constexpr bool equals(float iA, float iB, float iTolerance = kKindaSmallNumber) {
-  return abs(iA - iB) <= iTolerance;
-}
+constexpr bool equals(float iA, float iB, float iTolerance = kKindaSmallNumber) { return abs(iA - iB) <= iTolerance; }
 
 constexpr bool equals(double iA, double iB, double iTolerance = static_cast<double>(kKindaSmallNumber)) {
   return abs(iA - iB) <= iTolerance;
@@ -103,4 +101,3 @@ T atan2(T iY, T iX) {
 }
 
 } // namespace ne::math
-

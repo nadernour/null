@@ -10,8 +10,7 @@
 // oUserData points at Instance::mHasValidationErrors
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT iMessageSeverity,
                                                     VkDebugUtilsMessageTypeFlagsEXT,
-                                                    [[maybe_unused]] const VkDebugUtilsMessengerCallbackDataEXT* iCallbackData,
-                                                    void* oUserData) {
+                                                    const VkDebugUtilsMessengerCallbackDataEXT* iCallbackData, void* oUserData) {
   if (iMessageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
     NE_WARN("validation layer: {}", iCallbackData->pMessage);
   } else if (iMessageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
@@ -30,14 +29,14 @@ Instance::Instance(const Config& iConfig) {
 }
 
 Instance::~Instance() {
-  NE_LOG("Destroying Vulkan Instance and deallocating resources...");
+  NE_VERBOSE("Destroying Vulkan Instance and deallocating resources...");
   if (mDebugMessenger != VK_NULL_HANDLE) {
     vkDestroyDebugUtilsMessengerEXT(mInstance, mDebugMessenger, nullptr);
   }
   // Checked after the messenger is gone so errors raised while tearing down the device are included
   NE_ASSERT(!mHasValidationErrors, "Vulkan validation layer reported errors (see log above)");
   vkDestroyInstance(mInstance, nullptr);
-  NE_LOG("Vulkan Instance destroyed successfully.");
+  NE_VERBOSE("Vulkan Instance destroyed successfully.");
 }
 
 void Instance::createInstance(const Config& iConfig) {

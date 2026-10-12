@@ -12,9 +12,9 @@ struct Transform {
 
   constexpr Transform() = default;
   constexpr Transform(const Vec3& iPosition, const Quat& iRotation = Quat::Identity, const Vec3& iScale = Vec3::One)
-    : position(iPosition), rotation(iRotation), scale(iScale) {}
+      : position(iPosition), rotation(iRotation), scale(iScale) {}
   constexpr Transform(const Quat& iRotation, const Vec3& iPosition, const Vec3& iScale = Vec3::One)
-    : position(iPosition), rotation(iRotation), scale(iScale) {}
+      : position(iPosition), rotation(iRotation), scale(iScale) {}
 
   // T * R * S
   constexpr Mat4 toMatrix() const {
@@ -53,17 +53,11 @@ struct Transform {
     return Transform(invRotation, invTranslation, scale);
   }
 
-  Vec3 getForward() const {
-    return rotation * Vec3::Forward;
-  }
+  Vec3 getForward() const { return rotation * Vec3::Forward; }
 
-  Vec3 getLeft() const {
-    return rotation * Vec3::Left;
-  }
+  Vec3 getLeft() const { return rotation * Vec3::Left; }
 
-  Vec3 getUp() const {
-    return rotation * Vec3::Up;
-  }
+  Vec3 getUp() const { return rotation * Vec3::Up; }
 
   std::string toString() const {
     char buf[256];
@@ -72,13 +66,9 @@ struct Transform {
     return std::string(buf);
   }
 
-  Vec3 transformPoint(const Vec3& iPoint) const {
-    return position + (rotation * (scale * iPoint));
-  }
+  Vec3 transformPoint(const Vec3& iPoint) const { return position + (rotation * (scale * iPoint)); }
 
-  Vec3 transformVector(const Vec3& iVector) const {
-    return rotation * (scale * iVector);
-  }
+  Vec3 transformVector(const Vec3& iVector) const { return rotation * (scale * iVector); }
 
   Transform inverse() const {
     Quat invRotation = rotation.conjugate();
@@ -88,13 +78,9 @@ struct Transform {
   }
 
   // Roll (X), pitch (Y), yaw (Z) in radians
-  void setEulerAngles(const Vec3& iEulerRadians) {
-    rotation = Quat::fromEuler(iEulerRadians);
-  }
+  void setEulerAngles(const Vec3& iEulerRadians) { rotation = Quat::fromEuler(iEulerRadians); }
 
-  Vec3 getEulerAngles() const {
-    return rotation.toEuler();
-  }
+  Vec3 getEulerAngles() const { return rotation.toEuler(); }
 
   static Transform slerp(const Transform& iA, const Transform& iB, float iT) {
     Transform result;
@@ -113,8 +99,7 @@ struct Transform {
   }
 
   inline bool equals(const Transform& iOther, float iTolerance = math::kKindaSmallNumber) const {
-    return position.equals(iOther.position, iTolerance) &&
-           rotation.equals(iOther.rotation, iTolerance) &&
+    return position.equals(iOther.position, iTolerance) && rotation.equals(iOther.rotation, iTolerance) &&
            scale.equals(iOther.scale, iTolerance);
   }
 };

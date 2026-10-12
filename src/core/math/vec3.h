@@ -15,21 +15,13 @@ struct Vec3 {
   constexpr Vec3(float iX, float iY, float iZ) : x(iX), y(iY), z(iZ) {}
   constexpr Vec3(const Vec2& iXY, float iZ) : x(iXY.x), y(iXY.y), z(iZ) {}
 
-  constexpr float operator[](size_t iIndex) const {
-    return (&x)[iIndex];
-  }
+  constexpr float operator[](size_t iIndex) const { return (&x)[iIndex]; }
 
-  constexpr float& operator[](size_t iIndex) {
-    return (&x)[iIndex];
-  }
+  constexpr float& operator[](size_t iIndex) { return (&x)[iIndex]; }
 
-  constexpr const float* data() const {
-    return &x;
-  }
+  constexpr const float* data() const { return &x; }
 
-  constexpr float* data() {
-    return &x;
-  }
+  constexpr float* data() { return &x; }
 
   // World basis: +X forward, +Y left, +Z up
   static const Vec3 Forward;
@@ -38,21 +30,13 @@ struct Vec3 {
   static const Vec3 Zero;
   static const Vec3 One;
 
-  inline float length() const {
-    return math::sqrt(x * x + y * y + z * z);
-  }
+  inline float length() const { return math::sqrt(x * x + y * y + z * z); }
 
-  inline float lengthSquared() const {
-    return x * x + y * y + z * z;
-  }
+  inline float lengthSquared() const { return x * x + y * y + z * z; }
 
-  inline float size() const {
-    return length();
-  }
+  inline float size() const { return length(); }
 
-  inline float sizeSquared() const {
-    return lengthSquared();
-  }
+  inline float sizeSquared() const { return lengthSquared(); }
 
   inline bool normalize(float iTolerance = math::kSmallNumber) {
     float lenSq = lengthSquared();
@@ -93,68 +77,41 @@ struct Vec3 {
     return std::string(buf);
   }
 
-  constexpr float dot(const Vec3& iOther) const {
-    return x * iOther.x + y * iOther.y + z * iOther.z;
-  }
+  constexpr float dot(const Vec3& iOther) const { return x * iOther.x + y * iOther.y + z * iOther.z; }
 
   constexpr bool equals(const Vec3& iOther, float iTolerance = math::kKindaSmallNumber) const {
-    return math::abs(x - iOther.x) <= iTolerance &&
-           math::abs(y - iOther.y) <= iTolerance &&
+    return math::abs(x - iOther.x) <= iTolerance && math::abs(y - iOther.y) <= iTolerance &&
            math::abs(z - iOther.z) <= iTolerance;
   }
 
   constexpr Vec3 cross(const Vec3& iOther) const {
-    return Vec3(
-      y * iOther.z - z * iOther.y,
-      z * iOther.x - x * iOther.z,
-      x * iOther.y - y * iOther.x
-    );
+    return Vec3(y * iOther.z - z * iOther.y, z * iOther.x - x * iOther.z, x * iOther.y - y * iOther.x);
   }
 
-  constexpr Vec3 operator+(const Vec3& iV) const {
-    return Vec3(x + iV.x, y + iV.y, z + iV.z);
-  }
+  constexpr Vec3 operator+(const Vec3& iV) const { return Vec3(x + iV.x, y + iV.y, z + iV.z); }
 
-  constexpr Vec3 operator-(const Vec3& iV) const {
-    return Vec3(x - iV.x, y - iV.y, z - iV.z);
-  }
+  constexpr Vec3 operator-(const Vec3& iV) const { return Vec3(x - iV.x, y - iV.y, z - iV.z); }
 
-  constexpr Vec3 operator*(const Vec3& iV) const {
-    return Vec3(x * iV.x, y * iV.y, z * iV.z);
-  }
+  constexpr Vec3 operator*(const Vec3& iV) const { return Vec3(x * iV.x, y * iV.y, z * iV.z); }
 
-  constexpr Vec3 operator/(const Vec3& iV) const {
-    return Vec3(x / iV.x, y / iV.y, z / iV.z);
-  }
+  constexpr Vec3 operator/(const Vec3& iV) const { return Vec3(x / iV.x, y / iV.y, z / iV.z); }
 
-  constexpr Vec3 operator+(float iBias) const {
-    return Vec3(x + iBias, y + iBias, z + iBias);
-  }
+  constexpr Vec3 operator+(float iBias) const { return Vec3(x + iBias, y + iBias, z + iBias); }
 
-  constexpr Vec3 operator-(float iBias) const {
-    return Vec3(x - iBias, y - iBias, z - iBias);
-  }
+  constexpr Vec3 operator-(float iBias) const { return Vec3(x - iBias, y - iBias, z - iBias); }
 
-  constexpr Vec3 operator*(float iScale) const {
-    return Vec3(x * iScale, y * iScale, z * iScale);
-  }
+  constexpr Vec3 operator*(float iScale) const { return Vec3(x * iScale, y * iScale, z * iScale); }
 
   constexpr Vec3 operator/(float iScale) const {
     float inv = 1.0f / iScale;
     return Vec3(x * inv, y * inv, z * inv);
   }
 
-  constexpr Vec3 operator-() const {
-    return Vec3(-x, -y, -z);
-  }
+  constexpr Vec3 operator-() const { return Vec3(-x, -y, -z); }
 
-  constexpr bool operator==(const Vec3& iV) const {
-    return x == iV.x && y == iV.y && z == iV.z;
-  }
+  constexpr bool operator==(const Vec3& iV) const { return x == iV.x && y == iV.y && z == iV.z; }
 
-  constexpr bool operator!=(const Vec3& iV) const {
-    return !(*this == iV);
-  }
+  constexpr bool operator!=(const Vec3& iV) const { return !(*this == iV); }
 
   constexpr Vec3& operator+=(const Vec3& iV) {
     x += iV.x;
@@ -220,13 +177,9 @@ inline const Vec3 Vec3::Up{0.0f, 0.0f, 1.0f};
 inline const Vec3 Vec3::Zero{0.0f, 0.0f, 0.0f};
 inline const Vec3 Vec3::One{1.0f, 1.0f, 1.0f};
 
-constexpr Vec3 operator*(float iScale, const Vec3& iV) {
-  return Vec3(iV.x * iScale, iV.y * iScale, iV.z * iScale);
-}
+constexpr Vec3 operator*(float iScale, const Vec3& iV) { return Vec3(iV.x * iScale, iV.y * iScale, iV.z * iScale); }
 
-constexpr Vec3 operator+(float iBias, const Vec3& iV) {
-  return Vec3(iV.x + iBias, iV.y + iBias, iV.z + iBias);
-}
+constexpr Vec3 operator+(float iBias, const Vec3& iV) { return Vec3(iV.x + iBias, iV.y + iBias, iV.z + iBias); }
 
 struct IVec3 {
   int x{0};
@@ -251,7 +204,8 @@ struct UVec3 {
 namespace math {
 
 constexpr Vec3 clamp(const Vec3& iV, const Vec3& iMinVal, const Vec3& iMaxVal) {
-  return Vec3(math::clamp(iV.x, iMinVal.x, iMaxVal.x), math::clamp(iV.y, iMinVal.y, iMaxVal.y), math::clamp(iV.z, iMinVal.z, iMaxVal.z));
+  return Vec3(math::clamp(iV.x, iMinVal.x, iMaxVal.x), math::clamp(iV.y, iMinVal.y, iMaxVal.y),
+              math::clamp(iV.z, iMinVal.z, iMaxVal.z));
 }
 
 constexpr Vec3 min(const Vec3& iA, const Vec3& iB) {
@@ -262,21 +216,13 @@ constexpr Vec3 max(const Vec3& iA, const Vec3& iB) {
   return Vec3(math::max(iA.x, iB.x), math::max(iA.y, iB.y), math::max(iA.z, iB.z));
 }
 
-constexpr Vec3 abs(const Vec3& iV) {
-  return Vec3(math::abs(iV.x), math::abs(iV.y), math::abs(iV.z));
-}
+constexpr Vec3 abs(const Vec3& iV) { return Vec3(math::abs(iV.x), math::abs(iV.y), math::abs(iV.z)); }
 
-constexpr Vec3 radians(const Vec3& iDeg) {
-  return Vec3(math::radians(iDeg.x), math::radians(iDeg.y), math::radians(iDeg.z));
-}
+constexpr Vec3 radians(const Vec3& iDeg) { return Vec3(math::radians(iDeg.x), math::radians(iDeg.y), math::radians(iDeg.z)); }
 
-constexpr Vec3 degrees(const Vec3& iRad) {
-  return Vec3(math::degrees(iRad.x), math::degrees(iRad.y), math::degrees(iRad.z));
-}
+constexpr Vec3 degrees(const Vec3& iRad) { return Vec3(math::degrees(iRad.x), math::degrees(iRad.y), math::degrees(iRad.z)); }
 
-constexpr Vec3 reflect(const Vec3& iV, const Vec3& iNormal) {
-  return iV - iNormal * (2.0f * iV.dot(iNormal));
-}
+constexpr Vec3 reflect(const Vec3& iV, const Vec3& iNormal) { return iV - iNormal * (2.0f * iV.dot(iNormal)); }
 
 inline Vec3 refract(const Vec3& iV, const Vec3& iNormal, float iEta) {
   float dotVal = iV.dot(iNormal);

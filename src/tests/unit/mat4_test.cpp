@@ -20,12 +20,7 @@ NE_TEST_CASE("mat4", "Mat4 Identity & Basic Operations") {
 }
 
 NE_TEST_CASE("mat4", "Mat4 Matrix-Vector & Matrix-Matrix Multiplication") {
-  Mat4 a(
-    Vec4(1.0f, 2.0f, 0.0f, 0.0f),
-    Vec4(0.0f, 1.0f, 0.0f, 0.0f),
-    Vec4(0.0f, 0.0f, 1.0f, 0.0f),
-    Vec4(3.0f, 4.0f, 5.0f, 1.0f)
-  );
+  Mat4 a(Vec4(1.0f, 2.0f, 0.0f, 0.0f), Vec4(0.0f, 1.0f, 0.0f, 0.0f), Vec4(0.0f, 0.0f, 1.0f, 0.0f), Vec4(3.0f, 4.0f, 5.0f, 1.0f));
 
   Vec4 v(2.0f, 1.0f, 0.0f, 1.0f);
   Vec4 transformed = a * v;
@@ -40,12 +35,8 @@ NE_TEST_CASE("mat4", "Mat4 Matrix-Vector & Matrix-Matrix Multiplication") {
 }
 
 NE_TEST_CASE("mat4", "Mat4 Transposition") {
-  Mat4 m(
-    Vec4(1.0f, 2.0f, 3.0f, 4.0f),
-    Vec4(5.0f, 6.0f, 7.0f, 8.0f),
-    Vec4(9.0f, 10.0f, 11.0f, 12.0f),
-    Vec4(13.0f, 14.0f, 15.0f, 16.0f)
-  );
+  Mat4 m(Vec4(1.0f, 2.0f, 3.0f, 4.0f), Vec4(5.0f, 6.0f, 7.0f, 8.0f), Vec4(9.0f, 10.0f, 11.0f, 12.0f),
+         Vec4(13.0f, 14.0f, 15.0f, 16.0f));
 
   Mat4 mT = m.transposed();
   for (int c = 0; c < 4; ++c) {
@@ -58,12 +49,7 @@ NE_TEST_CASE("mat4", "Mat4 Transposition") {
 }
 
 NE_TEST_CASE("mat4", "Mat4 Inversion & Identity Invariant") {
-  Mat4 m(
-    Vec4(2.0f, 0.0f, 0.0f, 0.0f),
-    Vec4(0.0f, 3.0f, 0.0f, 0.0f),
-    Vec4(0.0f, 0.0f, 4.0f, 0.0f),
-    Vec4(5.0f, 6.0f, 7.0f, 1.0f)
-  );
+  Mat4 m(Vec4(2.0f, 0.0f, 0.0f, 0.0f), Vec4(0.0f, 3.0f, 0.0f, 0.0f), Vec4(0.0f, 0.0f, 4.0f, 0.0f), Vec4(5.0f, 6.0f, 7.0f, 1.0f));
 
   Mat4 invM = m.inversed();
 
@@ -78,12 +64,8 @@ NE_TEST_CASE("mat4", "Mat4 Memory Layout & POD Properties") {
   static_assert(sizeof(Mat4) == 64, "Mat4 must be 64 bytes in size.");
   static_assert(std::is_standard_layout_v<Mat4>, "Mat4 must be standard layout.");
 
-  constexpr Mat4 constDiag(
-    Vec4(2.0f, 0.0f, 0.0f, 0.0f),
-    Vec4(0.0f, 2.0f, 0.0f, 0.0f),
-    Vec4(0.0f, 0.0f, 2.0f, 0.0f),
-    Vec4(0.0f, 0.0f, 0.0f, 1.0f)
-  );
+  constexpr Mat4 constDiag(Vec4(2.0f, 0.0f, 0.0f, 0.0f), Vec4(0.0f, 2.0f, 0.0f, 0.0f), Vec4(0.0f, 0.0f, 2.0f, 0.0f),
+                           Vec4(0.0f, 0.0f, 0.0f, 1.0f));
   constexpr Mat4 constInv = constDiag.inversed();
   static_assert(constInv.cols[0].x == 0.5f, "Mat4 constexpr inverse test.");
   constexpr Mat4 constT = constDiag.transposed();

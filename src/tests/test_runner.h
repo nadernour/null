@@ -56,23 +56,23 @@ int runAllTests(Application& ioApp);
 #define NE_CONCAT_IMPL(a, b) a##b
 #define NE_CONCAT(a, b) NE_CONCAT_IMPL(a, b)
 
-#define NE_TEST_CASE(SuiteName, TestName)                                                                                             \
-  static void NE_CONCAT(ne_test_func_, __LINE__)(::ne::test::TestContext & ioContext);                                                \
-  static ::ne::test::TestRegistrar NE_CONCAT(ne_test_reg_, __LINE__)(SuiteName, TestName, __FILE__, __LINE__,                         \
-                                                                     &NE_CONCAT(ne_test_func_, __LINE__));                            \
+#define NE_TEST_CASE(SuiteName, TestName)                                                                                        \
+  static void NE_CONCAT(ne_test_func_, __LINE__)(::ne::test::TestContext & ioContext);                                           \
+  static ::ne::test::TestRegistrar NE_CONCAT(ne_test_reg_, __LINE__)(SuiteName, TestName, __FILE__, __LINE__,                    \
+                                                                     &NE_CONCAT(ne_test_func_, __LINE__));                       \
   static void NE_CONCAT(ne_test_func_, __LINE__)(::ne::test::TestContext & ioContext)
 #endif
 
 // you can only use it inside NE_TEST_CASE
-#define NE_TEST_ASSERT(condition, ...)                                                                                                \
-  do {                                                                                                                                \
-    if (condition) {                                                                                                                  \
-      ioContext.passes++;                                                                                                             \
-    } else {                                                                                                                          \
-      ioContext.failures++;                                                                                                           \
-      std::string user_msg;                                                                                                           \
-      __VA_OPT__(user_msg = std::format(__VA_ARGS__);)                                                                                \
-      ne::Logger::log(ne::Logger::LogType::Error, "[TEST FAIL] {}\n  Condition: {}\n  File: {}\n  Line: {}", user_msg,       \
-                      #condition, __FILE__, __LINE__);                                                                                \
-    }                                                                                                                                 \
+#define NE_TEST_ASSERT(condition, ...)                                                                                           \
+  do {                                                                                                                           \
+    if (condition) {                                                                                                             \
+      ioContext.passes++;                                                                                                        \
+    } else {                                                                                                                     \
+      ioContext.failures++;                                                                                                      \
+      std::string user_msg;                                                                                                      \
+      __VA_OPT__(user_msg = std::format(__VA_ARGS__);)                                                                           \
+      ne::Logger::log(ne::Logger::LogLevel::Error, "[TEST FAIL] {}\n  Condition: {}\n  File: {}\n  Line: {}", user_msg,          \
+                      #condition, __FILE__, __LINE__);                                                                           \
+    }                                                                                                                            \
   } while (false)

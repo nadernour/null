@@ -5,21 +5,18 @@
 #include "core/logger.h"
 
 #include <volk/volk.h>
-#ifndef NE_BUILD_SHIPPING
 #include <vulkan/vk_enum_string_helper.h>
-#endif
 
 #include <cstdlib>
 #include <string>
 #include <type_traits>
 
-#ifndef NE_BUILD_SHIPPING
-
+// Logs the failed call before aborting in every build, so a headless run that dies leaves a reason behind
 #define VK_CHECK(fn)                                                                                                             \
   do {                                                                                                                           \
     VkResult vkCheckResult = (fn);                                                                                               \
     if (vkCheckResult != VK_SUCCESS) {                                                                                           \
-      ne::Logger::log(ne::Logger::LogType::Fatal,                                                                                \
+      ne::Logger::log(ne::Logger::LogLevel::Fatal,                                                                               \
                       "VULKAN ERROR\n"                                                                                           \
                       "  Function: {}\n"                                                                                         \
                       "  Result: {} ({})\n"                                                                                      \
@@ -30,18 +27,6 @@
       std::abort();                                                                                                              \
     }                                                                                                                            \
   } while (false)
-
-#else
-
-#define VK_CHECK(fn)                                                                                                             \
-  do {                                                                                                                           \
-    VkResult vkCheckResult = (fn);                                                                                               \
-    if (vkCheckResult != VK_SUCCESS) {                                                                                           \
-      std::abort();                                                                                                              \
-    }                                                                                                                            \
-  } while (false)
-
-#endif
 
 namespace ne::vk_utils {
 

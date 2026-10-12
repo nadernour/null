@@ -26,7 +26,9 @@ const uint8_t* getLevelPixels(const ImageData& iImage, uint32_t iLevel) {
   return iImage.pixels.data() + offset;
 }
 
-bool isWithinOne(uint8_t iValue, uint8_t iExpected) { return math::abs(static_cast<int>(iValue) - static_cast<int>(iExpected)) <= 1; }
+bool isWithinOne(uint8_t iValue, uint8_t iExpected) {
+  return math::abs(static_cast<int>(iValue) - static_cast<int>(iExpected)) <= 1;
+}
 
 } // namespace
 
@@ -49,7 +51,8 @@ NE_TEST_CASE("image", "Mip Chain Layout") {
   NE_TEST_ASSERT(chain.mipLevels == 3, "5x3 chains to 2x1 and 1x1, got {} levels.", chain.mipLevels);
   NE_TEST_ASSERT(chain.getLevelSizeInBytes(1) == 2 * 1 * 4, "Level 1 is 2x1.");
   NE_TEST_ASSERT(chain.getLevelSizeInBytes(2) == 1 * 1 * 4, "Level 2 is 1x1.");
-  NE_TEST_ASSERT(chain.getSizeInBytes() == (15 + 2 + 1) * 4, "Levels are packed back to back, got {} bytes.", chain.getSizeInBytes());
+  NE_TEST_ASSERT(chain.getSizeInBytes() == (15 + 2 + 1) * 4, "Levels are packed back to back, got {} bytes.",
+                 chain.getSizeInBytes());
   NE_TEST_ASSERT(std::memcmp(chain.pixels.data(), image.pixels.data(), texels.size()) == 0, "Level 0 is copied unchanged.");
 }
 

@@ -38,7 +38,7 @@ void Input::init(Window* iWindow) {
   sState.firstMouseAfterCapture = false;
   resetState();
 
-  NE_LOG("Input subsystem initialized successfully.");
+  NE_VERBOSE("Input subsystem initialized successfully.");
 }
 
 void Input::update() {

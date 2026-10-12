@@ -8,7 +8,9 @@ namespace ne::test {
 NE_TEST_CASE("quat", "Quat Initialization & Identity") {
   Quat defaultQ;
   NE_TEST_ASSERT(defaultQ.equals(Quat::Identity), "Default Quat constructor must equal Quat::Identity (x=0, y=0, z=0, w=1).");
-  NE_TEST_ASSERT(math::equals(defaultQ.x, 0.0f) && math::equals(defaultQ.y, 0.0f) && math::equals(defaultQ.z, 0.0f) && math::equals(defaultQ.w, 1.0f), "Default Quat components check.");
+  NE_TEST_ASSERT(math::equals(defaultQ.x, 0.0f) && math::equals(defaultQ.y, 0.0f) && math::equals(defaultQ.z, 0.0f) &&
+                     math::equals(defaultQ.w, 1.0f),
+                 "Default Quat components check.");
 
   Quat customQ(0.0f, 0.7071f, 0.0f, 0.7071f);
   NE_TEST_ASSERT(math::equals(customQ.y, 0.7071f) && math::equals(customQ.w, 0.7071f), "Custom Quat constructor components.");
@@ -101,7 +103,8 @@ NE_TEST_CASE("quat", "Quat Multiplication & Inverse") {
   Quat combined = q1 * q2;
   Quat expected90 = Quat::angleAxis(math::radians(90.0f), Vec3::Up);
 
-  NE_TEST_ASSERT(combined.equals(expected90, 1e-4f), "Multiplying two 45-deg yaw quaternions must yield a 90-deg yaw quaternion.");
+  NE_TEST_ASSERT(combined.equals(expected90, 1e-4f),
+                 "Multiplying two 45-deg yaw quaternions must yield a 90-deg yaw quaternion.");
 
   Quat qInv = q1.inverse();
   Quat identityCheck = q1 * qInv;

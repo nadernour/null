@@ -51,8 +51,9 @@ The sections below group work by area; their order is not fixed. The open decisi
 - [x] **Up-to-Date Third-Party Libraries**: GLFW, Dear ImGui, cgltf, and stb updated to their latest versions, with each library's source and version recorded.
 - [x] **Consistent Naming**: Types with private state are `class`es with `m`-prefixed members; plain data types (all fields public, nothing to protect) are `struct`s with plain camelCase fields. Every parameter, lambdas included, has an `i` / `o` / `io` prefix.
 - [x] **Mesh Index Validation**: A mesh whose indices run past its vertices is rejected with a logged reason instead of making the GPU read another mesh's memory: `ResourceManager::createMesh` runs `MeshData::validate` on every mesh, and glTF files also pass `cgltf_validate`.
-- [ ] **Logging in Shipping Builds**: Shipping keeps its log output, and a failed Vulkan call logs what failed before aborting, so a headless run that dies leaves a reason behind.
-- [ ] **Bad Input Is an Error, Not an Assert**: Asserts catch only engine bugs; bad input is rejected with a logged reason in every build. Left: glTF accessor reads, geometry pool overflow (until Reusable Geometry Pools grows the pools), and the bindless texture limit.
+- [x] **Logging in Shipping Builds**: Shipping keeps its log output, and a failed Vulkan call logs what failed before aborting, so a headless run that dies leaves a reason behind.
+- [x] **Bad Input Is an Error, Not an Assert**: Asserts catch only engine bugs; bad input is rejected with a logged reason in every build: glTF files that require an unsupported extension, mistyped or unreadable attributes, meshes that don't fit the geometry pools (until Reusable Geometry Pools grows them), and textures past the GPU's size limit or the bindless table.
+- [x] **Log Levels**: `verbose`, `log`, `warn`, `error`, and `fatal`; verbose lines (every allocation and subsystem step) show only with `--verbose`, so a normal run prints a few lines.
 - [ ] **Drift-Free Clock**: Total time accumulates in integer nanoseconds, so long runs don't drift.
 - [ ] **In-App Log Panel**: Recent log lines in an ImGui window, filtered by level at runtime.
 
@@ -143,8 +144,4 @@ cmake --build --preset debug && ./build/debug/bin/null_engine --run-tests
 
 > **Packaged Builds**: Configure with `-DNE_PACKAGED_BUILD=ON` to copy assets alongside the output binary.
 
----
-
-## 📄 License
-
-This project is licensed under the MIT License.
+> **Verbose Logging**: Pass `--verbose` (or `-v`) to also log every allocation and subsystem step; it is set at startup for the whole run.

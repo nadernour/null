@@ -90,49 +90,30 @@ struct Mat4 {
     const float invDet = 1.0f / det;
 
     Mat4 res(1.0f);
-    res.cols[0] = Vec4(
-      ( m11 * c5 - m12 * c4 + m13 * c3) * invDet,
-      (-m01 * c5 + m02 * c4 - m03 * c3) * invDet,
-      ( m31 * s5 - m32 * s4 + m33 * s3) * invDet,
-      (-m21 * s5 + m22 * s4 - m23 * s3) * invDet
-    );
-    res.cols[1] = Vec4(
-      (-m10 * c5 + m12 * c2 - m13 * c1) * invDet,
-      ( m00 * c5 - m02 * c2 + m03 * c1) * invDet,
-      (-m30 * s5 + m32 * s2 - m33 * s1) * invDet,
-      ( m20 * s5 - m22 * s2 + m23 * s1) * invDet
-    );
-    res.cols[2] = Vec4(
-      ( m10 * c4 - m11 * c2 + m13 * c0) * invDet,
-      (-m00 * c4 + m01 * c2 - m03 * c0) * invDet,
-      ( m30 * s4 - m31 * s2 + m33 * s0) * invDet,
-      (-m20 * s4 + m21 * s2 - m23 * s0) * invDet
-    );
-    res.cols[3] = Vec4(
-      (-m10 * c3 + m11 * c1 - m12 * c0) * invDet,
-      ( m00 * c3 - m01 * c1 + m02 * c0) * invDet,
-      (-m30 * s3 + m31 * s1 - m32 * s0) * invDet,
-      ( m20 * s3 - m21 * s1 + m22 * s0) * invDet
-    );
+    res.cols[0] = Vec4((m11 * c5 - m12 * c4 + m13 * c3) * invDet, (-m01 * c5 + m02 * c4 - m03 * c3) * invDet,
+                       (m31 * s5 - m32 * s4 + m33 * s3) * invDet, (-m21 * s5 + m22 * s4 - m23 * s3) * invDet);
+    res.cols[1] = Vec4((-m10 * c5 + m12 * c2 - m13 * c1) * invDet, (m00 * c5 - m02 * c2 + m03 * c1) * invDet,
+                       (-m30 * s5 + m32 * s2 - m33 * s1) * invDet, (m20 * s5 - m22 * s2 + m23 * s1) * invDet);
+    res.cols[2] = Vec4((m10 * c4 - m11 * c2 + m13 * c0) * invDet, (-m00 * c4 + m01 * c2 - m03 * c0) * invDet,
+                       (m30 * s4 - m31 * s2 + m33 * s0) * invDet, (-m20 * s4 + m21 * s2 - m23 * s0) * invDet);
+    res.cols[3] = Vec4((-m10 * c3 + m11 * c1 - m12 * c0) * invDet, (m00 * c3 - m01 * c1 + m02 * c0) * invDet,
+                       (-m30 * s3 + m31 * s1 - m32 * s0) * invDet, (m20 * s3 - m21 * s1 + m22 * s0) * invDet);
     return res;
   }
 
   inline bool equals(const Mat4& iOther, float iTolerance = math::kKindaSmallNumber) const {
-    return cols[0].equals(iOther.cols[0], iTolerance) &&
-           cols[1].equals(iOther.cols[1], iTolerance) &&
-           cols[2].equals(iOther.cols[2], iTolerance) &&
-           cols[3].equals(iOther.cols[3], iTolerance);
+    return cols[0].equals(iOther.cols[0], iTolerance) && cols[1].equals(iOther.cols[1], iTolerance) &&
+           cols[2].equals(iOther.cols[2], iTolerance) && cols[3].equals(iOther.cols[3], iTolerance);
   }
 
   inline std::string toString() const {
     char buf[256];
     const auto& m = *this;
     std::snprintf(buf, sizeof(buf),
-      "Mat4(\n  [%.3f, %.3f, %.3f, %.3f]\n  [%.3f, %.3f, %.3f, %.3f]\n  [%.3f, %.3f, %.3f, %.3f]\n  [%.3f, %.3f, %.3f, %.3f]\n)",
-      m[0][0], m[1][0], m[2][0], m[3][0],
-      m[0][1], m[1][1], m[2][1], m[3][1],
-      m[0][2], m[1][2], m[2][2], m[3][2],
-      m[0][3], m[1][3], m[2][3], m[3][3]);
+                  "Mat4(\n  [%.3f, %.3f, %.3f, %.3f]\n  [%.3f, %.3f, %.3f, %.3f]\n  [%.3f, %.3f, %.3f, %.3f]\n  [%.3f, %.3f, "
+                  "%.3f, %.3f]\n)",
+                  m[0][0], m[1][0], m[2][0], m[3][0], m[0][1], m[1][1], m[2][1], m[3][1], m[0][2], m[1][2], m[2][2], m[3][2],
+                  m[0][3], m[1][3], m[2][3], m[3][3]);
     return std::string(buf);
   }
 };

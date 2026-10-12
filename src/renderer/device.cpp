@@ -39,7 +39,7 @@ Device::Device(Instance* iInstance, const Config& iConfig) {
 }
 
 Device::~Device() {
-  NE_LOG("Destroying Vulkan Device and deallocating resources...");
+  NE_VERBOSE("Destroying Vulkan Device and deallocating resources...");
 
   if (mOneTimeCommandPool != VK_NULL_HANDLE) {
     vkDestroyCommandPool(mDevice, mOneTimeCommandPool, nullptr);
@@ -48,7 +48,7 @@ Device::~Device() {
   mMemoryAllocator.reset();
 
   vkDestroyDevice(mDevice, nullptr);
-  NE_LOG("Vulkan Device destroyed successfully.");
+  NE_VERBOSE("Vulkan Device destroyed successfully.");
 }
 
 void Device::pickPhysicalDevice(VkInstance iInstance, const Config& iConfig) {
@@ -175,7 +175,17 @@ void Device::pickPhysicalDevice(VkInstance iInstance, const Config& iConfig) {
 
   NE_ASSERT(mPhysicalDevice != nullptr, "Couldn't find suitable physical device.");
   vkGetPhysicalDeviceMemoryProperties(mPhysicalDevice, &mPhysicalDeviceMemoryProperties);
-  NE_LOG("Selected physical device: {}", mPhysicalDeviceProperties.deviceName);
+
+  VkPhysicalDeviceDriverProperties driverProperties{};
+  driverProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
+  VkPhysicalDeviceProperties2 properties2{};
+  properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+  properties2.pNext = &driverProperties;
+  vkGetPhysicalDeviceProperties2(mPhysicalDevice, &properties2);
+  const uint32_t apiVersion = mPhysicalDeviceProperties.apiVersion;
+  NE_LOG("Selected GPU: {} (driver: {} {}, Vulkan {}.{}.{})", mPhysicalDeviceProperties.deviceName, driverProperties.driverName,
+         driverProperties.driverInfo, VK_API_VERSION_MAJOR(apiVersion), VK_API_VERSION_MINOR(apiVersion),
+         VK_API_VERSION_PATCH(apiVersion));
 }
 
 void Device::createLogicalDevice(const Config& iConfig) {
@@ -224,7 +234,7 @@ void Device::createLogicalDevice(const Config& iConfig) {
 
   vkGetDeviceQueue(mDevice, mPhysicalDeviceQueueIndex, 0, &mQueue);
   vk_utils::setDebugObjectName(mDevice, mQueue, "Main_GraphicsQueue");
-  NE_LOG("Vulkan logical device created successfully.");
+  NE_VERBOSE("Vulkan logical device created successfully.");
 }
 
 void Device::createOneTimeCommandResources() {

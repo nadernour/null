@@ -10,13 +10,9 @@ TestRegistry& TestRegistry::get() {
   return instance;
 }
 
-void TestRegistry::registerTest(const TestCase& iTestCase) {
-  mTests.push_back(iTestCase);
-}
+void TestRegistry::registerTest(const TestCase& iTestCase) { mTests.push_back(iTestCase); }
 
-const std::vector<TestCase>& TestRegistry::getTests() const {
-  return mTests;
-}
+const std::vector<TestCase>& TestRegistry::getTests() const { return mTests; }
 
 int TestRegistry::runAll(Application& ioApp) {
   NE_LOG("==================================================");
@@ -33,7 +29,7 @@ int TestRegistry::runAll(Application& ioApp) {
     NE_LOG("[RUNNING SUITE] {}", suiteName);
     TestContext suiteCtx{.app = &ioApp};
     for (const auto* testCase : tests) {
-      NE_LOG("  [RUNNING TEST] {}", testCase->testName);
+      NE_VERBOSE("  [RUNNING TEST] {}", testCase->testName);
       testCase->func(suiteCtx);
     }
     totalCtx.passes += suiteCtx.passes;
@@ -58,11 +54,8 @@ int TestRegistry::runAll(Application& ioApp) {
   }
 }
 
-int runAllTests(Application& ioApp) {
-  return TestRegistry::get().runAll(ioApp);
-}
+int runAllTests(Application& ioApp) { return TestRegistry::get().runAll(ioApp); }
 
 } // namespace ne::test
 
 #endif
-

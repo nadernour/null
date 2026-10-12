@@ -24,19 +24,20 @@ constexpr size_t kKeptLogFiles = 10;
 constexpr const char* kLogFilePrefix = "null_";
 constexpr const char* kResetColor = "\x1b[0m";
 
-struct LogTypeStyle {
+struct LogLevelStyle {
   const char* name;
   const char* color; // ANSI escape code
 };
 
-// Indexed by LogType
-constexpr LogTypeStyle kLogTypeStyles[] = {
+// Indexed by LogLevel
+constexpr LogLevelStyle kLogLevelStyles[] = {
+    {"verbose", "\x1b[90m"}, // Gray
     {"log", "\x1b[32m"},     // Green
-    {"warning", "\x1b[33m"}, // Yellow
+    {"warn", "\x1b[33m"},    // Yellow
     {"error", "\x1b[31m"},   // Red
     {"fatal", "\x1b[1;31m"}, // Bold red
 };
-static_assert(std::size(kLogTypeStyles) == static_cast<size_t>(Logger::LogType::Fatal) + 1);
+static_assert(std::size(kLogLevelStyles) == static_cast<size_t>(Logger::LogLevel::Fatal) + 1);
 
 // Wall-clock time in the machine's time zone, or UTC when none is set
 std::chrono::local_seconds localTimeNow() {
@@ -79,6 +80,7 @@ std::ofstream openLogFile() {
 }
 
 struct LogState {
+  bool verbose = false; // Only written by init(), before other threads exist
   std::mutex mutex;
   std::ofstream file = openLogFile(); // Writes do nothing if it failed to open
   bool colorStdout = supportsColor(false);
@@ -93,12 +95,16 @@ LogState& getLogState() {
 
 } // namespace
 
+void Logger::init(bool iVerbose) { getLogState().verbose = iVerbose; }
+
+bool Logger::isVerbose() { return getLogState().verbose; }
+
 // Every line is flushed, so nothing is lost on a crash or abort()
-void Logger::write(LogType iLogType, const std::string& iMessage) {
+void Logger::write(LogLevel iLevel, const std::string& iMessage) {
   LogState& state = getLogState();
-  const LogTypeStyle& style = kLogTypeStyles[static_cast<size_t>(iLogType)];
+  const LogLevelStyle& style = kLogLevelStyles[static_cast<size_t>(iLevel)];
   const std::chrono::local_seconds now = localTimeNow();
-  const bool toStdout = iLogType == LogType::Log;
+  const bool toStdout = iLevel <= LogLevel::Log;
   const bool useColor = toStdout ? state.colorStdout : state.colorStderr;
   const std::string consoleLine =
       std::format("[{:%T}] [{}{}{}] {}\n", now, useColor ? style.color : "", style.name, useColor ? kResetColor : "", iMessage);

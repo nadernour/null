@@ -51,12 +51,12 @@ MemoryAllocator::MemoryAllocator(Instance* iInstance, Device* iDevice) {
   allocatorCreateInfo.pVulkanFunctions = &vulkanFunctions;
 
   VK_CHECK(vmaCreateAllocator(&allocatorCreateInfo, &mAllocator));
-  NE_LOG("MemoryAllocator (VMA) initialized successfully for Vulkan 1.4.");
+  NE_VERBOSE("MemoryAllocator (VMA) initialized successfully for Vulkan 1.4.");
 }
 
 MemoryAllocator::~MemoryAllocator() {
   vmaDestroyAllocator(mAllocator);
-  NE_LOG("MemoryAllocator (VMA) destroyed successfully.");
+  NE_VERBOSE("MemoryAllocator (VMA) destroyed successfully.");
 }
 
 MemoryAllocator::BufferAllocation MemoryAllocator::createBuffer(const VkBufferCreateInfo& iCreateInfo, MemoryUsage iUsage,
@@ -79,7 +79,8 @@ MemoryAllocator::BufferAllocation MemoryAllocator::createBuffer(const VkBufferCr
   return result;
 }
 
-MemoryAllocator::ImageAllocation MemoryAllocator::createImage(const VkImageCreateInfo& iCreateInfo, const std::string& iDebugName) {
+MemoryAllocator::ImageAllocation MemoryAllocator::createImage(const VkImageCreateInfo& iCreateInfo,
+                                                              const std::string& iDebugName) {
   const VmaAllocationCreateInfo allocCreateInfo = toAllocationCreateInfo(MemoryUsage::DeviceLocal);
 
   ImageAllocation result{};

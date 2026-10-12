@@ -128,17 +128,11 @@ struct Quat {
     );
   }
 
-  constexpr float dot(const Quat& iOther) const {
-    return x * iOther.x + y * iOther.y + z * iOther.z + w * iOther.w;
-  }
+  constexpr float dot(const Quat& iOther) const { return x * iOther.x + y * iOther.y + z * iOther.z + w * iOther.w; }
 
-  constexpr float lengthSquared() const {
-    return x * x + y * y + z * z + w * w;
-  }
+  constexpr float lengthSquared() const { return x * x + y * y + z * z + w * w; }
 
-  inline float length() const {
-    return math::sqrt(lengthSquared());
-  }
+  inline float length() const { return math::sqrt(lengthSquared()); }
 
   constexpr Mat4 toMatrix() const {
     const float xx = x * x;
@@ -160,9 +154,7 @@ struct Quat {
   }
 
   // Equals the inverse for unit quaternions
-  constexpr Quat conjugate() const {
-    return Quat(-x, -y, -z, w);
-  }
+  constexpr Quat conjugate() const { return Quat(-x, -y, -z, w); }
 
   inline Quat inverse() const {
     float lenSq = lengthSquared();
@@ -218,10 +210,8 @@ struct Quat {
   }
 
   inline bool equals(const Quat& iOther, float iTolerance = math::kKindaSmallNumber) const {
-    return math::abs(x - iOther.x) <= iTolerance &&
-           math::abs(y - iOther.y) <= iTolerance &&
-           math::abs(z - iOther.z) <= iTolerance &&
-           math::abs(w - iOther.w) <= iTolerance;
+    return math::abs(x - iOther.x) <= iTolerance && math::abs(y - iOther.y) <= iTolerance &&
+           math::abs(z - iOther.z) <= iTolerance && math::abs(w - iOther.w) <= iTolerance;
   }
 
   inline std::string toString() const {

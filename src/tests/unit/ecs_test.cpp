@@ -57,7 +57,8 @@ NE_TEST_CASE("ecs", "Component Emplace & Sparse Access") {
   NE_TEST_ASSERT(registry.hasComponent<PositionComponent>(e2), "e2 has PositionComponent.");
 
   auto& pos = registry.getComponent<PositionComponent>(e2);
-  NE_TEST_ASSERT(math::equals(pos.x, 10.0f) && math::equals(pos.y, 20.0f) && math::equals(pos.z, 30.0f), "PositionComponent values match.");
+  NE_TEST_ASSERT(math::equals(pos.x, 10.0f) && math::equals(pos.y, 20.0f) && math::equals(pos.z, 30.0f),
+                 "PositionComponent values match.");
 }
 
 NE_TEST_CASE("ecs", "Swap-and-Pop Array Integrity") {
@@ -159,9 +160,7 @@ NE_TEST_CASE("ecs", "Disjoint & Empty View Queries") {
 
   int count = 0;
   // Neither e1 nor e2 has BOTH Position and Velocity
-  registry.view<PositionComponent, VelocityComponent>().each([&](Entity, PositionComponent&, VelocityComponent&) {
-    count++;
-  });
+  registry.view<PositionComponent, VelocityComponent>().each([&](Entity, PositionComponent&, VelocityComponent&) { count++; });
 
   NE_TEST_ASSERT(count == 0, "Disjoint multi-component view should match 0 entities.");
 }
@@ -200,7 +199,8 @@ NE_TEST_CASE("ecs", "Registry Reset") {
 
   registry.createEntity();
   registry.createEntity();
-  NE_TEST_ASSERT(!registry.isValid(e1) && !registry.isValid(e2), "Handles from before the reset stay invalid once their ids are reused.");
+  NE_TEST_ASSERT(!registry.isValid(e1) && !registry.isValid(e2),
+                 "Handles from before the reset stay invalid once their ids are reused.");
 }
 
 NE_TEST_CASE("ecs", "Stale Handles Do Not Alias Recycled Entities") {
@@ -281,7 +281,8 @@ NE_TEST_CASE("ecs", "In-Place Component Construction") {
   // Aggregate component through designated initializers
   Entity e2 = registry.createEntity();
   auto& camera = registry.addComponent<CameraComponent>(e2, CameraComponent{.fov = math::radians(60.0f), .nearClip = 0.5f});
-  NE_TEST_ASSERT(math::equals(camera.fov, math::radians(60.0f)) && math::equals(camera.nearClip, 0.5f), "Initialized fields forwarded correctly.");
+  NE_TEST_ASSERT(math::equals(camera.fov, math::radians(60.0f)) && math::equals(camera.nearClip, 0.5f),
+                 "Initialized fields forwarded correctly.");
   NE_TEST_ASSERT(math::equals(camera.farClip, 1000.0f), "Omitted fields keep their defaults.");
 }
 

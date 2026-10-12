@@ -139,22 +139,20 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   vk_utils::setDebugObjectName(mDevice, mGraphicsPipeline, std::format("{}_GraphicsPipeline", iConfig.shaderName).c_str());
 
   vkDestroyShaderModule(mDevice, shaderModule, nullptr);
-  NE_LOG("Created Graphics Pipeline for shader: '{}' (Pipeline: {}, Layout: {})", iConfig.shaderName, (void*)mGraphicsPipeline,
-         (void*)mPipelineLayout);
+  NE_VERBOSE("Created Graphics Pipeline for shader: '{}' (Pipeline: {}, Layout: {})", iConfig.shaderName,
+             (void*)mGraphicsPipeline, (void*)mPipelineLayout);
 }
 
 Pipeline::~Pipeline() {
-  NE_LOG("Destroyed Graphics Pipeline (Pipeline: {}, Layout: {})", (void*)mGraphicsPipeline, (void*)mPipelineLayout);
+  NE_VERBOSE("Destroyed Graphics Pipeline (Pipeline: {}, Layout: {})", (void*)mGraphicsPipeline, (void*)mPipelineLayout);
   if (mGraphicsPipeline != VK_NULL_HANDLE) {
     vkDestroyPipeline(mDevice, mGraphicsPipeline, nullptr);
   }
 }
 
-VkPipelineLayout Pipeline::createPipelineLayout(
-    VkDevice iDevice,
-    const std::vector<VkDescriptorSetLayout>& iDescriptorSetLayouts,
-    const std::vector<VkPushConstantRange>& iPushConstantRanges,
-    const std::string& iDebugName) {
+VkPipelineLayout Pipeline::createPipelineLayout(VkDevice iDevice, const std::vector<VkDescriptorSetLayout>& iDescriptorSetLayouts,
+                                                const std::vector<VkPushConstantRange>& iPushConstantRanges,
+                                                const std::string& iDebugName) {
   NE_ASSERT(iDevice != VK_NULL_HANDLE, "Device must not be null");
 
   VkPipelineLayoutCreateInfo layoutCreateInfo{};
@@ -200,7 +198,7 @@ VkShaderModule Pipeline::createShaderModule(const std::string& iShaderName) {
   VkShaderModule shaderModule;
   VK_CHECK(vkCreateShaderModule(mDevice, &shaderModuleCreateInfo, nullptr, &shaderModule));
 
-  NE_LOG("Loaded and created shader module: '{}' (Size: {})", iShaderName, vk_utils::formatBytes(fileBuffer.size()));
+  NE_VERBOSE("Loaded and created shader module: '{}' (Size: {})", iShaderName, vk_utils::formatBytes(fileBuffer.size()));
   return shaderModule;
 }
 

@@ -10,7 +10,7 @@ Window::Window(int32_t iWidth, int32_t iHeight, const std::string& iName) {
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
   mWindow = glfwCreateWindow(iWidth, iHeight, iName.c_str(), nullptr, nullptr);
-  NE_LOG("Initialized GLFW and created window '{}' ({}x{})", iName, iWidth, iHeight);
+  NE_VERBOSE("Initialized GLFW and created window '{}' ({}x{})", iName, iWidth, iHeight);
 
   glfwSetWindowUserPointer(mWindow, this);
   glfwSetFramebufferSizeCallback(mWindow, framebufferResizeCallback);
@@ -20,7 +20,7 @@ Window::Window(int32_t iWidth, int32_t iHeight, const std::string& iName) {
 Window::~Window() {
   glfwDestroyWindow(mWindow);
   glfwTerminate();
-  NE_LOG("Destroyed window and terminated GLFW");
+  NE_VERBOSE("Destroyed window and terminated GLFW");
 }
 
 void Window::processEvents() { glfwPollEvents(); }

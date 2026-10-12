@@ -15,7 +15,7 @@ namespace ne {
 
 namespace {
 
-[[maybe_unused]] std::string memoryUsageToString(MemoryUsage iUsage) {
+std::string memoryUsageToString(MemoryUsage iUsage) {
   switch (iUsage) {
     case MemoryUsage::DeviceLocal:
       return "DeviceLocal";
@@ -27,7 +27,7 @@ namespace {
   return "Unknown";
 }
 
-[[maybe_unused]] std::string bufferUsageToString(VkBufferUsageFlags iUsage) {
+std::string bufferUsageToString(VkBufferUsageFlags iUsage) {
   std::vector<std::string> flags;
   if (iUsage & VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
     flags.push_back("TRANSFER_SRC");
@@ -60,7 +60,7 @@ namespace {
   return result;
 }
 
-[[maybe_unused]] std::string memoryPropertiesToString(VkMemoryPropertyFlags iProperties) {
+std::string memoryPropertiesToString(VkMemoryPropertyFlags iProperties) {
   std::vector<std::string> flags;
   if (iProperties & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
     flags.push_back("DEVICE_LOCAL");
@@ -113,15 +113,15 @@ Buffer::Buffer(Device* iDevice, const Config& iConfig) : mDevice(iDevice), mConf
     vk_utils::setDebugObjectName(mDevice->getDevice(), mBuffer, mConfig.debugName);
   }
 
-  NE_LOG("Allocated Buffer{}: Size: {} (Allocated: {}) | Usage: [{}] | MemoryUsage: [{}] | Type: [{}]",
-         mConfig.debugName.empty() ? "" : " '" + mConfig.debugName + "'", vk_utils::formatBytes(mConfig.size),
-         vk_utils::formatBytes(allocation.allocatedSize), bufferUsageToString(mConfig.usage),
-         memoryUsageToString(mConfig.memoryUsage), memoryPropertiesToString(allocation.memoryProperties));
+  NE_VERBOSE("Allocated Buffer{}: Size: {} (Allocated: {}) | Usage: [{}] | MemoryUsage: [{}] | Type: [{}]",
+             mConfig.debugName.empty() ? "" : " '" + mConfig.debugName + "'", vk_utils::formatBytes(mConfig.size),
+             vk_utils::formatBytes(allocation.allocatedSize), bufferUsageToString(mConfig.usage),
+             memoryUsageToString(mConfig.memoryUsage), memoryPropertiesToString(allocation.memoryProperties));
 }
 
 Buffer::~Buffer() {
-  NE_LOG("Destroyed Buffer{}: Size: {} | Usage: [{}]", mConfig.debugName.empty() ? "" : " '" + mConfig.debugName + "'",
-         vk_utils::formatBytes(mConfig.size), bufferUsageToString(mConfig.usage));
+  NE_VERBOSE("Destroyed Buffer{}: Size: {} | Usage: [{}]", mConfig.debugName.empty() ? "" : " '" + mConfig.debugName + "'",
+             vk_utils::formatBytes(mConfig.size), bufferUsageToString(mConfig.usage));
   mDevice->getMemoryAllocator()->destroyBuffer(mBuffer, mAllocation);
 }
 

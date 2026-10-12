@@ -17,9 +17,7 @@ namespace ne {
 
 FrameRenderer::FrameRenderer(Device* iDevice, Window* iWindow) : mDevice(iDevice), mWindow(iWindow) {
   NE_ASSERT(mDevice && mWindow && mWindow->getSurface() != VK_NULL_HANDLE);
-  mFrameBufferResizeCallbackId = mWindow->addFrameBufferResizeCallback([this](int32_t, int32_t) {
-    mFrameBufferResized = true;
-  });
+  mFrameBufferResizeCallbackId = mWindow->addFrameBufferResizeCallback([this](int32_t, int32_t) { mFrameBufferResized = true; });
 
   int32_t width = 0, height = 0;
   mWindow->getFrameBufferSize(&width, &height);
@@ -36,7 +34,7 @@ FrameRenderer::FrameRenderer(Device* iDevice, Window* iWindow) : mDevice(iDevice
 }
 
 FrameRenderer::~FrameRenderer() {
-  NE_LOG("Destroying Vulkan FrameRenderer and deallocating resources...");
+  NE_VERBOSE("Destroying Vulkan FrameRenderer and deallocating resources...");
 
   if (mWindow && mFrameBufferResizeCallbackId != 0)
     mWindow->removeFrameBufferResizeCallback(mFrameBufferResizeCallbackId);
@@ -52,7 +50,7 @@ FrameRenderer::~FrameRenderer() {
 
   mSwapchain.reset();
 
-  NE_LOG("Vulkan FrameRenderer destroyed successfully.");
+  NE_VERBOSE("Vulkan FrameRenderer destroyed successfully.");
 }
 
 std::unique_ptr<Buffer> FrameRenderer::createUploadBuffer(VkDeviceSize iSize, std::string iDebugName) {
@@ -134,7 +132,7 @@ VkCommandBuffer FrameRenderer::beginFrame() {
 void FrameRenderer::recreateUploadBuffer(VkDeviceSize iNewSize) {
   auto& currentFrame = mFrames[mFrameIndex];
 
-  NE_LOG("Upload buffer resizing from {} to {} bytes", currentFrame.uploadBuffer->getConfig().size, iNewSize);
+  NE_VERBOSE("Upload buffer resizing from {} to {} bytes", currentFrame.uploadBuffer->getConfig().size, iNewSize);
 
   currentFrame.uploadBuffer = createUploadBuffer(iNewSize, std::format("UploadBuffer_Frame_{}", mFrameIndex));
 }
@@ -218,8 +216,8 @@ void FrameRenderer::createDepthImage() {
 
   mDepthImage = std::make_unique<Image>(mDevice, depthConfig);
 
-  NE_LOG("Created Depth Attachment resources: Format {}, Extent {}x{}", string_VkFormat(depthFormat), swapExtent.width,
-         swapExtent.height);
+  NE_VERBOSE("Created Depth Attachment resources: Format {}, Extent {}x{}", string_VkFormat(depthFormat), swapExtent.width,
+             swapExtent.height);
 }
 
 VkFormat FrameRenderer::getColorFormat() const { return mSwapchain->getSurfaceFormat().format; }

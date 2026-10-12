@@ -90,29 +90,44 @@ bool matchesGltfWorldPositions(const ModelData& iModel, const std::vector<Vec3>&
   return true;
 }
 
-// Writes a one-triangle glTF and its .bin buffer to the temp directory and returns the .gltf path
-std::filesystem::path writeTriangleGltf(const std::string& iName, const std::array<uint16_t, 3>& iIndices) {
+// Writes a one-triangle glTF and its .bin buffer to the temp directory and returns the .gltf path. Accessor 0 holds the
+// positions (VEC3), 1 the indices, and 2 and 3 two UV sets (VEC2, all zeros and all ones). iAttributes is the primitive's
+// attribute list, and iTopLevel is inserted after "asset" with its trailing comma.
+std::filesystem::path writeTriangleGltf(const std::string& iName, const std::array<uint16_t, 3>& iIndices,
+                                        const std::string& iAttributes = R"("POSITION": 0)", const std::string& iTopLevel = "") {
   const std::filesystem::path dir = std::filesystem::temp_directory_path();
   const std::array<float, 9> positions = {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f};
+  const std::array<uint8_t, 2> padding = {0, 0}; // Keeps the UV views 4-byte aligned
+  const std::array<float, 6> uvSet0 = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+  const std::array<float, 6> uvSet1 = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
   std::ofstream bin(dir / (iName + ".bin"), std::ios::binary);
   bin.write(reinterpret_cast<const char*>(positions.data()), sizeof(positions));
   bin.write(reinterpret_cast<const char*>(iIndices.data()), sizeof(iIndices));
+  bin.write(reinterpret_cast<const char*>(padding.data()), sizeof(padding));
+  bin.write(reinterpret_cast<const char*>(uvSet0.data()), sizeof(uvSet0));
+  bin.write(reinterpret_cast<const char*>(uvSet1.data()), sizeof(uvSet1));
   bin.close();
 
   std::ofstream(dir / (iName + ".gltf")) << R"({
   "asset": {"version": "2.0"},
+  )" + iTopLevel + R"(
   "scene": 0,
   "scenes": [{"nodes": [0]}],
   "nodes": [{"mesh": 0}],
-  "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1}]}],
-  "buffers": [{"uri": ")" + iName + R"(.bin", "byteLength": 42}],
+  "meshes": [{"primitives": [{"attributes": {)" +
+                                                iAttributes + R"(}, "indices": 1}]}],
+  "buffers": [{"uri": ")" + iName + R"(.bin", "byteLength": 92}],
   "bufferViews": [
     {"buffer": 0, "byteOffset": 0, "byteLength": 36},
-    {"buffer": 0, "byteOffset": 36, "byteLength": 6}
+    {"buffer": 0, "byteOffset": 36, "byteLength": 6},
+    {"buffer": 0, "byteOffset": 44, "byteLength": 24},
+    {"buffer": 0, "byteOffset": 68, "byteLength": 24}
   ],
   "accessors": [
     {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0, 0, 0], "max": [1, 1, 0]},
-    {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}
+    {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"},
+    {"bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC2"},
+    {"bufferView": 3, "componentType": 5126, "count": 3, "type": "VEC2"}
   ]
 })";
   return dir / (iName + ".gltf");
@@ -156,8 +171,8 @@ NE_TEST_CASE("importer", "glTF DamagedHelmet: Node TRS & Axis Conversion") {
 
   // glTF rotation (0.7071, 0, 0, 0.7071) is +90 deg about glTF +X, which is engine +Y (Left)
   Quat expected = Quat::angleAxis(math::radians(90.0f), Vec3::Left);
-  NE_TEST_ASSERT(model.nodes[0].localTransform.rotation.equals(expected, 1e-4f), "Node rotation must be converted to engine axes: {}",
-                 model.nodes[0].localTransform.rotation.toString());
+  NE_TEST_ASSERT(model.nodes[0].localTransform.rotation.equals(expected, 1e-4f),
+                 "Node rotation must be converted to engine axes: {}", model.nodes[0].localTransform.rotation.toString());
 
   NE_TEST_ASSERT(matchesGltfWorldPositions(model, rawGltfWorldPositions("models/DamagedHelmet.glb")),
                  "Helmet world positions must equal glTF world positions with axes permuted.");
@@ -172,6 +187,50 @@ NE_TEST_CASE("importer", "glTF With An Out-Of-Range Index Fails Validation") {
   ModelData invalid = GltfImporter::importModel(path.string());
   NE_TEST_ASSERT(invalid.meshes.empty() && invalid.nodes.empty(),
                  "Index 3 into 3 vertices fails validation and imports nothing.");
+
+  std::filesystem::remove(path);
+  std::filesystem::remove(std::filesystem::path(path).replace_extension(".bin"));
+}
+
+NE_TEST_CASE("importer", "glTF Requiring An Unsupported Extension Imports Nothing") {
+  const std::filesystem::path path = writeTriangleGltf("null_importer_test_required", {0, 1, 2}, R"("POSITION": 0)",
+                                                       R"("extensionsUsed": ["KHR_draco_mesh_compression"],)"
+                                                       R"("extensionsRequired": ["KHR_draco_mesh_compression"],)");
+  ModelData draco = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(draco.meshes.empty() && draco.nodes.empty(), "A file that requires Draco is rejected whole.");
+
+  // Materials aren't imported, so a required material extension isn't honored either
+  writeTriangleGltf("null_importer_test_required", {0, 1, 2}, R"("POSITION": 0)",
+                    R"("extensionsUsed": ["KHR_texture_transform"], "extensionsRequired": ["KHR_texture_transform"],)");
+  ModelData textureTransform = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(textureTransform.meshes.empty() && textureTransform.nodes.empty(),
+                 "A file that requires an unsupported material extension is rejected whole.");
+
+  writeTriangleGltf("null_importer_test_required", {0, 1, 2}, R"("POSITION": 0)",
+                    R"("extensionsUsed": ["KHR_mesh_quantization"], "extensionsRequired": ["KHR_mesh_quantization"],)");
+  ModelData quantized = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(quantized.meshes.size() == 1, "A file that requires KHR_mesh_quantization imports.");
+
+  std::filesystem::remove(path);
+  std::filesystem::remove(std::filesystem::path(path).replace_extension(".bin"));
+}
+
+NE_TEST_CASE("importer", "glTF Attributes: Mistyped Ones Are Dropped, Only Set 0 Is Read") {
+  // Accessor 0 is VEC3, which glTF doesn't allow for TEXCOORD
+  const std::filesystem::path path =
+      writeTriangleGltf("null_importer_test_attributes", {0, 1, 2}, R"("POSITION": 0, "TEXCOORD_0": 0)");
+  ModelData mistyped = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(mistyped.meshes.size() == 1 && mistyped.meshes[0].submeshes[0].texCoords.empty(),
+                 "A VEC3 TEXCOORD_0 is dropped and the triangle still imports.");
+
+  // TEXCOORD_1 (all ones) comes last, so reading whichever set comes last would replace TEXCOORD_0 (all zeros)
+  writeTriangleGltf("null_importer_test_attributes", {0, 1, 2}, R"("POSITION": 0, "TEXCOORD_0": 2, "TEXCOORD_1": 3)");
+  ModelData twoSets = GltfImporter::importModel(path.string());
+  bool readsSet0 = twoSets.meshes.size() == 1 && twoSets.meshes[0].submeshes[0].texCoords.size() == 3;
+  for (size_t i = 0; readsSet0 && i < 3; ++i) {
+    readsSet0 = twoSets.meshes[0].submeshes[0].texCoords[i].equals(Vec2(0.0f));
+  }
+  NE_TEST_ASSERT(readsSet0, "UVs come from TEXCOORD_0, not TEXCOORD_1.");
 
   std::filesystem::remove(path);
   std::filesystem::remove(std::filesystem::path(path).replace_extension(".bin"));

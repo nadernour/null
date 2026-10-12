@@ -60,7 +60,7 @@ void MainUI::drawMainMenuBar(BasicApp& iApp) {
       ImGui::Separator();
       if (ImGui::MenuItem("Hide UI Overlay", "H")) {
         mVisible = false;
-        NE_LOG("UI Overlay visibility: Hidden");
+        NE_VERBOSE("UI Overlay visibility: Hidden");
       }
       ImGui::MenuItem("ImGui Demo Window", nullptr, &mShowDemoWindow);
       ImGui::EndMenu();

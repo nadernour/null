@@ -1,5 +1,4 @@
 #include "importers/gltf_importer.h"
-#include "core/assert.h"
 #include "core/filesystem.h"
 #include "core/logger.h"
 
@@ -18,7 +17,7 @@ namespace {
 Vec3 toEngineAxes(const Vec3& iGltf) { return Vec3(iGltf.z, iGltf.x, iGltf.y); }
 Quat toEngineAxes(const Quat& iGltf) { return Quat(iGltf.z, iGltf.x, iGltf.y, iGltf.w); }
 
-[[maybe_unused]] const char* resultToString(cgltf_result iResult) {
+const char* resultToString(cgltf_result iResult) {
   switch (iResult) {
     case cgltf_result_success:
       return "success";
@@ -46,81 +45,127 @@ Quat toEngineAxes(const Quat& iGltf) { return Quat(iGltf.z, iGltf.x, iGltf.y, iG
   return "unknown error";
 }
 
-std::optional<SubmeshData> importPrimitive(const cgltf_primitive& iPrimitive) {
+// Required extensions the importer honors; a file that requires any other can't be loaded correctly, so it is rejected.
+// KHR_mesh_quantization only adds accessor component types, which cgltf_accessor_read_float converts.
+constexpr const char* kSupportedRequiredExtensions[] = {"KHR_mesh_quantization"};
+
+bool isSupportedRequiredExtension(const char* iName) {
+  for (const char* supported : kSupportedRequiredExtensions) {
+    if (std::strcmp(iName, supported) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// glTF allows POSITION and NORMAL only as VEC3, TEXCOORD as VEC2, and COLOR as VEC3 or VEC4
+bool hasAllowedType(const cgltf_attribute& iAttribute) {
+  switch (iAttribute.type) {
+    case cgltf_attribute_type_position:
+    case cgltf_attribute_type_normal:
+      return iAttribute.data->type == cgltf_type_vec3;
+    case cgltf_attribute_type_texcoord:
+      return iAttribute.data->type == cgltf_type_vec2;
+    case cgltf_attribute_type_color:
+      return iAttribute.data->type == cgltf_type_vec3 || iAttribute.data->type == cgltf_type_vec4;
+    default:
+      return true;
+  }
+}
+
+// Null, with the reason logged, when the primitive can't be drawn. An optional attribute glTF doesn't allow is dropped
+// instead, so the primitive still draws.
+std::optional<SubmeshData> importPrimitive(const cgltf_primitive& iPrimitive, const char* iMeshName, cgltf_size iPrimitiveIndex) {
   if (iPrimitive.type != cgltf_primitive_type_triangles) {
+    NE_WARN("GltfImporter: Skipped primitive {} of mesh '{}': only triangles are supported", iPrimitiveIndex, iMeshName);
     return std::nullopt;
   }
 
-  cgltf_accessor* pos_accessor = nullptr;
-  cgltf_accessor* normal_accessor = nullptr;
-  cgltf_accessor* texcoord_accessor = nullptr;
-  cgltf_accessor* color_accessor = nullptr;
-
+  const cgltf_accessor* positionAccessor = nullptr;
+  const cgltf_accessor* normalAccessor = nullptr;
+  const cgltf_accessor* texCoordAccessor = nullptr;
+  const cgltf_accessor* colorAccessor = nullptr;
   for (cgltf_size k = 0; k < iPrimitive.attributes_count; ++k) {
     const cgltf_attribute& attribute = iPrimitive.attributes[k];
+    if (attribute.index != 0) { // Only the first TEXCOORD and COLOR sets are used
+      continue;
+    }
+    if (!hasAllowedType(attribute)) {
+      NE_WARN("GltfImporter: Ignored {} of primitive {} of mesh '{}': glTF doesn't allow its type", attribute.name,
+              iPrimitiveIndex, iMeshName);
+      continue;
+    }
     if (attribute.type == cgltf_attribute_type_position) {
-      pos_accessor = attribute.data;
+      positionAccessor = attribute.data;
     } else if (attribute.type == cgltf_attribute_type_normal) {
-      normal_accessor = attribute.data;
+      normalAccessor = attribute.data;
     } else if (attribute.type == cgltf_attribute_type_texcoord) {
-      texcoord_accessor = attribute.data;
+      texCoordAccessor = attribute.data;
     } else if (attribute.type == cgltf_attribute_type_color) {
-      color_accessor = attribute.data;
+      colorAccessor = attribute.data;
     }
   }
 
-  if (!pos_accessor) {
+  if (!positionAccessor) {
+    NE_WARN("GltfImporter: Skipped primitive {} of mesh '{}': it has no usable POSITION", iPrimitiveIndex, iMeshName);
     return std::nullopt;
   }
 
+  const cgltf_size vertexCount = positionAccessor->count;
   SubmeshData submesh;
-  submesh.positions.resize(pos_accessor->count);
-  if (normal_accessor) {
-    submesh.normals.resize(pos_accessor->count);
+  submesh.positions.resize(vertexCount);
+  if (normalAccessor) {
+    submesh.normals.resize(vertexCount);
   }
-  if (texcoord_accessor) {
-    submesh.texCoords.resize(pos_accessor->count);
+  if (texCoordAccessor) {
+    submesh.texCoords.resize(vertexCount);
   }
-  if (color_accessor) {
-    submesh.colors.resize(pos_accessor->count);
+  if (colorAccessor) {
+    submesh.colors.resize(vertexCount);
   }
 
-  for (cgltf_size v = 0; v < pos_accessor->count; ++v) {
-    cgltf_bool pos_success = cgltf_accessor_read_float(pos_accessor, v, &submesh.positions[v].x, 3);
-    NE_ASSERT(pos_success, "Failed to read vertex position");
+  // With the types checked, a read fails only when the data isn't in memory, such as a compressed buffer view
+  bool isRead = true;
+  for (cgltf_size v = 0; v < vertexCount && isRead; ++v) {
+    isRead = cgltf_accessor_read_float(positionAccessor, v, &submesh.positions[v].x, 3);
     submesh.positions[v] = toEngineAxes(submesh.positions[v]);
 
-    if (normal_accessor) {
-      cgltf_bool normal_success = cgltf_accessor_read_float(normal_accessor, v, &submesh.normals[v].x, 3);
-      NE_ASSERT(normal_success, "Failed to read vertex normal");
+    if (normalAccessor) {
+      isRead = isRead && cgltf_accessor_read_float(normalAccessor, v, &submesh.normals[v].x, 3);
       submesh.normals[v] = toEngineAxes(submesh.normals[v]);
     }
 
-    if (texcoord_accessor) {
-      cgltf_bool texcoord_success = cgltf_accessor_read_float(texcoord_accessor, v, &submesh.texCoords[v].x, 2);
-      NE_ASSERT(texcoord_success, "Failed to read vertex texture coordinates");
+    if (texCoordAccessor) {
+      isRead = isRead && cgltf_accessor_read_float(texCoordAccessor, v, &submesh.texCoords[v].x, 2);
     }
 
-    if (color_accessor) {
+    if (colorAccessor) {
       // RGB accessors leave alpha at 1
-      cgltf_bool color_success = cgltf_accessor_read_float(color_accessor, v, &submesh.colors[v].r, 4);
-      NE_ASSERT(color_success, "Failed to read vertex color");
+      isRead = isRead && cgltf_accessor_read_float(colorAccessor, v, &submesh.colors[v].r, 4);
     }
+  }
+  if (!isRead) {
+    NE_WARN("GltfImporter: Skipped primitive {} of mesh '{}': its vertex data can't be read", iPrimitiveIndex, iMeshName);
+    return std::nullopt;
   }
 
   if (iPrimitive.indices) {
-    submesh.indices.resize(iPrimitive.indices->count);
-    for (cgltf_size idx = 0; idx < iPrimitive.indices->count; ++idx) {
-      submesh.indices[idx] = static_cast<uint32_t>(cgltf_accessor_read_index(iPrimitive.indices, idx));
+    const cgltf_size indexCount = iPrimitive.indices->count;
+    submesh.indices.resize(indexCount);
+    if (cgltf_accessor_unpack_indices(iPrimitive.indices, submesh.indices.data(), sizeof(uint32_t), indexCount) != indexCount) {
+      NE_WARN("GltfImporter: Skipped primitive {} of mesh '{}': its indices can't be read", iPrimitiveIndex, iMeshName);
+      return std::nullopt;
     }
   } else {
-    submesh.indices.resize(pos_accessor->count);
-    for (uint32_t idx = 0; idx < pos_accessor->count; ++idx) {
+    submesh.indices.resize(vertexCount);
+    for (uint32_t idx = 0; idx < vertexCount; ++idx) {
       submesh.indices[idx] = idx;
     }
   }
 
   if (submesh.positions.size() < 3 || submesh.indices.size() < 3) {
+    NE_WARN("GltfImporter: Skipped primitive {} of mesh '{}': a triangle needs 3 vertices and 3 indices, it has {} and {}",
+            iPrimitiveIndex, iMeshName, submesh.positions.size(), submesh.indices.size());
     return std::nullopt;
   }
   return submesh;
@@ -140,11 +185,10 @@ Transform importNodeTransform(const cgltf_node& iNode) {
 
   if (gltfTransform.scale.x * gltfTransform.scale.y * gltfTransform.scale.z < 0.0f) {
     NE_WARN("GltfImporter: Node '{}' is mirrored (negative scale determinant); its winding will render inverted",
-               iNode.name ? iNode.name : "");
+            iNode.name ? iNode.name : "");
   }
 
-  return Transform(toEngineAxes(gltfTransform.position), toEngineAxes(gltfTransform.rotation),
-                   toEngineAxes(gltfTransform.scale));
+  return Transform(toEngineAxes(gltfTransform.position), toEngineAxes(gltfTransform.rotation), toEngineAxes(gltfTransform.scale));
 }
 
 // Appends iNode and its subtree depth-first, so parents always precede their children
@@ -172,7 +216,6 @@ namespace GltfImporter {
 
 ModelData importModel(const std::string& iPath) {
   std::string fullPath = ne::fs::resolveContentPath(iPath);
-  NE_LOG("GltfImporter: Importing model from {}", fullPath);
 
   cgltf_options options{};
   cgltf_data* data = nullptr;
@@ -180,6 +223,15 @@ ModelData importModel(const std::string& iPath) {
   if (result != cgltf_result_success) {
     NE_ERROR("GltfImporter: Failed to parse glTF file {}: {}", fullPath, resultToString(result));
     return {};
+  }
+
+  for (cgltf_size i = 0; i < data->extensions_required_count; ++i) {
+    if (!isSupportedRequiredExtension(data->extensions_required[i])) {
+      NE_ERROR("GltfImporter: glTF file {} requires {}, which the importer doesn't support", fullPath,
+               data->extensions_required[i]);
+      cgltf_free(data);
+      return {};
+    }
   }
 
   result = cgltf_load_buffers(&options, data, fullPath.c_str());
@@ -203,9 +255,10 @@ ModelData importModel(const std::string& iPath) {
   // A glTF mesh used by several nodes is imported once; meshes without triangle primitives get index -1
   std::vector<int32_t> meshIndices(data->meshes_count, -1);
   for (cgltf_size i = 0; i < data->meshes_count; ++i) {
+    const char* meshName = data->meshes[i].name ? data->meshes[i].name : "";
     MeshData mesh;
     for (cgltf_size j = 0; j < data->meshes[i].primitives_count; ++j) {
-      if (std::optional<SubmeshData> submesh = importPrimitive(data->meshes[i].primitives[j])) {
+      if (std::optional<SubmeshData> submesh = importPrimitive(data->meshes[i].primitives[j], meshName, j)) {
         mesh.submeshes.push_back(std::move(*submesh));
       }
     }
@@ -230,7 +283,7 @@ ModelData importModel(const std::string& iPath) {
   }
 
   cgltf_free(data);
-  NE_LOG("GltfImporter: Imported {} with {} nodes and {} meshes", fullPath, model.nodes.size(), model.meshes.size());
+  NE_LOG("GltfImporter: Imported {}: {} nodes, {} meshes", fullPath, model.nodes.size(), model.meshes.size());
   return model;
 }
 

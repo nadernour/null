@@ -25,11 +25,9 @@ public:
     StencilMode stencilMode = StencilMode::Disabled;
   };
 
-  static VkPipelineLayout createPipelineLayout(
-      VkDevice iDevice,
-      const std::vector<VkDescriptorSetLayout>& iDescriptorSetLayouts,
-      const std::vector<VkPushConstantRange>& iPushConstantRanges,
-      const std::string& iDebugName = "");
+  static VkPipelineLayout createPipelineLayout(VkDevice iDevice, const std::vector<VkDescriptorSetLayout>& iDescriptorSetLayouts,
+                                               const std::vector<VkPushConstantRange>& iPushConstantRanges,
+                                               const std::string& iDebugName = "");
   static void destroyPipelineLayout(VkDevice iDevice, VkPipelineLayout iPipelineLayout);
 
   Pipeline(VkDevice iDevice, const Config& iConfig);

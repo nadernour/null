@@ -58,14 +58,14 @@ ImGuiManager::ImGuiManager(Window* iWindow, Instance* iInstance, Device* iDevice
   };
 
   ImGui_ImplVulkan_Init(&initInfo);
-  NE_LOG("ImGuiManager initialized successfully with Dynamic Rendering.");
+  NE_VERBOSE("ImGuiManager initialized successfully with Dynamic Rendering.");
 }
 
 ImGuiManager::~ImGuiManager() {
   ImGui_ImplVulkan_Shutdown();
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();
-  NE_LOG("ImGuiManager destroyed successfully.");
+  NE_VERBOSE("ImGuiManager destroyed successfully.");
 }
 
 void ImGuiManager::beginFrame() {

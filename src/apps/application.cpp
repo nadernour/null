@@ -36,8 +36,8 @@ Application::Application(const std::string& iAppName, uint32_t iWidth, uint32_t 
 
   mFrameRenderer = std::make_unique<FrameRenderer>(mDevice.get(), mWindow.get());
 
-  mResourceManager = std::make_unique<ResourceManager>(mDevice.get(), mFrameRenderer->getColorFormat(),
-                                                       mFrameRenderer->getDepthFormat());
+  mResourceManager =
+      std::make_unique<ResourceManager>(mDevice.get(), mFrameRenderer->getColorFormat(), mFrameRenderer->getDepthFormat());
 
   Input::init(mWindow.get());
 
@@ -50,16 +50,15 @@ Application::Application(const std::string& iAppName, uint32_t iWidth, uint32_t 
   };
   mSceneRenderer = std::make_unique<SceneRenderer>(sceneRendererConfig);
 
-  mImGuiManager =
-      std::make_unique<ImGuiManager>(mWindow.get(), mInstance.get(), mDevice.get(), mFrameRenderer.get());
+  mImGuiManager = std::make_unique<ImGuiManager>(mWindow.get(), mInstance.get(), mDevice.get(), mFrameRenderer.get());
 
   mRegistry = std::make_unique<Registry>();
 
-  NE_LOG("Engine Application '{}' initialized successfully.", mAppName);
+  NE_VERBOSE("Engine Application '{}' initialized successfully.", mAppName);
 }
 
 Application::~Application() {
-  NE_LOG("Tearing down Engine Application '{}'...", mAppName);
+  NE_VERBOSE("Tearing down Engine Application '{}'...", mAppName);
 
   // Reverse order of creation
   mRegistry.reset();
@@ -74,7 +73,7 @@ Application::~Application() {
   mInstance.reset();
   mWindow.reset();
 
-  NE_LOG("Engine Application '{}' destroyed successfully.", mAppName);
+  NE_VERBOSE("Engine Application '{}' destroyed successfully.", mAppName);
 }
 
 void Application::update(float) {}

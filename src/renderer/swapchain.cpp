@@ -19,9 +19,9 @@ Swapchain::Swapchain(Device* iDevice, const Config& iConfig) : mDevice(iDevice),
 }
 
 Swapchain::~Swapchain() {
-  NE_LOG("Destroying Vulkan Swapchain and deallocating resources...");
+  NE_VERBOSE("Destroying Vulkan Swapchain and deallocating resources...");
   cleanup();
-  NE_LOG("Vulkan Swapchain destroyed successfully.");
+  NE_VERBOSE("Vulkan Swapchain destroyed successfully.");
 }
 
 void Swapchain::cleanup() {
@@ -155,8 +155,8 @@ void Swapchain::createSwapchain(VkSwapchainKHR iOldSwapchain) {
                                  std::format("RenderFinished_Semaphore_{}", i).c_str());
   }
 
-  NE_LOG("Created new swapChain, Present mode: {}, Image count: {}, Image size: {} x {}",
-         mPresentMode == VK_PRESENT_MODE_FIFO_KHR ? "V-Sync" : "Mailbox", mImages.size(), mExtent.width, mExtent.height);
+  NE_VERBOSE("Created new swapChain, Present mode: {}, Image count: {}, Image size: {} x {}",
+             mPresentMode == VK_PRESENT_MODE_FIFO_KHR ? "V-Sync" : "Mailbox", mImages.size(), mExtent.width, mExtent.height);
 }
 
 VkResult Swapchain::acquireNextImage(VkSemaphore iPresentCompleteSemaphore, uint32_t* oImageIndex, uint64_t iTimeout) {
@@ -184,7 +184,7 @@ void Swapchain::recreate(uint32_t iWidth, uint32_t iHeight) {
   mConfig.height = iHeight;
 
   mDevice->waitIdle();
-  NE_LOG("Recreating SwapChain... New resolution: {}x{}", iWidth, iHeight);
+  NE_VERBOSE("Recreating SwapChain... New resolution: {}x{}", iWidth, iHeight);
 
   VkSwapchainKHR oldSwapchain = mSwapchain;
   mSwapchain = VK_NULL_HANDLE;
