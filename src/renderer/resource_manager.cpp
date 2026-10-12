@@ -37,7 +37,7 @@ ResourceManager::ResourceManager(Device* iDevice, VkFormat iDefaultColorFormat, 
 
   // Materials default to texture index 0, so it must be the white fallback
   ImageData whiteData = ImageData::createWhite1x1();
-  uint32_t defaultTexIdx = createTexture(whiteData, true, "Default_White_Texture");
+  uint32_t defaultTexIdx = createTexture(whiteData, "Default_White_Texture");
   NE_ASSERT(defaultTexIdx == 0, "Fallback white texture must occupy bindless texture index 0");
 }
 
@@ -87,15 +87,15 @@ std::shared_ptr<Mesh> ResourceManager::createMesh(const MeshData& iMeshData) {
   return std::make_shared<Mesh>(std::move(submeshes));
 }
 
-uint32_t ResourceManager::createTexture(const ImageData& iImageData, bool iSrgb, const std::string& iDebugName) {
+uint32_t ResourceManager::createTexture(const ImageData& iImageData, const std::string& iDebugName) {
   if (!mStagingManager->isBatching()) {
     mStagingManager->beginBatch();
   }
-  const ImageData mipChain = ImageUtils::generateMipChain(iImageData, iSrgb);
+  const ImageData mipChain = ImageUtils::generateMipChain(iImageData);
   Image::Config config{
       .width = mipChain.mWidth,
       .height = mipChain.mHeight,
-      .format = iSrgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
+      .format = mipChain.mSrgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
       .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
       .mipLevels = mipChain.mMipLevels,
       .debugName = iDebugName.empty() ? "Texture" : iDebugName,

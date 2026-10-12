@@ -10,7 +10,7 @@ class Pipeline;
 
 class Material {
 public:
-  Material(std::shared_ptr<Pipeline> pipeline) : mPipeline(pipeline) {}
+  Material(std::shared_ptr<Pipeline> iPipeline) : mPipeline(iPipeline) {}
   ~Material() = default;
 
   Pipeline* getPipeline() const { return mPipeline.get(); }

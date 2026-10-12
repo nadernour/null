@@ -51,9 +51,9 @@ ImGuiManager::ImGuiManager(Window* iWindow, Instance* iInstance, Device* iDevice
   initInfo.UseDynamicRendering = true;
   initInfo.PipelineInfoMain.PipelineRenderingCreateInfo = renderingInfo;
   initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-  initInfo.CheckVkResultFn = [](VkResult err) {
-    if (err != VK_SUCCESS) {
-      NE_ERROR("ImGui Vulkan Error: {}", static_cast<int32_t>(err));
+  initInfo.CheckVkResultFn = [](VkResult iResult) {
+    if (iResult != VK_SUCCESS) {
+      NE_ERROR("ImGui Vulkan Error: {}", static_cast<int32_t>(iResult));
     }
   };
 

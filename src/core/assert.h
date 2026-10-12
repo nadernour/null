@@ -20,6 +20,6 @@
 #else
 #define NE_ASSERT(condition, ...)                                                                                                     \
   do {                                                                                                                                \
-    (void)(condition); /* Eat the unused variable warning */                                                                          \
+    (void)sizeof(condition); /* Marks the operands used without evaluating them */                                                    \
   } while (false)
 #endif

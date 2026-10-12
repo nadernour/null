@@ -1,6 +1,5 @@
 #include "apps/application.h"
 #include "core/assert.h"
-#include "core/defines.h"
 #include "core/ecs.h"
 #include "core/logger.h"
 #include "core/time.h"
@@ -78,7 +77,7 @@ Application::~Application() {
   NE_LOG("Engine Application '{}' destroyed successfully.", mAppName);
 }
 
-void Application::update(float iDeltaTime) { NE_UNUSED(iDeltaTime); }
+void Application::update(float) {}
 
 void Application::render() {
   mResourceManager->flushUploads();

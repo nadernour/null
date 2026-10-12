@@ -14,8 +14,8 @@ namespace ne {
 
 namespace {
 
-[[maybe_unused]] std::string memoryUsageToString(MemoryUsage usage) {
-  switch (usage) {
+[[maybe_unused]] std::string memoryUsageToString(MemoryUsage iUsage) {
+  switch (iUsage) {
     case MemoryUsage::DeviceLocal:
       return "DeviceLocal";
     case MemoryUsage::Upload:
@@ -26,27 +26,27 @@ namespace {
   return "Unknown";
 }
 
-[[maybe_unused]] std::string bufferUsageToString(VkBufferUsageFlags usage) {
+[[maybe_unused]] std::string bufferUsageToString(VkBufferUsageFlags iUsage) {
   std::vector<std::string> flags;
-  if (usage & VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
+  if (iUsage & VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
     flags.push_back("TRANSFER_SRC");
-  if (usage & VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+  if (iUsage & VK_BUFFER_USAGE_TRANSFER_DST_BIT)
     flags.push_back("TRANSFER_DST");
-  if (usage & VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT)
+  if (iUsage & VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT)
     flags.push_back("UNIFORM_TEXEL");
-  if (usage & VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT)
+  if (iUsage & VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT)
     flags.push_back("STORAGE_TEXEL");
-  if (usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+  if (iUsage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
     flags.push_back("UNIFORM");
-  if (usage & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+  if (iUsage & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
     flags.push_back("STORAGE");
-  if (usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT)
+  if (iUsage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT)
     flags.push_back("INDEX");
-  if (usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
+  if (iUsage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
     flags.push_back("VERTEX");
-  if (usage & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)
+  if (iUsage & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)
     flags.push_back("INDIRECT");
-  if (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
+  if (iUsage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
     flags.push_back("SHADER_DEVICE_ADDRESS");
   if (flags.empty())
     return "NONE";
@@ -59,19 +59,19 @@ namespace {
   return result;
 }
 
-[[maybe_unused]] std::string memoryPropertiesToString(VkMemoryPropertyFlags properties) {
+[[maybe_unused]] std::string memoryPropertiesToString(VkMemoryPropertyFlags iProperties) {
   std::vector<std::string> flags;
-  if (properties & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+  if (iProperties & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
     flags.push_back("DEVICE_LOCAL");
-  if (properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+  if (iProperties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
     flags.push_back("HOST_VISIBLE");
-  if (properties & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+  if (iProperties & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
     flags.push_back("HOST_COHERENT");
-  if (properties & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
+  if (iProperties & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
     flags.push_back("HOST_CACHED");
-  if (properties & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT)
+  if (iProperties & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT)
     flags.push_back("LAZILY_ALLOCATED");
-  if (properties & VK_MEMORY_PROPERTY_PROTECTED_BIT)
+  if (iProperties & VK_MEMORY_PROPERTY_PROTECTED_BIT)
     flags.push_back("PROTECTED");
   if (flags.empty())
     return "NONE";

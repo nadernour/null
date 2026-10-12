@@ -31,7 +31,7 @@ public:
   ResourceManager& operator=(ResourceManager&&) = delete;
 
   std::shared_ptr<Mesh> createMesh(const MeshData& iMeshData);
-  uint32_t createTexture(const ImageData& iImageData, bool iSrgb = true, const std::string& iDebugName = "");
+  uint32_t createTexture(const ImageData& iImageData, const std::string& iDebugName = "");
   std::shared_ptr<Pipeline> getOrCreatePipeline(const std::string& iShaderName = "");
   std::shared_ptr<Material> createMaterial(const std::string& iShaderName = "");
   void flushUploads();

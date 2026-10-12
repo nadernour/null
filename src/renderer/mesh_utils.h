@@ -4,7 +4,7 @@
 
 namespace ne::MeshUtils {
 
-// 24 vertices so every face has its own normals and [0, 1] UVs; size is the full extent
-MeshData createBoxMeshData(const Vec3& size = Vec3(1.0f));
+// 24 vertices so every face has its own normals and [0, 1] UVs; iSize is the full extent
+MeshData createBoxMeshData(const Vec3& iSize = Vec3(1.0f));
 
 } // namespace ne::MeshUtils

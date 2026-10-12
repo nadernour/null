@@ -1,6 +1,5 @@
 #include "renderer/frame_renderer.h"
 #include "core/assert.h"
-#include "core/defines.h"
 #include "core/logger.h"
 #include "platform/window.h"
 #include "renderer/buffer.h"
@@ -18,9 +17,7 @@ namespace ne {
 
 FrameRenderer::FrameRenderer(Device* iDevice, Window* iWindow) : mDevice(iDevice), mWindow(iWindow) {
   NE_ASSERT(mDevice && mWindow && mWindow->getSurface() != VK_NULL_HANDLE);
-  mFrameBufferResizeCallbackId = mWindow->addFrameBufferResizeCallback([this](int32_t width, int32_t height) {
-    NE_UNUSED(width);
-    NE_UNUSED(height);
+  mFrameBufferResizeCallbackId = mWindow->addFrameBufferResizeCallback([this](int32_t, int32_t) {
     mFrameBufferResized = true;
   });
 
@@ -58,9 +55,9 @@ FrameRenderer::~FrameRenderer() {
   NE_LOG("Vulkan FrameRenderer destroyed successfully.");
 }
 
-std::unique_ptr<Buffer> FrameRenderer::createUploadBuffer(VkDeviceSize size, std::string iDebugName) {
+std::unique_ptr<Buffer> FrameRenderer::createUploadBuffer(VkDeviceSize iSize, std::string iDebugName) {
   Buffer::Config config{
-      .size = size,
+      .size = iSize,
       .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
       .memoryUsage = MemoryUsage::Upload,
@@ -134,12 +131,12 @@ VkCommandBuffer FrameRenderer::beginFrame() {
   return currentFrame.mCommandBuffer;
 }
 
-void FrameRenderer::recreateUploadBuffer(VkDeviceSize newSize) {
+void FrameRenderer::recreateUploadBuffer(VkDeviceSize iNewSize) {
   auto& currentFrame = mFrames[mFrameIndex];
 
-  NE_LOG("Upload buffer resizing from {} to {} bytes", currentFrame.mUploadBuffer->getConfig().size, newSize);
+  NE_LOG("Upload buffer resizing from {} to {} bytes", currentFrame.mUploadBuffer->getConfig().size, iNewSize);
 
-  currentFrame.mUploadBuffer = createUploadBuffer(newSize, std::format("UploadBuffer_Frame_{}", mFrameIndex));
+  currentFrame.mUploadBuffer = createUploadBuffer(iNewSize, std::format("UploadBuffer_Frame_{}", mFrameIndex));
 }
 
 void FrameRenderer::endFrame() {

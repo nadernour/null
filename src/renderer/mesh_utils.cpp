@@ -3,7 +3,7 @@
 
 namespace ne::MeshUtils {
 
-MeshData createBoxMeshData(const Vec3& size) {
+MeshData createBoxMeshData(const Vec3& iSize) {
   SubmeshData meshData;
   meshData.mPositions.reserve(24);
   meshData.mNormals.reserve(24);
@@ -11,9 +11,9 @@ MeshData createBoxMeshData(const Vec3& size) {
   meshData.mColors.reserve(24);
   meshData.mIndices.reserve(36);
 
-  const float hx = size.x * 0.5f;
-  const float hy = size.y * 0.5f;
-  const float hz = size.z * 0.5f;
+  const float hx = iSize.x * 0.5f;
+  const float hy = iSize.y * 0.5f;
+  const float hz = iSize.z * 0.5f;
 
   struct Face {
     Vec3 normal;

@@ -1,6 +1,5 @@
 #include "renderer/instance.h"
 #include "core/assert.h"
-#include "core/defines.h"
 #include "core/logger.h"
 #include "renderer/utils.h"
 
@@ -8,18 +7,16 @@
 #include <algorithm>
 #include <cstring>
 
-// pUserData points at Instance::mHasValidationErrors
+// oUserData points at Instance::mHasValidationErrors
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT iMessageSeverity,
-                                                    VkDebugUtilsMessageTypeFlagsEXT iMessageType,
-                                                    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
-  NE_UNUSED(iMessageType);
-  NE_UNUSED(pCallbackData);
-
+                                                    VkDebugUtilsMessageTypeFlagsEXT,
+                                                    [[maybe_unused]] const VkDebugUtilsMessengerCallbackDataEXT* iCallbackData,
+                                                    void* oUserData) {
   if (iMessageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-    NE_WARN("validation layer: {}", pCallbackData->pMessage);
+    NE_WARN("validation layer: {}", iCallbackData->pMessage);
   } else if (iMessageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-    *static_cast<bool*>(pUserData) = true;
-    NE_ERROR("validation layer: {}", pCallbackData->pMessage);
+    *static_cast<bool*>(oUserData) = true;
+    NE_ERROR("validation layer: {}", iCallbackData->pMessage);
   }
 
   return VK_FALSE;

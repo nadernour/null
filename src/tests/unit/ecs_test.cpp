@@ -136,12 +136,12 @@ NE_TEST_CASE("ecs", "Multi-Component View Iteration") {
   registry.addComponent<VelocityComponent>(e4, 0.0f, 3.0f, 0.0f);
 
   int matchingCount = 0;
-  registry.view<PositionComponent, VelocityComponent>().each([&](Entity e, PositionComponent& position, VelocityComponent& velocity) {
-    NE_UNUSED(e);
-    matchingCount++;
-    position.x += velocity.vx;
-    position.y += velocity.vy;
-  });
+  registry.view<PositionComponent, VelocityComponent>().each(
+      [&](Entity, PositionComponent& ioPosition, const VelocityComponent& iVelocity) {
+        matchingCount++;
+        ioPosition.x += iVelocity.vx;
+        ioPosition.y += iVelocity.vy;
+      });
 
   NE_TEST_ASSERT(matchingCount == 2, "View must match exactly 2 entities.");
   NE_TEST_ASSERT(math::equals(registry.getComponent<PositionComponent>(e3).x, 7.0f), "e3 updated via view.");
@@ -248,24 +248,23 @@ NE_TEST_CASE("ecs", "Camera and Mesh Component View Queries") {
 
   Mat4 resolvedViewProj{1.0f};
   int camCount = 0;
-  registry.view<TransformComponent, CameraComponent>().each([&](Entity e, const TransformComponent& t, const CameraComponent& c) {
-    NE_UNUSED(e);
-    if (c.mIsPrimary) {
-      resolvedViewProj = c.getViewProjectionMatrix(t.getLocal().toMatrix(), 16.0f / 9.0f);
-      camCount++;
-    }
-  });
+  registry.view<TransformComponent, CameraComponent>().each(
+      [&](Entity, const TransformComponent& iTransform, const CameraComponent& iCamera) {
+        if (iCamera.mIsPrimary) {
+          resolvedViewProj = iCamera.getViewProjectionMatrix(iTransform.getLocal().toMatrix(), 16.0f / 9.0f);
+          camCount++;
+        }
+      });
 
   NE_TEST_ASSERT(camCount == 1, "Exactly one primary camera entity resolved.");
   NE_TEST_ASSERT(!resolvedViewProj.equals(Mat4::Identity), "Resolved ViewProjection matrix must not be Identity.");
 
   int meshCount = 0;
-  registry.view<TransformComponent, MeshComponent>().each([&](Entity e, const TransformComponent& t, const MeshComponent& m) {
-    NE_UNUSED(e);
-    NE_UNUSED(m);
-    NE_TEST_ASSERT(t.getLocal().position.equals(Vec3(0.0f, 2.0f, 0.0f)), "Mesh entity transform position matches.");
-    meshCount++;
-  });
+  registry.view<TransformComponent, MeshComponent>().each(
+      [&](Entity, const TransformComponent& iTransform, const MeshComponent&) {
+        NE_TEST_ASSERT(iTransform.getLocal().position.equals(Vec3(0.0f, 2.0f, 0.0f)), "Mesh entity transform position matches.");
+        meshCount++;
+      });
 
   NE_TEST_ASSERT(meshCount == 1, "Exactly one mesh entity matched in view.");
 }

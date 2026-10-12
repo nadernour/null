@@ -1,6 +1,5 @@
 #include "apps/basic_app.h"
 #include "core/logger.h"
-#include "core/defines.h"
 
 #include <string_view>
 
@@ -8,7 +7,7 @@
 #include "tests/test_runner.h"
 #endif
 
-int main(int argc, char** argv) {
+int main([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
   ne::BasicApp app{};
 
 #ifndef NE_BUILD_SHIPPING
@@ -19,9 +18,6 @@ int main(int argc, char** argv) {
       return ne::test::runAllTests(app);
     }
   }
-#else
-  NE_UNUSED(argc);
-  NE_UNUSED(argv);
 #endif
 
   app.run();

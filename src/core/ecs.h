@@ -59,17 +59,17 @@ template <typename ComponentType>
 class ComponentPool : public IComponentPool {
 public:
   ComponentPool() = default;
-  ComponentPool(size_t reserveComponents, size_t reserveEntities) { reserve(reserveComponents, reserveEntities); }
+  ComponentPool(size_t iComponentCount, size_t iEntityCount) { reserve(iComponentCount, iEntityCount); }
   ~ComponentPool() override = default;
   ComponentPool(const ComponentPool&) = delete;
   ComponentPool& operator=(const ComponentPool&) = delete;
   ComponentPool(ComponentPool&&) noexcept = default;
   ComponentPool& operator=(ComponentPool&&) noexcept = default;
 
-  void reserve(size_t reserveComponents, size_t reserveEntities = 0) {
-    mDenseComponents.reserve(reserveComponents);
-    mDenseEntities.reserve(reserveComponents);
-    mSparse.reserve(reserveEntities > 0 ? reserveEntities : reserveComponents);
+  void reserve(size_t iComponentCount, size_t iEntityCount = 0) {
+    mDenseComponents.reserve(iComponentCount);
+    mDenseEntities.reserve(iComponentCount);
+    mSparse.reserve(iEntityCount > 0 ? iEntityCount : iComponentCount);
   }
 
   template <typename... Args>
@@ -205,14 +205,14 @@ private:
     size_t minSize = SIZE_MAX;
 
     std::apply(
-        [&](const auto&... pool) {
-          auto checkPool = [&](const auto& p) {
-            if (p.size() < minSize) {
-              minSize = p.size();
-              smallest = &p.entities();
+        [&](const auto&... iPools) {
+          auto checkPool = [&](const auto& iPool) {
+            if (iPool.size() < minSize) {
+              minSize = iPool.size();
+              smallest = &iPool.entities();
             }
           };
-          (checkPool(pool), ...);
+          (checkPool(iPools), ...);
         },
         mPools);
 
@@ -224,7 +224,7 @@ private:
 
 class Registry {
 public:
-  Registry(int32_t inExpectedNumOfEntities = 100) { reserveEntities(inExpectedNumOfEntities); }
+  Registry(int32_t iExpectedEntityCount = 100) { reserveEntities(iExpectedEntityCount); }
 
   ~Registry() = default;
   Registry(const Registry&) = delete;
@@ -232,7 +232,7 @@ public:
   Registry(Registry&&) noexcept = default;
   Registry& operator=(Registry&&) noexcept = default;
 
-  void reserveEntities(int32_t count) { mGenerations.reserve(count); }
+  void reserveEntities(int32_t iCount) { mGenerations.reserve(iCount); }
 
   Entity createEntity() {
     uint32_t id;
@@ -273,8 +273,8 @@ public:
   }
 
   template <typename ComponentType>
-  void reserveComponents(size_t reserveComponents = 0) {
-    getPool<ComponentType>().reserve(reserveComponents, mGenerations.capacity());
+  void reserveComponents(size_t iCount = 0) {
+    getPool<ComponentType>().reserve(iCount, mGenerations.capacity());
   }
 
   template <typename ComponentType, typename... Args>
@@ -320,7 +320,7 @@ public:
 
   template <typename ComponentType>
   ComponentPool<ComponentType>& getPool() {
-    uint32_t typeId = getComponentTypeID<ComponentType>();
+    uint32_t typeId = getComponentTypeId<ComponentType>();
     if (typeId >= mPools.size()) {
       mPools.resize(typeId + 1);
     }
@@ -332,7 +332,7 @@ public:
 
   template <typename ComponentType>
   const ComponentPool<ComponentType>* getPoolIfExists() const {
-    uint32_t typeId = getComponentTypeID<ComponentType>();
+    uint32_t typeId = getComponentTypeId<ComponentType>();
     if (typeId < mPools.size() && mPools[typeId]) {
       return static_cast<const ComponentPool<ComponentType>*>(mPools[typeId].get());
     }
@@ -359,12 +359,12 @@ public:
 
 private:
   template <typename T>
-  static uint32_t getComponentTypeID() {
-    static uint32_t id = sNextComponentID++;
+  static uint32_t getComponentTypeId() {
+    static uint32_t id = sNextComponentId++;
     return id;
   }
 
-  static inline uint32_t sNextComponentID = 0;
+  static inline uint32_t sNextComponentId = 0;
 
   std::vector<uint32_t> mGenerations;
   std::vector<uint32_t> mFreeEntities;

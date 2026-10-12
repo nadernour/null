@@ -13,6 +13,8 @@ struct ImageData {
   uint32_t mHeight = 0;
   uint32_t mChannels = 4;
   uint32_t mMipLevels = 1;
+  // False for linear data such as normals, masks, and depth
+  bool mSrgb = true;
   std::vector<uint8_t> mPixels{};
 
   size_t getLevelSizeInBytes(uint32_t iLevel) const {
@@ -29,7 +31,7 @@ struct ImageData {
   }
 
   static ImageData createWhite1x1() { return {.mWidth = 1, .mHeight = 1, .mPixels = {255, 255, 255, 255}}; }
-  static ImageData createFlatNormal1x1() { return {.mWidth = 1, .mHeight = 1, .mPixels = {128, 128, 255, 255}}; }
+  static ImageData createFlatNormal1x1() { return {.mWidth = 1, .mHeight = 1, .mSrgb = false, .mPixels = {128, 128, 255, 255}}; }
   static ImageData createBlack1x1() { return {.mWidth = 1, .mHeight = 1, .mPixels = {0, 0, 0, 255}}; }
 };
 

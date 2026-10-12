@@ -52,30 +52,27 @@ constexpr VkDeviceSize kStagingBufferSize = 64 * 1024 * 1024;
 constexpr uint32_t kMaxSampledImages = 4096;
 constexpr const char* kDefaultShader = "base_shader";
 
-inline void setDebugUtilsObjectName(VkDevice device, VkObjectType objectType, uint64_t objectHandle, const char* name) {
+inline void setDebugUtilsObjectName([[maybe_unused]] VkDevice iDevice, [[maybe_unused]] VkObjectType iObjectType,
+                                    [[maybe_unused]] uint64_t iObjectHandle, [[maybe_unused]] const char* iName) {
 #ifndef NE_BUILD_SHIPPING
-  if (vkSetDebugUtilsObjectNameEXT && device != VK_NULL_HANDLE && objectHandle != 0 && name != nullptr) {
+  if (vkSetDebugUtilsObjectNameEXT && iDevice != VK_NULL_HANDLE && iObjectHandle != 0 && iName != nullptr) {
     VkDebugUtilsObjectNameInfoEXT nameInfo{};
     nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-    nameInfo.objectType = objectType;
-    nameInfo.objectHandle = objectHandle;
-    nameInfo.pObjectName = name;
-    vkSetDebugUtilsObjectNameEXT(device, &nameInfo);
+    nameInfo.objectType = iObjectType;
+    nameInfo.objectHandle = iObjectHandle;
+    nameInfo.pObjectName = iName;
+    vkSetDebugUtilsObjectNameEXT(iDevice, &nameInfo);
   }
-#else
-  NE_UNUSED(device);
-  NE_UNUSED(objectType);
-  NE_UNUSED(objectHandle);
-  NE_UNUSED(name);
 #endif
 }
 
-inline void setDebugUtilsObjectName(VkDevice device, VkObjectType objectType, uint64_t objectHandle, const std::string& name) {
-  setDebugUtilsObjectName(device, objectType, objectHandle, name.c_str());
+inline void setDebugUtilsObjectName(VkDevice iDevice, VkObjectType iObjectType, uint64_t iObjectHandle,
+                                    const std::string& iName) {
+  setDebugUtilsObjectName(iDevice, iObjectType, iObjectHandle, iName.c_str());
 }
 
 template <typename T>
-inline void setDebugObjectName(VkDevice device, T handle, const char* name) {
+inline void setDebugObjectName(VkDevice iDevice, T iHandle, const char* iName) {
   VkObjectType type = VK_OBJECT_TYPE_UNKNOWN;
   if constexpr (std::is_same_v<T, VkBuffer>)
     type = VK_OBJECT_TYPE_BUFFER;
@@ -115,37 +112,37 @@ inline void setDebugObjectName(VkDevice device, T handle, const char* name) {
     static_assert(!sizeof(T), "Unsupported Vulkan object type passed to setDebugObjectName!");
   }
 
-  setDebugUtilsObjectName(device, type, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(handle)), name);
+  setDebugUtilsObjectName(iDevice, type, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(iHandle)), iName);
 }
 
 template <typename T>
-inline void setDebugObjectName(VkDevice device, T handle, const std::string& name) {
-  setDebugObjectName(device, handle, name.c_str());
+inline void setDebugObjectName(VkDevice iDevice, T iHandle, const std::string& iName) {
+  setDebugObjectName(iDevice, iHandle, iName.c_str());
 }
 
 template <typename T>
-constexpr T alignUp(T value, T alignment) {
-  return (value + alignment - 1) & ~(alignment - 1);
+constexpr T alignUp(T iValue, T iAlignment) {
+  return (iValue + iAlignment - 1) & ~(iAlignment - 1);
 }
 
-inline std::string formatBytes(VkDeviceSize bytes) {
+inline std::string formatBytes(VkDeviceSize iBytes) {
   constexpr double kKilobyte = 1024.0;
   constexpr double kMegabyte = 1024.0 * 1024.0;
   constexpr double kGigabyte = 1024.0 * 1024.0 * 1024.0;
 
-  if (bytes >= kGigabyte) {
-    return std::format("{:.2f} GB", bytes / kGigabyte);
-  } else if (bytes >= kMegabyte) {
-    return std::format("{:.2f} MB", bytes / kMegabyte);
-  } else if (bytes >= kKilobyte) {
-    return std::format("{:.2f} KB", bytes / kKilobyte);
+  if (iBytes >= kGigabyte) {
+    return std::format("{:.2f} GB", iBytes / kGigabyte);
+  } else if (iBytes >= kMegabyte) {
+    return std::format("{:.2f} MB", iBytes / kMegabyte);
+  } else if (iBytes >= kKilobyte) {
+    return std::format("{:.2f} KB", iBytes / kKilobyte);
   } else {
-    return std::format("{} B", bytes);
+    return std::format("{} B", iBytes);
   }
 }
 
-inline VkImageAspectFlags deduceAspectFlags(VkFormat format) {
-  switch (format) {
+inline VkImageAspectFlags deduceAspectFlags(VkFormat iFormat) {
+  switch (iFormat) {
     case VK_FORMAT_D16_UNORM:
     case VK_FORMAT_D32_SFLOAT:
       return VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -160,22 +157,22 @@ inline VkImageAspectFlags deduceAspectFlags(VkFormat format) {
   }
 }
 
-inline void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, const VkImageSubresourceRange& subresourceRange,
-                                  VkImageLayout oldLayout, VkImageLayout newLayout, VkAccessFlags2 srcAccessMask,
-                                  VkAccessFlags2 dstAccessMask, VkPipelineStageFlags2 srcStageMask,
-                                  VkPipelineStageFlags2 dstStageMask) {
+inline void transitionImageLayout(VkCommandBuffer iCommandBuffer, VkImage iImage,
+                                  const VkImageSubresourceRange& iSubresourceRange, VkImageLayout iOldLayout,
+                                  VkImageLayout iNewLayout, VkAccessFlags2 iSrcAccessMask, VkAccessFlags2 iDstAccessMask,
+                                  VkPipelineStageFlags2 iSrcStageMask, VkPipelineStageFlags2 iDstStageMask) {
   VkImageMemoryBarrier2 imageMemoryBarrier{};
   imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-  imageMemoryBarrier.srcStageMask = srcStageMask;
-  imageMemoryBarrier.srcAccessMask = srcAccessMask;
-  imageMemoryBarrier.dstStageMask = dstStageMask;
-  imageMemoryBarrier.dstAccessMask = dstAccessMask;
-  imageMemoryBarrier.oldLayout = oldLayout;
-  imageMemoryBarrier.newLayout = newLayout;
+  imageMemoryBarrier.srcStageMask = iSrcStageMask;
+  imageMemoryBarrier.srcAccessMask = iSrcAccessMask;
+  imageMemoryBarrier.dstStageMask = iDstStageMask;
+  imageMemoryBarrier.dstAccessMask = iDstAccessMask;
+  imageMemoryBarrier.oldLayout = iOldLayout;
+  imageMemoryBarrier.newLayout = iNewLayout;
   imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
   imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  imageMemoryBarrier.image = image;
-  imageMemoryBarrier.subresourceRange = subresourceRange;
+  imageMemoryBarrier.image = iImage;
+  imageMemoryBarrier.subresourceRange = iSubresourceRange;
 
   VkDependencyInfo dependencyInfo{};
   dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -183,7 +180,7 @@ inline void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, 
   dependencyInfo.imageMemoryBarrierCount = 1;
   dependencyInfo.pImageMemoryBarriers = &imageMemoryBarrier;
 
-  vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
+  vkCmdPipelineBarrier2(iCommandBuffer, &dependencyInfo);
 }
 
 } // namespace ne::vk_utils

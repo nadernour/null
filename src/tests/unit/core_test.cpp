@@ -1,7 +1,6 @@
 #ifndef NE_BUILD_SHIPPING
 
 #include "tests/test_runner.h"
-#include "core/defines.h"
 #include "core/event.h"
 #include "core/filesystem.h"
 #include "core/platform.h"
@@ -27,9 +26,9 @@ NE_TEST_CASE("core", "Event Bus Lifecycle & Dispatch") {
 
   int receivedInt = 0;
   float receivedFloat = 0.0f;
-  CallbackId id1 = testEvent.add([&](int i, float f) {
-    receivedInt = i;
-    receivedFloat = f;
+  CallbackId id1 = testEvent.add([&](int iInt, float iFloat) {
+    receivedInt = iInt;
+    receivedFloat = iFloat;
   });
 
   NE_TEST_ASSERT(!testEvent.empty(), "Event must not be empty after add.");
@@ -40,10 +39,9 @@ NE_TEST_CASE("core", "Event Bus Lifecycle & Dispatch") {
 
   // Multiple listeners
   int listener2Count = 0;
-  CallbackId id2 = testEvent.add([&](int, float) {
+  testEvent.add([&](int, float) {
     listener2Count++;
   });
-  NE_UNUSED(id2);
 
   testEvent.broadcast(1, 2.0f);
   NE_TEST_ASSERT(receivedInt == 1 && listener2Count == 1, "Both listeners invoked on broadcast.");

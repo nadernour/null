@@ -174,7 +174,7 @@ NE_TEST_CASE("scene", "Prefab Instantiates Node Tree") {
   };
 
   Registry registry;
-  Prefab prefab(*ctx.mApp->getResourceManager(), data);
+  Prefab prefab(*ioContext.mApp->getResourceManager(), data);
 
   Entity first = prefab.instantiate(registry, Transform(Vec3(10.0f, 0.0f, 0.0f)));
   Entity second = prefab.instantiate(registry);

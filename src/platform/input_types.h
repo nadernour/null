@@ -52,12 +52,12 @@ enum class KeyMods : uint8_t {
   NumLock = 1 << 5
 };
 
-inline KeyMods operator|(KeyMods a, KeyMods b) {
-  return static_cast<KeyMods>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+inline KeyMods operator|(KeyMods iA, KeyMods iB) {
+  return static_cast<KeyMods>(static_cast<uint8_t>(iA) | static_cast<uint8_t>(iB));
 }
 
-inline bool operator&(KeyMods a, KeyMods b) {
-  return (static_cast<uint8_t>(a) & static_cast<uint8_t>(b)) != 0;
+inline bool operator&(KeyMods iA, KeyMods iB) {
+  return (static_cast<uint8_t>(iA) & static_cast<uint8_t>(iB)) != 0;
 }
 
 enum class CursorMode : uint8_t {

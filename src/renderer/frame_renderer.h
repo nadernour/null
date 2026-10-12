@@ -39,10 +39,10 @@ public:
   VkImageView getActiveImageView() const;
 
   Buffer* getUploadBuffer() const { return mFrames[mFrameIndex].mUploadBuffer.get(); }
-  void recreateUploadBuffer(VkDeviceSize newSize);
+  void recreateUploadBuffer(VkDeviceSize iNewSize);
 
 private:
-  std::unique_ptr<Buffer> createUploadBuffer(VkDeviceSize size, std::string iDebugName = "");
+  std::unique_ptr<Buffer> createUploadBuffer(VkDeviceSize iSize, std::string iDebugName = "");
 
   void createDepthImage();
   void createFramesResources();

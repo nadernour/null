@@ -1,5 +1,4 @@
 #include "platform/input.h"
-#include "core/defines.h"
 #include "core/logger.h"
 #include "platform/window.h"
 
@@ -23,8 +22,8 @@ void Input::init(Window* iWindow) {
     glfwSetCursorPosCallback(glfwWin, cursorPosCallback);
     glfwSetScrollCallback(glfwWin, scrollCallback);
 
-    sState.mFocusCallbackId = sState.mWindow->addWindowFocusCallback([](bool focused) {
-      if (!focused) {
+    sState.mFocusCallbackId = sState.mWindow->addWindowFocusCallback([](bool iFocused) {
+      if (!iFocused) {
         resetState();
       }
     });
@@ -170,9 +169,7 @@ void Input::resetState() {
   }
 }
 
-void Input::keyCallback(GLFWwindow* iWindow, int iKey, int iScancode, int iAction, int iMods) {
-  NE_UNUSED(iWindow);
-  NE_UNUSED(iScancode);
+void Input::keyCallback(GLFWwindow*, int iKey, int, int iAction, int iMods) {
   int16_t keyIdx = static_cast<int16_t>(iKey);
   if (keyIdx >= 0 && static_cast<size_t>(keyIdx) < kMaxKeys) {
     size_t idx = static_cast<size_t>(keyIdx);
@@ -187,8 +184,7 @@ void Input::keyCallback(GLFWwindow* iWindow, int iKey, int iScancode, int iActio
   sState.mActiveMods = static_cast<KeyMods>(iMods);
 }
 
-void Input::mouseButtonCallback(GLFWwindow* iWindow, int iButton, int iAction, int iMods) {
-  NE_UNUSED(iWindow);
+void Input::mouseButtonCallback(GLFWwindow*, int iButton, int iAction, int iMods) {
   size_t btnIdx = static_cast<size_t>(iButton);
   if (btnIdx < kMaxMouseButtons) {
     if (iAction == GLFW_PRESS) {
@@ -202,8 +198,7 @@ void Input::mouseButtonCallback(GLFWwindow* iWindow, int iButton, int iAction, i
   sState.mActiveMods = static_cast<KeyMods>(iMods);
 }
 
-void Input::cursorPosCallback(GLFWwindow* iWindow, double iXpos, double iYpos) {
-  NE_UNUSED(iWindow);
+void Input::cursorPosCallback(GLFWwindow*, double iXpos, double iYpos) {
   if (sState.mFirstMouse || sState.mFirstMouseAfterCapture) {
     sState.mLastMouseX = iXpos;
     sState.mLastMouseY = iYpos;
@@ -225,8 +220,7 @@ void Input::cursorPosCallback(GLFWwindow* iWindow, double iXpos, double iYpos) {
   sState.mMouseY = iYpos;
 }
 
-void Input::scrollCallback(GLFWwindow* iWindow, double iXoffset, double iYoffset) {
-  NE_UNUSED(iWindow);
+void Input::scrollCallback(GLFWwindow*, double iXoffset, double iYoffset) {
   sState.mMouseScroll.x += static_cast<float>(iXoffset);
   sState.mMouseScroll.y += static_cast<float>(iYoffset);
 }

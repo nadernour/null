@@ -14,8 +14,8 @@ namespace ne::test {
 namespace {
 
 // RGBA8 image holding a copy of the texels
-ImageData makeImage(uint32_t iWidth, uint32_t iHeight, const std::vector<uint8_t>& iTexels) {
-  return ImageData{.mWidth = iWidth, .mHeight = iHeight, .mPixels = iTexels};
+ImageData makeImage(uint32_t iWidth, uint32_t iHeight, bool iSrgb, const std::vector<uint8_t>& iTexels) {
+  return ImageData{.mWidth = iWidth, .mHeight = iHeight, .mSrgb = iSrgb, .mPixels = iTexels};
 }
 
 const uint8_t* getLevelPixels(const ImageData& iImage, uint32_t iLevel) {
@@ -42,9 +42,10 @@ NE_TEST_CASE("image", "Mip Chain Layout") {
   for (size_t i = 0; i < texels.size(); ++i) {
     texels[i] = static_cast<uint8_t>(i);
   }
-  ImageData image = makeImage(5, 3, texels);
-  ImageData chain = ImageUtils::generateMipChain(image, true);
+  ImageData image = makeImage(5, 3, false, texels);
+  ImageData chain = ImageUtils::generateMipChain(image);
 
+  NE_TEST_ASSERT(!chain.mSrgb, "The chain keeps the source color space.");
   NE_TEST_ASSERT(chain.mMipLevels == 3, "5x3 chains to 2x1 and 1x1, got {} levels.", chain.mMipLevels);
   NE_TEST_ASSERT(chain.getLevelSizeInBytes(1) == 2 * 1 * 4, "Level 1 is 2x1.");
   NE_TEST_ASSERT(chain.getLevelSizeInBytes(2) == 1 * 1 * 4, "Level 2 is 1x1.");
@@ -60,9 +61,8 @@ NE_TEST_CASE("image", "sRGB Mips Average In Linear Light") {
       checker.insert(checker.end(), {value, value, value, 255});
     }
   }
-  ImageData image = makeImage(4, 4, checker);
-  ImageData unormChain = ImageUtils::generateMipChain(image, false);
-  ImageData srgbChain = ImageUtils::generateMipChain(image, true);
+  ImageData unormChain = ImageUtils::generateMipChain(makeImage(4, 4, false, checker));
+  ImageData srgbChain = ImageUtils::generateMipChain(makeImage(4, 4, true, checker));
   const uint8_t* unormTexel = getLevelPixels(unormChain, 2);
   const uint8_t* srgbTexel = getLevelPixels(srgbChain, 2);
 
@@ -79,10 +79,8 @@ NE_TEST_CASE("image", "Constant Image Stays Constant") {
   for (uint32_t i = 0; i < 7 * 5; ++i) {
     texels.insert(texels.end(), color.begin(), color.end());
   }
-  ImageData image = makeImage(7, 5, texels);
-
   for (bool srgb : {false, true}) {
-    ImageData chain = ImageUtils::generateMipChain(image, srgb);
+    ImageData chain = ImageUtils::generateMipChain(makeImage(7, 5, srgb, texels));
     bool isConstant = true;
     for (size_t i = 0; i < chain.getSizeInBytes(); ++i) {
       isConstant = isConstant && chain.mPixels[i] == color[i % 4];
@@ -93,8 +91,8 @@ NE_TEST_CASE("image", "Constant Image Stays Constant") {
 
 NE_TEST_CASE("image", "Odd Sizes Keep Every Texel") {
   // A 2-texel box gives 128 and a bilinear blit 255; the exact box weighs all three: (0 + 255 + 0) / 3
-  ImageData image = makeImage(3, 1, {0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255});
-  ImageData chain = ImageUtils::generateMipChain(image, false);
+  ImageData image = makeImage(3, 1, false, {0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255});
+  ImageData chain = ImageUtils::generateMipChain(image);
   const uint8_t* texel = getLevelPixels(chain, 1);
 
   NE_TEST_ASSERT(texel[0] == 85, "Each texel weighs a third: expected 85, got {}.", texel[0]);

@@ -35,12 +35,12 @@ public:
   const char* getWindowName() const;
   void setTitle(const std::string& iTitle);
   std::vector<const char*> getRequiredInstanceExtensions() const;
-  VkResult createSurface(VkInstance instance);
-  void destroySurface(VkInstance instance);
+  VkResult createSurface(VkInstance iInstance);
+  void destroySurface(VkInstance iInstance);
   VkSurfaceKHR getSurface() const { return mSurface; }
 
   void getCursorPos(double* oXpos, double* oYpos) const;
-  void setCursorMode(CursorMode mode);
+  void setCursorMode(CursorMode iMode);
 
   CallbackId addFrameBufferResizeCallback(FrameBufferResizeEvent::Callback iCallback) {
     return mFrameBufferResizeEvent.add(std::move(iCallback));

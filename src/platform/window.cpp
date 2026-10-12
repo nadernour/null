@@ -49,20 +49,20 @@ std::vector<const char*> Window::getRequiredInstanceExtensions() const {
   return result;
 }
 
-VkResult Window::createSurface(VkInstance instance) { return glfwCreateWindowSurface(instance, mWindow, nullptr, &mSurface); }
+VkResult Window::createSurface(VkInstance iInstance) { return glfwCreateWindowSurface(iInstance, mWindow, nullptr, &mSurface); }
 
-void Window::destroySurface(VkInstance instance) {
+void Window::destroySurface(VkInstance iInstance) {
   if (mSurface != VK_NULL_HANDLE) {
-    vkDestroySurfaceKHR(instance, mSurface, nullptr);
+    vkDestroySurfaceKHR(iInstance, mSurface, nullptr);
     mSurface = VK_NULL_HANDLE;
   }
 }
 
 void Window::getCursorPos(double* oXpos, double* oYpos) const { glfwGetCursorPos(mWindow, oXpos, oYpos); }
 
-void Window::setCursorMode(CursorMode mode) {
+void Window::setCursorMode(CursorMode iMode) {
   int glfwMode = GLFW_CURSOR_NORMAL;
-  switch (mode) {
+  switch (iMode) {
     case CursorMode::Normal:
       glfwMode = GLFW_CURSOR_NORMAL;
       break;
@@ -74,7 +74,7 @@ void Window::setCursorMode(CursorMode mode) {
       break;
   }
   glfwSetInputMode(mWindow, GLFW_CURSOR, glfwMode);
-  if (mode == CursorMode::Disabled) {
+  if (iMode == CursorMode::Disabled) {
     if (glfwRawMouseMotionSupported()) {
       glfwSetInputMode(mWindow, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
     }
