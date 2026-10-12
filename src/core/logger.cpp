@@ -1,58 +1,113 @@
 #include "core/logger.h"
 #include "core/platform.h"
 
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/rotating_file_sink.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
-
+#include <algorithm>
+#include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <mutex>
+#include <vector>
+
+#if defined(NE_PLATFORM_WINDOWS)
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace ne {
 
-Logger::Logger() {
-  auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+namespace {
 
-  std::filesystem::path log_path = std::filesystem::path(platform::getExecutableDirectory()) / "logs/engine.log";
-  auto rotating_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(log_path.string(), 1024 * 1024, 5, true);
+constexpr size_t kKeptLogFiles = 10;
+constexpr const char* kLogFilePrefix = "null_";
+constexpr const char* kResetColor = "\x1b[0m";
 
-  spdlog::sinks_init_list sink_list = {console_sink, rotating_sink};
+struct LogTypeStyle {
+  const char* name;
+  const char* color; // ANSI escape code
+};
 
-  mLogger = std::make_shared<spdlog::logger>("Engine", sink_list.begin(), sink_list.end());
-  mLogger->set_level(spdlog::level::trace);
-  mLogger->flush_on(spdlog::level::critical);
-  // [Time] [Log Level] Message
-  mLogger->set_pattern("[%T] [%^%l%$] %v");
+// Indexed by LogType
+constexpr LogTypeStyle kLogTypeStyles[] = {
+    {"log", "\x1b[32m"},     // Green
+    {"warning", "\x1b[33m"}, // Yellow
+    {"error", "\x1b[31m"},   // Red
+    {"fatal", "\x1b[1;31m"}, // Bold red
+};
+static_assert(std::size(kLogTypeStyles) == static_cast<size_t>(Logger::LogType::Fatal) + 1);
 
-  spdlog::register_logger(mLogger);
+// Wall-clock time in the machine's time zone, or UTC when none is set
+std::chrono::local_seconds localTimeNow() {
+  return std::chrono::floor<std::chrono::seconds>(std::chrono::current_zone()->to_local(std::chrono::system_clock::now()));
 }
 
-Logger::~Logger() { mLogger->flush(); }
+// Colors only on a terminal; a Windows console must also be switched to accept ANSI codes
+bool supportsColor(bool iStderr) {
+#if defined(NE_PLATFORM_WINDOWS)
+  HANDLE console = GetStdHandle(iStderr ? STD_ERROR_HANDLE : STD_OUTPUT_HANDLE);
+  DWORD mode = 0;
+  return GetConsoleMode(console, &mode) && SetConsoleMode(console, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+#else
+  return isatty(iStderr ? STDERR_FILENO : STDOUT_FILENO);
+#endif
+}
 
-void Logger::logExec(LogType iLogType, std::string iLog) {
-  switch (iLogType) {
-    case LogType::Info: {
-      mLogger->info(std::move(iLog));
-      break;
-    }
-    case LogType::Warn: {
-      mLogger->warn(std::move(iLog));
-      break;
-    }
-    case LogType::Error: {
-      mLogger->error(std::move(iLog));
-      break;
-    }
-    case LogType::Fatal: {
-      mLogger->critical(std::move(iLog));
-      mLogger->flush();
-      break;
+// File names start with the start time, so name order is age order. Files without the prefix are left alone.
+std::ofstream openLogFile() {
+  const std::filesystem::path logDir = std::filesystem::path(platform::getExecutableDirectory()) / "logs";
+  std::error_code ec;
+  std::filesystem::create_directories(logDir, ec);
+
+  std::vector<std::filesystem::path> logFiles;
+  for (std::filesystem::directory_iterator it(logDir, ec), end; !ec && it != end; it.increment(ec)) {
+    if (it->path().filename().string().starts_with(kLogFilePrefix)) {
+      logFiles.push_back(it->path());
     }
   }
+  std::sort(logFiles.begin(), logFiles.end());
+  for (size_t i = 0; i + kKeptLogFiles <= logFiles.size(); ++i) { // Leaves room for the new file
+    std::filesystem::remove(logFiles[i], ec);
+  }
+
+  std::ofstream file(logDir / std::format("{}{:%Y-%m-%d_%H-%M-%S}.log", kLogFilePrefix, localTimeNow()), std::ios::app);
+  if (!file) {
+    std::cerr << "Logger: could not open a log file; logging to the console only\n";
+  }
+  return file;
 }
 
-Logger& Logger::get() {
-  static Logger instance;
-  return instance;
+struct LogState {
+  std::mutex mutex;
+  std::ofstream file = openLogFile(); // Writes do nothing if it failed to open
+  bool colorStdout = supportsColor(false);
+  bool colorStderr = supportsColor(true);
+};
+
+// Never destroyed, so code running during static destruction can still log
+LogState& getLogState() {
+  static LogState* state = new LogState();
+  return *state;
+}
+
+} // namespace
+
+// Every line is flushed, so nothing is lost on a crash or abort()
+void Logger::write(LogType iLogType, const std::string& iMessage) {
+  LogState& state = getLogState();
+  const LogTypeStyle& style = kLogTypeStyles[static_cast<size_t>(iLogType)];
+  const std::chrono::local_seconds now = localTimeNow();
+  const bool toStdout = iLogType == LogType::Log;
+  const bool useColor = toStdout ? state.colorStdout : state.colorStderr;
+  const std::string consoleLine =
+      std::format("[{:%T}] [{}{}{}] {}\n", now, useColor ? style.color : "", style.name, useColor ? kResetColor : "", iMessage);
+  const std::string fileLine = std::format("[{:%T}] [{}] {}\n", now, style.name, iMessage);
+
+  std::lock_guard lock(state.mutex);
+  std::ostream& console = toStdout ? std::cout : std::cerr;
+  console << consoleLine << std::flush;
+  state.file << fileLine << std::flush;
 }
 
 } // namespace ne

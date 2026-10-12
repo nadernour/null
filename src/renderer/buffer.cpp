@@ -14,7 +14,7 @@ namespace ne {
 
 namespace {
 
-[[maybe_unused]] std::string_view memoryUsageToString(MemoryUsage usage) {
+[[maybe_unused]] std::string memoryUsageToString(MemoryUsage usage) {
   switch (usage) {
     case MemoryUsage::DeviceLocal:
       return "DeviceLocal";

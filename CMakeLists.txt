@@ -27,7 +27,6 @@ set(GLFW_BUILD_DOCS OFF) # The docs folder is not vendored
 add_subdirectory("${ThirdPartyDir}/glfw")
 add_subdirectory("${ThirdPartyDir}/cgltf")
 add_subdirectory("${ThirdPartyDir}/stb")
-add_subdirectory("${ThirdPartyDir}/spdlog")
 add_subdirectory("${ThirdPartyDir}/imgui")
 
 # ----------------------------------------------------------------------
@@ -62,7 +61,6 @@ target_link_libraries(${EngineTarget} PRIVATE
   glfw
   cgltf
   stb
-  spdlog
   imgui
 )
 target_compile_definitions(${EngineTarget} PRIVATE

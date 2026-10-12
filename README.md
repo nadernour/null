@@ -47,9 +47,9 @@ The sections below group work by area; their order is not fixed. The open decisi
 ### Hardening
 - [x] **Self-Contained Vulkan Build**: Vulkan headers, volk, and VMA live in `third_party`, so the C++ build needs no Vulkan SDK.
 - [x] **Downloaded Shader Compiler**: CMake downloads Slang, so building needs no Vulkan SDK.
-- [ ] **In-House Logger**: Replaces spdlog; logging stays on in Shipping builds, filtered at runtime, with one log file per run.
+- [x] **In-House Logger**: Replaces spdlog, with colored console output and one log file per run (the last 10 are kept).
 - [ ] **Up-to-Date Third-Party Libraries**: GLFW, Dear ImGui, cgltf, and stb updated to their latest releases, with each library's source and version recorded.
-- [ ] **Loud Failures in Release Builds**: Vulkan errors, geometry pool overflow, and malformed assets report what went wrong instead of aborting silently or corrupting memory.
+- [ ] **Loud Failures in Release Builds**: Logging stays on in Shipping builds, filtered at runtime, and Vulkan errors, geometry pool overflow, and malformed assets report what went wrong instead of aborting silently or corrupting memory.
 - [ ] **Drift-Free Clock**: Total time accumulates in integer nanoseconds, so long runs don't drift.
 - [ ] **In-App Log Panel**: Recent log lines in an ImGui window.
 
@@ -115,8 +115,8 @@ The sections below group work by area; their order is not fixed. The open decisi
 ## 🛠️ Building & Testing
 
 ### Requirements
-* **OS**: Linux (Ubuntu 24.04 or newer, or equivalent) or Windows 10 / 11.
-* **Compiler**: C++20 with `<format>`: GCC 13+, Clang 17+, or MSVC 2022.
+* **OS**: Linux or Windows 10 / 11.
+* **Compiler**: C++20 with `<format>` and time zones: GCC 14+ or MSVC 2022.
 * **Build Tools**: CMake 3.24+ and Ninja.
 * **Shader Compiler**: Nothing to install: the first configure of each build folder downloads Slang.
 * **Validation Layers** (optional, Debug builds): From the Vulkan SDK or a distro package such as `vulkan-validationlayers`; without them, Debug builds run unvalidated.

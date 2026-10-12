@@ -19,13 +19,13 @@
   do {                                                                                                                           \
     VkResult vkCheckResult = (fn);                                                                                               \
     if (vkCheckResult != VK_SUCCESS) {                                                                                           \
-      ne::Logger::get().log(ne::Logger::LogType::Fatal,                                                                          \
-                            "VULKAN ERROR\n"                                                                                     \
-                            "  Function: {}\n"                                                                                   \
-                            "  Result: {} ({})\n"                                                                                \
-                            "  File: {}\n"                                                                                       \
-                            "  Line: {}",                                                                                        \
-                            #fn, string_VkResult(vkCheckResult), static_cast<int>(vkCheckResult), __FILE__, __LINE__);           \
+      ne::Logger::log(ne::Logger::LogType::Fatal,                                                                                \
+                      "VULKAN ERROR\n"                                                                                           \
+                      "  Function: {}\n"                                                                                         \
+                      "  Result: {} ({})\n"                                                                                      \
+                      "  File: {}\n"                                                                                             \
+                      "  Line: {}",                                                                                              \
+                      #fn, string_VkResult(vkCheckResult), static_cast<int>(vkCheckResult), __FILE__, __LINE__);                 \
       NE_BREAK();                                                                                                                \
       std::abort();                                                                                                              \
     }                                                                                                                            \
