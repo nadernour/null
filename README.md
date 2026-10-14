@@ -126,6 +126,7 @@ The sections below group work by area; their order is not fixed. The open decisi
 * **OS**: Linux or Windows 10 / 11.
 * **Compiler**: C++20 with `<format>` and time zones: GCC 14+ or MSVC 2022.
 * **Build Tools**: CMake 3.24+ and Ninja.
+* **Git LFS**: Models and textures in `content/` are stored in Git LFS; install `git-lfs` before cloning, or run `git lfs pull` after, or the tests fail on unreadable assets.
 * **Shader Compiler**: Nothing to install: the first configure of each build folder downloads Slang.
 * **Validation Layers** (optional, Debug builds): From the Vulkan SDK or a distro package such as `vulkan-validationlayers`; without them, Debug builds run unvalidated.
 * **GPU**: A Vulkan 1.3 driver and loader (`libvulkan1` on Debian / Ubuntu) with dynamic rendering, synchronization2, buffer device address, descriptor indexing, and multi-draw indirect. Mesa's lavapipe (software Vulkan) works too.

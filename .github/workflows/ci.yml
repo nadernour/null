@@ -21,11 +21,13 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            g++ cmake ninja-build pkg-config git ca-certificates \
+            g++ cmake ninja-build pkg-config git git-lfs ca-certificates \
             libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev libwayland-dev libxkbcommon-dev \
             libvulkan1 mesa-vulkan-drivers vulkan-validationlayers xvfb xauth
 
       - uses: actions/checkout@v7
+        with:
+          lfs: true # The tests load models and textures from content/, which is in Git LFS
 
       - name: Build debug
         run: cmake --preset debug && cmake --build --preset debug

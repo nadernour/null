@@ -63,7 +63,7 @@ int runAllTests(Application& ioApp);
   static void NE_CONCAT(ne_test_func_, __LINE__)(::ne::test::TestContext & ioContext)
 #endif
 
-// you can only use it inside NE_TEST_CASE
+// you can only use it inside NE_TEST_CASE. A failure ends the test, so later checks can rely on earlier ones.
 #define NE_TEST_ASSERT(condition, ...)                                                                                           \
   do {                                                                                                                           \
     if (condition) {                                                                                                             \
@@ -74,5 +74,6 @@ int runAllTests(Application& ioApp);
       __VA_OPT__(user_msg = std::format(__VA_ARGS__);)                                                                           \
       ne::Logger::log(ne::Logger::LogLevel::Error, "[TEST FAIL] {}\n  Condition: {}\n  File: {}\n  Line: {}", user_msg,          \
                       #condition, __FILE__, __LINE__);                                                                           \
+      return;                                                                                                                    \
     }                                                                                                                            \
   } while (false)
