@@ -7,24 +7,17 @@
 
 namespace ne {
 
-// Thread-safe. Verbose lines are dropped before they are formatted unless init() turned them on. Verbose and Log
-// lines go to stdout and the rest to stderr, colored on a terminal; every line also goes to logs/null_<start time>.log
-// next to the executable, and the 10 newest log files are kept.
 class Logger {
 public:
   enum class LogLevel : uint8_t { Verbose, Log, Warn, Error, Fatal };
 
-  // Called once at startup, before other threads exist; iVerbose shows verbose lines for the whole run
   static void init(bool iVerbose);
 
   template <typename... Args> static void log(LogLevel iLevel, std::format_string<Args...> iFmt, Args&&... iArgs) {
-    if (iLevel != LogLevel::Verbose || isVerbose()) {
-      write(iLevel, std::format(iFmt, std::forward<Args>(iArgs)...));
-    }
+    write(iLevel, std::format(iFmt, std::forward<Args>(iArgs)...));
   }
 
 private:
-  static bool isVerbose();
   static void write(LogLevel iLevel, const std::string& iMessage);
 };
 

@@ -39,9 +39,9 @@ constexpr LogLevelStyle kLogLevelStyles[] = {
 };
 static_assert(std::size(kLogLevelStyles) == static_cast<size_t>(Logger::LogLevel::Fatal) + 1);
 
-// Wall-clock time in the machine's time zone, or UTC when none is set
-std::chrono::local_seconds localTimeNow() {
-  return std::chrono::floor<std::chrono::seconds>(std::chrono::current_zone()->to_local(std::chrono::system_clock::now()));
+std::chrono::local_seconds localTimeNow(const std::chrono::sys_info& iZone) {
+  const std::chrono::sys_seconds now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+  return std::chrono::local_seconds{(now + iZone.offset).time_since_epoch()};
 }
 
 // Colors only on a terminal; a Windows console must also be switched to accept ANSI codes
@@ -55,8 +55,7 @@ bool supportsColor(bool iStderr) {
 #endif
 }
 
-// File names start with the start time, so name order is age order. Files without the prefix are left alone.
-std::ofstream openLogFile() {
+std::ofstream openLogFile(const std::chrono::sys_info& iZone) {
   const std::filesystem::path logDir = std::filesystem::path(platform::getExecutableDirectory()) / "logs";
   std::error_code ec;
   std::filesystem::create_directories(logDir, ec);
@@ -72,17 +71,20 @@ std::ofstream openLogFile() {
     std::filesystem::remove(logFiles[i], ec);
   }
 
-  std::ofstream file(logDir / std::format("{}{:%Y-%m-%d_%H-%M-%S}.log", kLogFilePrefix, localTimeNow()), std::ios::app);
+  const std::chrono::local_seconds start = localTimeNow(iZone);
+  std::ofstream file(logDir / std::format("{}{:%Y-%m-%d_%H-%M-%S}.log", kLogFilePrefix, start), std::ios::app);
   if (!file) {
     std::cerr << "Logger: could not open a log file; logging to the console only\n";
   }
+  file << std::format("Log started {:%F %T %Ez (%Z)}\n", std::chrono::local_time_format(start, &iZone.abbrev, &iZone.offset));
   return file;
 }
 
 struct LogState {
   bool verbose = false; // Only written by init(), before other threads exist
+  std::chrono::sys_info zone = std::chrono::current_zone()->get_info(std::chrono::system_clock::now());
   std::mutex mutex;
-  std::ofstream file = openLogFile(); // Writes do nothing if it failed to open
+  std::ofstream file = openLogFile(zone); // Writes do nothing if it failed to open
   bool colorStdout = supportsColor(false);
   bool colorStderr = supportsColor(true);
 };
@@ -97,22 +99,26 @@ LogState& getLogState() {
 
 void Logger::init(bool iVerbose) { getLogState().verbose = iVerbose; }
 
-bool Logger::isVerbose() { return getLogState().verbose; }
-
 // Every line is flushed, so nothing is lost on a crash or abort()
 void Logger::write(LogLevel iLevel, const std::string& iMessage) {
   LogState& state = getLogState();
   const LogLevelStyle& style = kLogLevelStyles[static_cast<size_t>(iLevel)];
-  const std::chrono::local_seconds now = localTimeNow();
+  const std::chrono::local_seconds now = localTimeNow(state.zone);
+  const bool toConsole = iLevel != LogLevel::Verbose || state.verbose;
   const bool toStdout = iLevel <= LogLevel::Log;
-  const bool useColor = toStdout ? state.colorStdout : state.colorStderr;
-  const std::string consoleLine =
-      std::format("[{:%T}] [{}{}{}] {}\n", now, useColor ? style.color : "", style.name, useColor ? kResetColor : "", iMessage);
+  std::string consoleLine;
+  if (toConsole) {
+    const bool useColor = toStdout ? state.colorStdout : state.colorStderr;
+    consoleLine =
+        std::format("[{:%T}] [{}{}{}] {}\n", now, useColor ? style.color : "", style.name, useColor ? kResetColor : "", iMessage);
+  }
   const std::string fileLine = std::format("[{:%T}] [{}] {}\n", now, style.name, iMessage);
 
   std::lock_guard lock(state.mutex);
-  std::ostream& console = toStdout ? std::cout : std::cerr;
-  console << consoleLine << std::flush;
+  if (toConsole) {
+    std::ostream& console = toStdout ? std::cout : std::cerr;
+    console << consoleLine << std::flush;
+  }
   state.file << fileLine << std::flush;
 }
 

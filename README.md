@@ -53,9 +53,9 @@ The sections below group work by area; their order is not fixed. The open decisi
 - [x] **Mesh Index Validation**: A mesh whose indices run past its vertices is rejected with a logged reason instead of making the GPU read another mesh's memory: `ResourceManager::createMesh` runs `MeshData::validate` on every mesh, and glTF files also pass `cgltf_validate`.
 - [x] **Logging in Shipping Builds**: Shipping keeps its log output, and a failed Vulkan call logs what failed before aborting, so a headless run that dies leaves a reason behind.
 - [x] **Bad Input Is an Error, Not an Assert**: Asserts catch only engine bugs; bad input is rejected with a logged reason in every build: glTF files that require an unsupported extension, mistyped or unreadable attributes, meshes that don't fit the geometry pools (until Reusable Geometry Pools grows them), and textures past the GPU's size limit or the bindless table.
-- [x] **Log Levels**: `verbose`, `log`, `warn`, `error`, and `fatal`; verbose lines (every allocation and subsystem step) show only with `--verbose`, so a normal run prints a few lines.
+- [x] **Log Levels**: `verbose`, `log`, `warn`, `error`, and `fatal`; verbose lines (every allocation and subsystem step) always go to the log file but show on the console only with `--verbose`, so a normal run prints a few lines and a failed one still leaves the full story.
+- [x] **Fast Log Timestamps**: The time zone is looked up once per run instead of on every line, where it took about 1.4 µs of the 1.5 µs it cost to format one. Times keep the run's starting UTC offset, recorded on the log file's first line, so they stay in order across a daylight saving switch.
 - [x] **Drift-Free Clock**: Total time accumulates in integer nanoseconds (`Time::getTime`, int64 like ROS 2 time) and is converted to seconds only on read, so long runs don't drift; the old `float` total was 3 s off after an hour at 60 fps and stopped advancing after about 6 days.
-- [ ] **In-App Log Panel**: Recent log lines in an ImGui window, filtered by level at runtime.
 
 ### Robots & Worlds
 - [ ] **URDF Import**: Robot links and joints (fixed, revolute, continuous, prismatic, and mimic) as a transform hierarchy, with several visuals per link and `package://` mesh paths.
@@ -94,6 +94,7 @@ The sections below group work by area; their order is not fixed. The open decisi
 - [ ] **Debug Draw**: Lines, coordinate frames, joint axes, trajectories, and point clouds.
 - [ ] **Picking & Gizmos**: Select entities and move them in the viewport.
 - [ ] **Scene Editor**: Place robots, objects, and sensors in the viewport and save the scene.
+- [ ] **In-App Log Panel**: Recent log lines in an ImGui window, filtered by level at runtime, for runs without a terminal.
 
 ### Engine & Performance
 - [ ] **CI**: Build and run the tests on every push, on lavapipe (Mesa's software Vulkan).
@@ -144,4 +145,4 @@ cmake --build --preset debug && ./build/debug/bin/null_engine --run-tests
 
 > **Packaged Builds**: Configure with `-DNE_PACKAGED_BUILD=ON` to copy assets alongside the output binary.
 
-> **Verbose Logging**: Pass `--verbose` (or `-v`) to also log every allocation and subsystem step; it is set at startup for the whole run.
+> **Verbose Logging**: Every allocation and subsystem step is always written to the run's log file (`logs/` next to the executable). Pass `--verbose` (or `-v`) to also show them on the console; it is set at startup for the whole run.
