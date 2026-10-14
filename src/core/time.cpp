@@ -8,11 +8,10 @@ Time::State Time::sState{};
 void Time::init() {
   const auto now = Clock::now();
   sState.startTime = now;
-  sState.currentTime = now;
   sState.previousTime = now;
-  sState.deltaTime = 0.0f;
-  sState.unscaledDeltaTime = 0.0f;
-  sState.timeSeconds = 0.0f;
+  sState.time = Nanoseconds{0};
+  sState.delta = Nanoseconds{0};
+  sState.unscaledDelta = Nanoseconds{0};
   sState.initialized = true;
 }
 
@@ -25,13 +24,13 @@ void Time::tick() {
   }
 
   const auto now = Clock::now();
-  sState.previousTime = sState.currentTime;
-  sState.currentTime = now;
+  const Nanoseconds elapsed = now - sState.previousTime;
+  sState.previousTime = now;
 
-  const float rawDelta = std::chrono::duration<float>(sState.currentTime - sState.previousTime).count();
-  sState.unscaledDeltaTime = math::clamp(rawDelta, 0.0f, kMaxDeltaTime);
-  sState.deltaTime = sState.unscaledDeltaTime * sState.timeScale;
-  sState.timeSeconds += sState.deltaTime;
+  // Scaling rounds to whole nanoseconds (exact at 0x and 1x), and the total only ever adds integers
+  sState.unscaledDelta = math::min(elapsed, kMaxDelta);
+  sState.delta = Nanoseconds{math::roundToInt64(static_cast<double>(sState.unscaledDelta.count()) * sState.timeScale)};
+  sState.time += sState.delta;
 }
 
 } // namespace ne

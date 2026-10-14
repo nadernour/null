@@ -8,11 +8,16 @@ class Time {
 public:
   using Clock = std::chrono::steady_clock;
   using TimePoint = Clock::time_point;
+  using Nanoseconds = std::chrono::nanoseconds; // int64, ±292 years
 
-  // Seconds, sampled once per frame by tick()
-  static float getDeltaTime() { return sState.deltaTime; }
-  static float getUnscaledDeltaTime() { return sState.unscaledDeltaTime; }
-  static float getTimeSeconds() { return sState.timeSeconds; }
+  // Exact totals, sampled once per frame by tick(); scaled by the time scale
+  static Nanoseconds getTime() { return sState.time; }
+  static Nanoseconds getDelta() { return sState.delta; }
+
+  // Seconds, converted from the nanosecond totals on read, never accumulated
+  static float getDeltaTime() { return std::chrono::duration<float>(sState.delta).count(); }
+  static float getUnscaledDeltaTime() { return std::chrono::duration<float>(sState.unscaledDelta).count(); }
+  static double getTimeSeconds() { return std::chrono::duration<double>(sState.time).count(); }
 
   // 0 pauses, 1 is normal speed
   static void setTimeScale(float iScale) { sState.timeScale = iScale >= 0 ? iScale : 0; }
@@ -27,16 +32,15 @@ public:
   static void reset();
 
 private:
-  static constexpr float kMaxDeltaTime = 0.1f; // Clamps lag spikes
+  static constexpr Nanoseconds kMaxDelta = std::chrono::milliseconds(100); // Clamps lag spikes
 
   struct State {
     TimePoint startTime;
-    TimePoint currentTime;
     TimePoint previousTime;
 
-    float deltaTime{0.0f};
-    float unscaledDeltaTime{0.0f};
-    float timeSeconds{0.0f};
+    Nanoseconds time{0};
+    Nanoseconds delta{0};
+    Nanoseconds unscaledDelta{0};
     float timeScale{1.0f};
     bool initialized{false};
   };

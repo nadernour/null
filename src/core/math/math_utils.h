@@ -3,6 +3,7 @@
 #include "core/math/simd.h"
 #include <cmath>
 #include <concepts>
+#include <cstdint>
 
 namespace ne::math {
 
@@ -68,6 +69,12 @@ T sqrt(T iVal) {
 template <std::floating_point T>
 T pow(T iBase, T iExp) {
   return std::pow(iBase, iExp);
+}
+
+// Nearest integer, halves away from zero
+template <std::floating_point T>
+int64_t roundToInt64(T iVal) {
+  return static_cast<int64_t>(std::llround(iVal));
 }
 
 template <std::floating_point T>
