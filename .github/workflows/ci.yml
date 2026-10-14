@@ -25,7 +25,7 @@ jobs:
             libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev libwayland-dev libxkbcommon-dev \
             libvulkan1 mesa-vulkan-drivers vulkan-validationlayers xvfb xauth
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Build debug
         run: cmake --preset debug && cmake --build --preset debug
@@ -38,7 +38,7 @@ jobs:
 
       - name: Upload test logs
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: linux-test-logs
           path: build/debug/bin/logs/
@@ -53,7 +53,7 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Build debug
         run: .\build.ps1 -Preset debug

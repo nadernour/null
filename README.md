@@ -3,7 +3,7 @@
 A digital twin platform for robot simulation, built on a Vulkan 1.4 renderer written in C++20. The goal is an easy way to build virtual robots and their environments, simulate them with realistic sensors, train robot behaviors, and connect the results to real robots. Design choices favor ROS conventions, headless operation, and sensor simulation.
 
 <p align="center">
-  <a href="https://github.com/1992please/null/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/1992please/null/ci.yml?branch=main&label=CI&logo=github&style=flat-square" alt="CI Status"></a>
+  <a href="https://github.com/nadernour/null/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/nadernour/null/ci.yml?branch=main&label=CI&logo=github&style=flat-square" alt="CI Status"></a>
   <a href="https://en.cppreference.com/w/cpp/20"><img src="https://img.shields.io/badge/C%2B%2B-20-blue.svg?logo=cplusplus&logoColor=white&style=flat-square" alt="C++ Standard"></a>
   <a href="https://www.vulkan.org/"><img src="https://img.shields.io/badge/Vulkan-1.4-red.svg?logo=vulkan&logoColor=white&style=flat-square" alt="Vulkan Version"></a>
   <a href="https://shader-slang.com/"><img src="https://img.shields.io/badge/Shader%20Language-Slang-orange?style=flat-square" alt="Slang Shaders"></a>

@@ -83,6 +83,7 @@ target_compile_definitions(${EngineTarget} PRIVATE
   VK_NO_PROTOTYPES
   VMA_STATIC_VULKAN_FUNCTIONS=0
   VMA_DYNAMIC_VULKAN_FUNCTIONS=0
+  GLFW_INCLUDE_NONE # Vulkan only: glfw3.h skips the OpenGL headers (libgl-dev on Linux)
 )
 
 target_compile_options(${EngineTarget} PRIVATE
