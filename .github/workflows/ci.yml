@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch cancels the run still going
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    # Debian 13: GCC 14 (the logger's std::chrono::current_zone needs libstdc++ 14) and Mesa 25's lavapipe
+    container: debian:trixie
+    steps:
+      - name: Install packages
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            g++ cmake ninja-build pkg-config git ca-certificates \
+            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev libwayland-dev libxkbcommon-dev \
+            libvulkan1 mesa-vulkan-drivers vulkan-validationlayers xvfb xauth
+
+      - uses: actions/checkout@v5
+
+      - name: Build debug
+        run: cmake --preset debug && cmake --build --preset debug
+
+      - name: Run tests on lavapipe
+        env:
+          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json # Mesa's software Vulkan; no other driver is tried
+        # 24-bit screen: Xvfb's default 8-bit one offers no swapchain formats
+        run: xvfb-run -a -s "-screen 0 1280x1024x24" ./build/debug/bin/null_engine --run-tests
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: linux-test-logs
+          path: build/debug/bin/logs/
+
+      - name: Build development
+        run: cmake --preset development && cmake --build --preset development
+
+      - name: Build shipping
+        run: cmake --preset shipping && cmake --build --preset shipping
+
+  # Build only: the runner has no Vulkan driver
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build debug
+        run: .\build.ps1 -Preset debug
+
+      - name: Build development
+        run: .\build.ps1 -Preset development
+
+      - name: Build shipping
+        run: .\build.ps1 -Preset shipping

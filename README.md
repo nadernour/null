@@ -3,6 +3,7 @@
 A digital twin platform for robot simulation, built on a Vulkan 1.4 renderer written in C++20. The goal is an easy way to build virtual robots and their environments, simulate them with realistic sensors, train robot behaviors, and connect the results to real robots. Design choices favor ROS conventions, headless operation, and sensor simulation.
 
 <p align="center">
+  <a href="https://github.com/1992please/null/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/1992please/null/ci.yml?branch=main&label=CI&logo=github&style=flat-square" alt="CI Status"></a>
   <a href="https://en.cppreference.com/w/cpp/20"><img src="https://img.shields.io/badge/C%2B%2B-20-blue.svg?logo=cplusplus&logoColor=white&style=flat-square" alt="C++ Standard"></a>
   <a href="https://www.vulkan.org/"><img src="https://img.shields.io/badge/Vulkan-1.4-red.svg?logo=vulkan&logoColor=white&style=flat-square" alt="Vulkan Version"></a>
   <a href="https://shader-slang.com/"><img src="https://img.shields.io/badge/Shader%20Language-Slang-orange?style=flat-square" alt="Slang Shaders"></a>
@@ -73,7 +74,7 @@ The sections below group work by area; their order is not fixed. The open decisi
 
 ### Sensors
 - [ ] **Frame Orchestration & UI Pass**: One place runs the whole frame; the UI gets its own pass after the scene and tonemapping.
-- [ ] **Render Views & Offscreen Targets**: Several cameras rendering offscreen at once, headless mode, GPU → CPU readback, and an ImGui viewport panel.
+- [ ] **Render Views & Offscreen Targets**: Several cameras rendering offscreen at once, headless mode (so CI's tests no longer need Xvfb), GPU → CPU readback, and an ImGui viewport panel.
 - [ ] **Camera Sensors**: RGB, depth, and segmentation images from cameras mounted on robot frames, with intrinsics and lens distortion.
 - [ ] **Ray-Query LiDAR**: Hardware ray tracing for LiDAR and depth sensors, with a fallback for GPUs without ray tracing.
 - [ ] **Sensor Noise**: Configurable noise and artifacts, so behavior trained in simulation holds up on real sensors.
@@ -97,7 +98,8 @@ The sections below group work by area; their order is not fixed. The open decisi
 - [ ] **In-App Log Panel**: Recent log lines in an ImGui window, filtered by level at runtime, for runs without a terminal.
 
 ### Engine & Performance
-- [ ] **CI**: Build and run the tests on every push, on lavapipe (Mesa's software Vulkan).
+- [x] **CI**: Every push and pull request builds all three presets on Linux (GCC 14, Debian 13) and Windows (MSVC), and runs the tests on Linux on lavapipe (Mesa's software Vulkan) under Xvfb.
+- [ ] **Windows Tests in CI**: Run the tests on Windows too, on Mesa's Windows build of lavapipe.
 - [ ] **GPU Timeline & Deferred Destruction**: Free GPU resources only once the GPU is done with them, and stop uploads from stalling (one timeline semaphore on `Device` plus a deletion queue).
 - [ ] **Reusable Geometry Pools**: Vertex and index pools that free and reuse space (VMA virtual blocks) and grow on demand, so robots can be unloaded and large meshes fit.
 - [ ] **Resource Handles**: Meshes and materials (now `std::shared_ptr`) and textures (now bare bindless indices) are referred to by generational handles (like `Entity`), owned by whatever loaded them (a prefab, a world) and freed through the deferred-destruction queue, so components stay plain data. Lands with GPU Timeline & Deferred Destruction and Reusable Geometry Pools.
@@ -126,7 +128,7 @@ The sections below group work by area; their order is not fixed. The open decisi
 * **Build Tools**: CMake 3.24+ and Ninja.
 * **Shader Compiler**: Nothing to install: the first configure of each build folder downloads Slang.
 * **Validation Layers** (optional, Debug builds): From the Vulkan SDK or a distro package such as `vulkan-validationlayers`; without them, Debug builds run unvalidated.
-* **GPU**: A Vulkan 1.3 driver and loader (`libvulkan1` on Debian / Ubuntu) with dynamic rendering, synchronization2, buffer device address, descriptor indexing, and multi-draw indirect.
+* **GPU**: A Vulkan 1.3 driver and loader (`libvulkan1` on Debian / Ubuntu) with dynamic rendering, synchronization2, buffer device address, descriptor indexing, and multi-draw indirect. Mesa's lavapipe (software Vulkan) works too.
 
 ### Linux
 ```bash
