@@ -58,11 +58,19 @@ The sections below group work by area; their order is not fixed. The open decisi
 - [x] **Fast Log Timestamps**: The time zone is looked up once per run instead of on every line, where it took about 1.4 µs of the 1.5 µs it cost to format one. Times keep the run's starting UTC offset, recorded on the log file's first line, so they stay in order across a daylight saving switch.
 - [x] **Drift-Free Clock**: Total time accumulates in integer nanoseconds (`Time::getTime`, int64 like ROS 2 time) and is converted to seconds only on read, so long runs don't drift; the old `float` total was 3 s off after an hour at 60 fps and stopped advancing after about 6 days.
 
+### Rendering
+The first three steps are in order, each building on the one before; they bring physically based rendering to the glTF and robot materials that camera sensors will see.
+- [ ] **HDR Scene Target & Frame Orchestration**: The scene renders into its own HDR color and depth images instead of the swapchain, a tonemap pass (Khronos PBR Neutral) writes the result to the window, and the UI draws on top in its own step afterwards. One place runs the whole frame: scene, tonemap, UI.
+- [ ] **Materials & Lights**: Materials become GPU data, a material buffer indexed per instance, with the glTF metal-roughness fields (base color, metallic, roughness, normal, occlusion, and emissive, each with an optional texture). glTF materials are imported instead of one shared default. Lights become ECS components (directional, point, and spot, in physical units) and replace the light fixed in the shader.
+- [ ] **PBR Shading**: The glTF metal-roughness BRDF (GGX, Smith, Schlick), normal mapping with MikkTSpace tangents, alpha mask and blend, and camera exposure.
+- [ ] **Shadows**: Cascaded shadow maps for the directional light, then point and spot light shadows.
+- [ ] **Ambient & Environment Lighting**: A sky / ground hemisphere ambient first, then image-based lighting from HDR environment maps (prefiltered specular, irradiance, BRDF lookup table).
+
 ### Robots & Worlds
 - [ ] **URDF Import**: Robot links and joints (fixed, revolute, continuous, prismatic, and mimic) as a transform hierarchy, with several visuals per link and `package://` mesh paths.
 - [ ] **Mesh Formats**: STL, OBJ, and DAE next to glTF, with duplicate vertices merged and each format's units and up axis respected.
 - [ ] **Primitive Meshes**: Cylinder, sphere, and capsule next to the existing box.
-- [ ] **Robot Materials**: Base colors and textures per submesh, from robot descriptions and glTF.
+- [ ] **Robot Materials**: Colors and textures from robot descriptions (URDF, MJCF, ...), mapped onto the metal-roughness materials from Materials & Lights.
 - [ ] **World Scenes**: Environments of static meshes, robots, sensors, and lights, loaded from a file.
 
 ### Simulation
@@ -73,12 +81,10 @@ The sections below group work by area; their order is not fixed. The open decisi
 - [ ] **Scene Extraction**: Copy cameras and draw lists out of the ECS before rendering, so the renderer stops reading components directly and simulation and rendering can run at different rates.
 
 ### Sensors
-- [ ] **Frame Orchestration & UI Pass**: One place runs the whole frame; the UI gets its own pass after the scene and tonemapping.
-- [ ] **Render Views & Offscreen Targets**: Several cameras rendering offscreen at once, headless mode (so CI's tests no longer need Xvfb), GPU → CPU readback, and an ImGui viewport panel.
+- [ ] **Render Views & Offscreen Targets**: Several cameras rendering offscreen at once, each into its own HDR scene target, headless mode (so CI's tests no longer need Xvfb), GPU → CPU readback, and an ImGui viewport panel.
 - [ ] **Camera Sensors**: RGB, depth, and segmentation images from cameras mounted on robot frames, with intrinsics and lens distortion.
 - [ ] **Ray-Query LiDAR**: Hardware ray tracing for LiDAR and depth sensors, with a fallback for GPUs without ray tracing.
 - [ ] **Sensor Noise**: Configurable noise and artifacts, so behavior trained in simulation holds up on real sensors.
-- [ ] **glTF PBR Material Pipeline**: glTF metal-roughness materials with textures, transparency, and tonemapping (per-instance material index, MikkTSpace tangents, Khronos PBR Neutral).
 
 ### Training
 - [ ] **Parallel Environments**: Many copies of a scene stepping and rendering at once on one GPU.
@@ -126,7 +132,6 @@ The sections below group work by area; their order is not fixed. The open decisi
 * **OS**: Linux or Windows 10 / 11.
 * **Compiler**: C++20 with `<format>` and time zones: GCC 14+ or MSVC 2022.
 * **Build Tools**: CMake 3.24+ and Ninja.
-* **Git LFS**: Models and textures in `content/` are stored in Git LFS; install `git-lfs` before cloning, or run `git lfs pull` after, or the tests fail on unreadable assets.
 * **Shader Compiler**: Nothing to install: the first configure of each build folder downloads Slang.
 * **Validation Layers** (optional, Debug builds): From the Vulkan SDK or a distro package such as `vulkan-validationlayers`; without them, Debug builds run unvalidated.
 * **GPU**: A Vulkan 1.3 driver and loader (`libvulkan1` on Debian / Ubuntu) with dynamic rendering, synchronization2, buffer device address, descriptor indexing, and multi-draw indirect. Mesa's lavapipe (software Vulkan) works too.
