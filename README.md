@@ -14,6 +14,16 @@ A digital twin platform for robot simulation, built on a Vulkan 1.4 renderer wri
 
 ---
 
+## ✅ What Works Today
+
+- **Rendering**: Vulkan 1.3 / 1.4 with dynamic rendering and synchronization2. The vertex shader fetches vertices and per-draw data through GPU pointers, and draws go out as multi-draw indirect. All textures live in one bindless array with full mip chains (built on the CPU with an sRGB-correct box filter), every buffer and image comes from VMA, depth is reverse-Z, and every Vulkan object is named for RenderDoc and validation messages.
+- **Assets**: glTF / GLB models, whose node trees become reusable prefabs, and PNG / JPEG textures.
+- **Scene & Input**: An ECS with parent / child transforms, perspective and orthographic cameras, and a free-fly camera controller (WASD + QE, right-click to look) on typed keyboard and mouse input.
+- **Tools**: A Dear ImGui overlay with frame stats, camera settings, and a simulation time scale (0-3x); it blocks 3D input while in use, and `H` toggles it. A logger with colored console output keeps one log file per run (the last 10).
+- **Build & CI**: No Vulkan SDK needed: Vulkan headers, volk, and VMA are vendored, and CMake downloads the Slang compiler. Every push and pull request builds all three presets on Linux (GCC 14, Debian 13) and Windows (MSVC), and runs the tests on Linux on lavapipe (Mesa's software Vulkan) under Xvfb.
+
+---
+
 ## 📌 Roadmap & Task Board
 
 The sections below group work by area; their order is not fixed. The open decisions are left for when the platform's first use cases are clear.
@@ -24,53 +34,20 @@ The sections below group work by area; their order is not fixed. The open decisi
 - **Connectivity**: How Null talks to real robots and other tools (ROS 2, Zenoh, ...).
 - **Training Interface**: How learning code drives Null (Python bindings, a Gym-style API, a network protocol, ...).
 
-### Foundations
-- [x] **Debug Utils Instrumentation**: Name every Vulkan object for RenderDoc and validation messages.
-- [x] **Vulkan 1.3/1.4 Memory2 & Transfer Core**: Memory binding and buffer copies use the newer `*2` Vulkan APIs.
-- [x] **Asset Pipeline**: Load glTF / GLB models straight into GPU memory.
-- [x] **Input Abstraction**: Typed keyboard and mouse input with multicast events.
-- [x] **Camera & Transform Math**: Perspective and orthographic projections, and position / rotation / scale transforms.
-- [x] **Scene & ECS Integration**: Cameras and transforms are ECS components drawn by the renderer.
-- [x] **Reverse-Z Pipeline Integration**: Reverse-Z depth for better precision at a distance.
-- [x] **CameraController**: Free-fly camera (WASD + QE, right-click to look).
-- [x] **Dear ImGui Overlay**: Diagnostics, frame stats, and camera controls.
-- [x] **Simulation Time Controls & UI Toggle**: Time scale (0-3x), UI blocks 3D input while in use, `H` toggles the overlay.
-- [x] **Right-Handed Z-Up Convention (ROS REP-103)**: glTF, URDF, ROS, and USD data import without mirroring.
-- [x] **Transform Hierarchy & glTF Scene Import**: Parent / child transforms, glTF node trees, and reusable prefabs.
-- [x] **Transient Per-Draw Data Core**: Per-draw data reaches shaders through GPU pointers, drawn with multi-draw indirect.
-- [x] **Vertex Attribute Modernization**: Position, normal, UV, and color, fetched by the vertex shader itself.
-- [x] **RHI Texture & Sampler Core**: Textures, staging uploads, layout transitions, and samplers.
-- [x] **Vulkan Feature Enablement**: Anisotropic filtering and descriptor indexing, checked against hardware limits.
-- [x] **Bindless Texture Architecture**: All textures live in one shader array, indexed per draw.
-- [x] **Vulkan Memory Allocator (VMA) Integration**: Every buffer and image is sub-allocated through VMA.
-- [x] **Mipmap Generation**: Every texture gets a full mip chain, built on the CPU at load with an sRGB-correct box filter.
-
-### Hardening
-- [x] **Self-Contained Vulkan Build**: Vulkan headers, volk, and VMA live in `third_party`, so the C++ build needs no Vulkan SDK.
-- [x] **Downloaded Shader Compiler**: CMake downloads Slang, so building needs no Vulkan SDK.
-- [x] **In-House Logger**: Replaces spdlog, with colored console output and one log file per run (the last 10 are kept).
-- [x] **Up-to-Date Third-Party Libraries**: GLFW, Dear ImGui, cgltf, and stb updated to their latest versions, with each library's source and version recorded.
-- [x] **Consistent Naming**: Types with private state are `class`es with `m`-prefixed members; plain data types (all fields public, nothing to protect) are `struct`s with plain camelCase fields. Every parameter, lambdas included, has an `i` / `o` / `io` prefix.
-- [x] **Mesh Index Validation**: A mesh whose indices run past its vertices is rejected with a logged reason instead of making the GPU read another mesh's memory: `ResourceManager::createMesh` runs `MeshData::validate` on every mesh, and glTF files also pass `cgltf_validate`.
-- [x] **Logging in Shipping Builds**: Shipping keeps its log output, and a failed Vulkan call logs what failed before aborting, so a headless run that dies leaves a reason behind.
-- [x] **Bad Input Is an Error, Not an Assert**: Asserts catch only engine bugs; bad input is rejected with a logged reason in every build: glTF files that require an unsupported extension, mistyped or unreadable attributes, meshes that don't fit the geometry pools (until Reusable Geometry Pools grows them), and textures past the GPU's size limit or the bindless table.
-- [x] **Log Levels**: `verbose`, `log`, `warn`, `error`, and `fatal`; verbose lines (every allocation and subsystem step) always go to the log file but show on the console only with `--verbose`, so a normal run prints a few lines and a failed one still leaves the full story.
-- [x] **Fast Log Timestamps**: The time zone is looked up once per run instead of on every line, where it took about 1.4 µs of the 1.5 µs it cost to format one. Times keep the run's starting UTC offset, recorded on the log file's first line, so they stay in order across a daylight saving switch.
-- [x] **Drift-Free Clock**: Total time accumulates in integer nanoseconds (`Time::getTime`, int64 like ROS 2 time) and is converted to seconds only on read, so long runs don't drift; the old `float` total was 3 s off after an hour at 60 fps and stopped advancing after about 6 days.
-
 ### Rendering
-The first three steps are in order, each building on the one before; they bring physically based rendering to the glTF and robot materials that camera sensors will see.
+The steps are in order, each building on the one before; they bring physically based rendering to the glTF and robot materials that camera sensors will see. [rendering_plan.md](rendering_plan.md) has each step's decisions and tasks.
 - [ ] **HDR Scene Target & Frame Orchestration**: The scene renders into its own HDR color and depth images instead of the swapchain, a tonemap pass (Khronos PBR Neutral) writes the result to the window, and the UI draws on top in its own step afterwards. One place runs the whole frame: scene, tonemap, UI.
-- [ ] **Materials & Lights**: Materials become GPU data, a material buffer indexed per instance, with the glTF metal-roughness fields (base color, metallic, roughness, normal, occlusion, and emissive, each with an optional texture). glTF materials are imported instead of one shared default. Lights become ECS components (directional, point, and spot, in physical units) and replace the light fixed in the shader.
-- [ ] **PBR Shading**: The glTF metal-roughness BRDF (GGX, Smith, Schlick), normal mapping with MikkTSpace tangents, alpha mask and blend, and camera exposure.
-- [ ] **Shadows**: Cascaded shadow maps for the directional light, then point and spot light shadows.
-- [ ] **Ambient & Environment Lighting**: A sky / ground hemisphere ambient first, then image-based lighting from HDR environment maps (prefiltered specular, irradiance, BRDF lookup table).
+- [ ] **Materials & glTF Textures**: Materials become GPU data, a material buffer indexed per instance, with the glTF metal-roughness fields (base color, metallic, roughness, normal, occlusion, and emissive, each with an optional texture). glTF materials and textures are imported instead of one shared default.
+- [ ] **Tangents, Normal Maps & Alpha**: Tangents from glTF or generated with MikkTSpace, normal mapping, alpha mask and blend, and double-sided materials.
+- [ ] **Lights, Exposure & PBR Shading**: Lights become ECS components (directional, point, and spot, in lux and candela) and replace the light fixed in the shader. The glTF metal-roughness BRDF (GGX, Smith, Schlick), camera exposure from aperture, shutter speed, and ISO, and a sky / ground ambient that metals reflect.
+- [ ] **Shadows**: The scene's draws are gathered once per frame and recorded per view, then cascaded shadow maps for the directional light; spot and point light shadows later.
+- [ ] **Image-Based Lighting**: HDR environment maps light and reflect the scene (prefiltered specular, spherical-harmonics diffuse) and are drawn as the sky.
 
 ### Robots & Worlds
 - [ ] **URDF Import**: Robot links and joints (fixed, revolute, continuous, prismatic, and mimic) as a transform hierarchy, with several visuals per link and `package://` mesh paths.
 - [ ] **Mesh Formats**: STL, OBJ, and DAE next to glTF, with duplicate vertices merged and each format's units and up axis respected.
 - [ ] **Primitive Meshes**: Cylinder, sphere, and capsule next to the existing box.
-- [ ] **Robot Materials**: Colors and textures from robot descriptions (URDF, MJCF, ...), mapped onto the metal-roughness materials from Materials & Lights.
+- [ ] **Robot Materials**: Colors and textures from robot descriptions (URDF, MJCF, ...), mapped onto the metal-roughness materials from Materials & glTF Textures.
 - [ ] **World Scenes**: Environments of static meshes, robots, sensors, and lights, loaded from a file.
 
 ### Simulation
@@ -104,7 +81,6 @@ The first three steps are in order, each building on the one before; they bring 
 - [ ] **In-App Log Panel**: Recent log lines in an ImGui window, filtered by level at runtime, for runs without a terminal.
 
 ### Engine & Performance
-- [x] **CI**: Every push and pull request builds all three presets on Linux (GCC 14, Debian 13) and Windows (MSVC), and runs the tests on Linux on lavapipe (Mesa's software Vulkan) under Xvfb.
 - [ ] **Windows Tests in CI**: Run the tests on Windows too, on Mesa's Windows build of lavapipe.
 - [ ] **GPU Timeline & Deferred Destruction**: Free GPU resources only once the GPU is done with them, and stop uploads from stalling (one timeline semaphore on `Device` plus a deletion queue).
 - [ ] **Reusable Geometry Pools**: Vertex and index pools that free and reuse space (VMA virtual blocks) and grow on demand, so robots can be unloaded and large meshes fit.
@@ -123,6 +99,11 @@ The first three steps are in order, each building on the one before; they bring 
 * **Coordinates**: ROS REP-103: right-handed, `+X` forward, `+Y` left, `+Z` up; roll / pitch / yaw follow ROS (`Rz * Ry * Rx`).
 * **Camera View Space**: The ROS optical frame (`+X` right, `+Y` down, `+Z` forward), which matches Vulkan NDC.
 * **Units**: SI (meters, seconds), angles in radians.
+* **Depth**: Reverse-Z: the near plane maps to 1 and the far plane to 0, for precision at a distance.
+* **Time**: Integer nanoseconds (`Time::getTime`, int64 like ROS 2 time), converted to seconds only on read, so long runs don't drift.
+* **Naming**: Types with private state are `class`es with `m`-prefixed members; plain data types (all fields public, nothing to protect) are `struct`s with plain camelCase fields. Every parameter, lambdas included, has an `i` / `o` / `io` prefix.
+* **Errors**: Asserts catch only engine bugs. Bad input is rejected with a logged reason in every build: glTF files that require an unsupported extension, mistyped or unreadable attributes, meshes whose indices run past their vertices or that don't fit the geometry pools, and textures past the GPU's size limit or the bindless table. A failed Vulkan call logs what failed before aborting, Shipping included.
+* **Third-Party Code**: Vendored in `third_party/`, with each library's source and version recorded.
 
 ---
 
