@@ -8,8 +8,13 @@
 #include <type_traits>
 #include <volk/volk.h>
 
-// Structs read by shaders/base_shader.slang; the static_asserts below keep the layouts in sync
+// Structs read by the shaders in shaders/; the static_asserts below keep the layouts in sync
 namespace ne::gpu {
+
+// The one push-constant range every graphics pipeline shares; Vulkan guarantees 128 bytes. vkCmdPushConstants passes
+// exactly these stages, since it must name every stage of the range it writes into.
+constexpr uint32_t kPushConstantsSize = 128;
+constexpr VkShaderStageFlags kPushConstantStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
 struct Vertex {
   Vec3 pos{0.0f};
@@ -42,14 +47,23 @@ struct PushConstants {
   VkDeviceAddress instances = 0;
 };
 
-static_assert(sizeof(PushConstants) <= 128, "PushConstants exceeds the guaranteed Vulkan push constant size!");
+// Push constants of shaders/tonemap.slang
+struct TonemapConstants {
+  uint32_t hdrTexture = 0; // Bindless index of the HDR scene color
+  uint32_t encodeSrgb = 0; // 0 when the swapchain format encodes sRGB itself
+};
+
+static_assert(sizeof(PushConstants) <= kPushConstantsSize, "PushConstants exceeds the shared push constant range!");
+static_assert(sizeof(TonemapConstants) <= kPushConstantsSize, "TonemapConstants exceeds the shared push constant range!");
 static_assert(sizeof(PushConstants) == 24, "PushConstants size mismatch!");
+static_assert(sizeof(TonemapConstants) == 8, "TonemapConstants size mismatch with Slang layout!");
 static_assert(sizeof(Vertex) == 48, "Vertex size mismatch with Slang layout!");
 static_assert(sizeof(DrawInfo) == 16, "DrawInfo size mismatch with Slang layout!");
 static_assert(sizeof(GlobalUniforms) == 64, "GlobalUniforms size mismatch!");
 static_assert(sizeof(InstanceData) == 152, "InstanceData size mismatch with Slang layout!");
 
 static_assert(std::is_standard_layout_v<PushConstants>, "PushConstants must be standard layout!");
+static_assert(std::is_standard_layout_v<TonemapConstants>, "TonemapConstants must be standard layout!");
 static_assert(std::is_standard_layout_v<Vertex>, "Vertex must be standard layout!");
 static_assert(std::is_standard_layout_v<DrawInfo>, "DrawInfo must be standard layout!");
 static_assert(std::is_standard_layout_v<GlobalUniforms>, "GlobalUniforms must be standard layout!");

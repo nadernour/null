@@ -10,7 +10,7 @@ class Instance;
 class Device;
 class FrameRenderer;
 class ResourceManager;
-class SceneRenderer;
+class Renderer;
 class ImGuiManager;
 class Registry;
 
@@ -52,7 +52,7 @@ private:
   std::unique_ptr<FrameRenderer> mFrameRenderer;
 
   std::unique_ptr<ResourceManager> mResourceManager;
-  std::unique_ptr<SceneRenderer> mSceneRenderer;
+  std::unique_ptr<Renderer> mRenderer;
 
   std::unique_ptr<ImGuiManager> mImGuiManager;
   std::unique_ptr<Registry> mRegistry;

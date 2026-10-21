@@ -8,6 +8,7 @@
 #include <vulkan/vk_enum_string_helper.h>
 
 #include <cstdlib>
+#include <span>
 #include <string>
 #include <type_traits>
 
@@ -142,10 +143,10 @@ inline VkImageAspectFlags deduceAspectFlags(VkFormat iFormat) {
   }
 }
 
-inline void transitionImageLayout(VkCommandBuffer iCommandBuffer, VkImage iImage,
-                                  const VkImageSubresourceRange& iSubresourceRange, VkImageLayout iOldLayout,
-                                  VkImageLayout iNewLayout, VkAccessFlags2 iSrcAccessMask, VkAccessFlags2 iDstAccessMask,
-                                  VkPipelineStageFlags2 iSrcStageMask, VkPipelineStageFlags2 iDstStageMask) {
+inline VkImageMemoryBarrier2 makeImageBarrier(VkImage iImage, const VkImageSubresourceRange& iSubresourceRange,
+                                              VkImageLayout iOldLayout, VkImageLayout iNewLayout, VkAccessFlags2 iSrcAccessMask,
+                                              VkAccessFlags2 iDstAccessMask, VkPipelineStageFlags2 iSrcStageMask,
+                                              VkPipelineStageFlags2 iDstStageMask) {
   VkImageMemoryBarrier2 imageMemoryBarrier{};
   imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
   imageMemoryBarrier.srcStageMask = iSrcStageMask;
@@ -158,14 +159,31 @@ inline void transitionImageLayout(VkCommandBuffer iCommandBuffer, VkImage iImage
   imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
   imageMemoryBarrier.image = iImage;
   imageMemoryBarrier.subresourceRange = iSubresourceRange;
+  return imageMemoryBarrier;
+}
+
+// One command for all of them, so the driver can combine their waits and cache flushes; none records nothing
+inline void pipelineBarrier(VkCommandBuffer iCommandBuffer, std::span<const VkImageMemoryBarrier2> iImageBarriers) {
+  if (iImageBarriers.empty()) {
+    return;
+  }
 
   VkDependencyInfo dependencyInfo{};
   dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
   dependencyInfo.dependencyFlags = 0;
-  dependencyInfo.imageMemoryBarrierCount = 1;
-  dependencyInfo.pImageMemoryBarriers = &imageMemoryBarrier;
+  dependencyInfo.imageMemoryBarrierCount = static_cast<uint32_t>(iImageBarriers.size());
+  dependencyInfo.pImageMemoryBarriers = iImageBarriers.data();
 
   vkCmdPipelineBarrier2(iCommandBuffer, &dependencyInfo);
+}
+
+inline void transitionImageLayout(VkCommandBuffer iCommandBuffer, VkImage iImage,
+                                  const VkImageSubresourceRange& iSubresourceRange, VkImageLayout iOldLayout,
+                                  VkImageLayout iNewLayout, VkAccessFlags2 iSrcAccessMask, VkAccessFlags2 iDstAccessMask,
+                                  VkPipelineStageFlags2 iSrcStageMask, VkPipelineStageFlags2 iDstStageMask) {
+  const VkImageMemoryBarrier2 imageMemoryBarrier = makeImageBarrier(iImage, iSubresourceRange, iOldLayout, iNewLayout,
+                                                                    iSrcAccessMask, iDstAccessMask, iSrcStageMask, iDstStageMask);
+  pipelineBarrier(iCommandBuffer, {&imageMemoryBarrier, 1});
 }
 
 } // namespace ne::vk_utils

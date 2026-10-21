@@ -32,16 +32,14 @@ public:
   Image(Image&&) = delete;
   Image& operator=(Image&&) = delete;
 
-  // Last layout and access recorded on this image, used to build its next barrier
-  VkImageLayout getCurrentLayout() const { return mCurrentLayout; }
-  VkAccessFlags2 getCurrentAccessMask() const { return mCurrentAccessMask; }
-  VkPipelineStageFlags2 getCurrentStageMask() const { return mCurrentStageMask; }
-
-  void setLayoutState(VkImageLayout iLayout, VkAccessFlags2 iAccessMask, VkPipelineStageFlags2 iStageMask) {
-    mCurrentLayout = iLayout;
-    mCurrentAccessMask = iAccessMask;
-    mCurrentStageMask = iStageMask;
-  }
+  // The barrier from the tracked state to the given one, which becomes the tracked state. The caller records it before
+  // the image's next use, alone or batched with others. Earlier submissions count too: an image shared by frames in
+  // flight waits for the previous frame's last use.
+  VkImageMemoryBarrier2 transitionBarrier(VkImageLayout iNewLayout, VkAccessFlags2 iDstAccessMask,
+                                          VkPipelineStageFlags2 iDstStageMask);
+  // Records transitionBarrier's barrier on its own
+  void transition(VkCommandBuffer iCommandBuffer, VkImageLayout iNewLayout, VkAccessFlags2 iDstAccessMask,
+                  VkPipelineStageFlags2 iDstStageMask);
 
   bool isValid() const { return mImage != VK_NULL_HANDLE; }
   VkImage getImage() const { return mImage; }
@@ -58,6 +56,7 @@ private:
   VkImageView mImageView = VK_NULL_HANDLE;
   VkImageSubresourceRange mSubresourceRange{};
 
+  // Last layout, access, and stage recorded on this image; its next barrier starts from them
   VkImageLayout mCurrentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   VkAccessFlags2 mCurrentAccessMask = VK_ACCESS_2_NONE;
   VkPipelineStageFlags2 mCurrentStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;

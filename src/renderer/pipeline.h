@@ -23,6 +23,7 @@ public:
     VkFormat depthAttachmentFormat = VK_FORMAT_UNDEFINED;
     DepthMode depthMode = DepthMode::ReadWrite;
     StencilMode stencilMode = StencilMode::Disabled;
+    VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT;
   };
 
   static VkPipelineLayout createPipelineLayout(VkDevice iDevice, const std::vector<VkDescriptorSetLayout>& iDescriptorSetLayouts,

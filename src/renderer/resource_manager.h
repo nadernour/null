@@ -43,7 +43,8 @@ public:
   GeometryAllocator* getGeometryAllocator() const { return mGeometryAllocator.get(); }
   SamplerManager* getSamplerManager() const { return mSamplerManager.get(); }
   BindlessManager* getBindlessManager() const { return mBindlessManager.get(); }
-  VkPipelineLayout getScenePipelineLayout() const { return mScenePipelineLayout; }
+  // Shared by every graphics pipeline: set 0 is the bindless set, plus one push-constant range
+  VkPipelineLayout getPipelineLayout() const { return mPipelineLayout; }
 
 private:
   Device* mDevice = nullptr;
@@ -55,7 +56,7 @@ private:
   std::unique_ptr<SamplerManager> mSamplerManager;
   std::unique_ptr<BindlessManager> mBindlessManager;
 
-  VkPipelineLayout mScenePipelineLayout = VK_NULL_HANDLE;
+  VkPipelineLayout mPipelineLayout = VK_NULL_HANDLE;
   std::unordered_map<std::string, std::shared_ptr<Pipeline>> mPipelines;
   std::vector<std::unique_ptr<Image>> mTextures;
 };

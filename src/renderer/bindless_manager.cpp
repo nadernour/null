@@ -92,7 +92,17 @@ uint32_t BindlessManager::registerSampledImage(VkImageView iImageView) {
   NE_ASSERT(!isFull(), "Exceeded maximum bindless sampled images");
 
   uint32_t index = mNextSampledImageIndex++;
+  writeSampledImage(index, iImageView);
+  return index;
+}
 
+void BindlessManager::updateSampledImage(uint32_t iIndex, VkImageView iImageView) {
+  NE_ASSERT(iImageView != VK_NULL_HANDLE, "ImageView must be valid to update a bindless slot");
+  NE_ASSERT(iIndex < mNextSampledImageIndex, "Bindless slot {} was never registered", iIndex);
+  writeSampledImage(iIndex, iImageView);
+}
+
+void BindlessManager::writeSampledImage(uint32_t iIndex, VkImageView iImageView) {
   VkDescriptorImageInfo imageInfo{};
   imageInfo.imageView = iImageView;
   imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -101,13 +111,12 @@ uint32_t BindlessManager::registerSampledImage(VkImageView iImageView) {
   write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
   write.dstSet = mDescriptorSet;
   write.dstBinding = 1;
-  write.dstArrayElement = index;
+  write.dstArrayElement = iIndex;
   write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
   write.descriptorCount = 1;
   write.pImageInfo = &imageInfo;
 
   vkUpdateDescriptorSets(mDevice, 1, &write, 0, nullptr);
-  return index;
 }
 
 void BindlessManager::bind(VkCommandBuffer iCommandBuffer, VkPipelineLayout iPipelineLayout) {

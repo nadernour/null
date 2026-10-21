@@ -1,10 +1,10 @@
 #include "renderer/frame_renderer.h"
 #include "core/assert.h"
 #include "core/logger.h"
+#include "core/math/math_utils.h"
 #include "platform/window.h"
 #include "renderer/buffer.h"
 #include "renderer/device.h"
-#include "renderer/image.h"
 #include "renderer/swapchain.h"
 #include "renderer/utils.h"
 
@@ -29,7 +29,6 @@ FrameRenderer::FrameRenderer(Device* iDevice, Window* iWindow) : mDevice(iDevice
   };
   mSwapchain = std::make_unique<Swapchain>(mDevice, swapchainConfig);
 
-  createDepthImage();
   createFramesResources();
 }
 
@@ -45,8 +44,6 @@ FrameRenderer::~FrameRenderer() {
     vkDestroyFence(mDevice->getDevice(), frame.drawFence, nullptr);
     frame.uploadBuffer.reset();
   }
-
-  mDepthImage.reset();
 
   mSwapchain.reset();
 
@@ -129,12 +126,19 @@ VkCommandBuffer FrameRenderer::beginFrame() {
   return currentFrame.commandBuffer;
 }
 
-void FrameRenderer::recreateUploadBuffer(VkDeviceSize iNewSize) {
+void FrameRenderer::reserveUploadBuffer(VkDeviceSize iSize) {
   auto& currentFrame = mFrames[mFrameIndex];
+  const VkDeviceSize currentSize = currentFrame.uploadBuffer->getConfig().size;
+  if (iSize <= currentSize) {
+    return;
+  }
+  NE_ASSERT(currentFrame.uploadBuffer->getUploadOffset() == 0, "Recreating the upload buffer would drop this frame's uploads");
 
-  NE_VERBOSE("Upload buffer resizing from {} to {} bytes", currentFrame.uploadBuffer->getConfig().size, iNewSize);
+  // At least doubled, so a growing scene recreates it only a few times
+  const VkDeviceSize newSize = math::max(iSize, currentSize * 2);
+  NE_VERBOSE("Upload buffer resizing from {} to {} bytes", currentSize, newSize);
 
-  currentFrame.uploadBuffer = createUploadBuffer(iNewSize, std::format("UploadBuffer_Frame_{}", mFrameIndex));
+  currentFrame.uploadBuffer = createUploadBuffer(newSize, std::format("UploadBuffer_Frame_{}", mFrameIndex));
 }
 
 void FrameRenderer::endFrame() {
@@ -197,32 +201,9 @@ void FrameRenderer::recreateSwapChain(bool iForce) {
   }
 
   mSwapchain->recreate(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-  createDepthImage();
-}
-
-void FrameRenderer::createDepthImage() {
-  VkFormat depthFormat = mDevice->findDepthFormat();
-  VkExtent2D swapExtent = mSwapchain->getExtent();
-
-  Image::Config depthConfig{
-      .width = swapExtent.width,
-      .height = swapExtent.height,
-      .format = depthFormat,
-      .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-      .mipLevels = 1,
-      .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
-      .debugName = "Depth_Image",
-  };
-
-  mDepthImage = std::make_unique<Image>(mDevice, depthConfig);
-
-  NE_VERBOSE("Created Depth Attachment resources: Format {}, Extent {}x{}", string_VkFormat(depthFormat), swapExtent.width,
-             swapExtent.height);
 }
 
 VkFormat FrameRenderer::getColorFormat() const { return mSwapchain->getSurfaceFormat().format; }
-
-VkFormat FrameRenderer::getDepthFormat() const { return mDepthImage ? mDepthImage->getConfig().format : VK_FORMAT_UNDEFINED; }
 
 uint32_t FrameRenderer::getImageCount() const { return static_cast<uint32_t>(mSwapchain->getImages().size()); }
 

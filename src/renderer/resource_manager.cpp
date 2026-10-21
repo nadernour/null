@@ -28,12 +28,12 @@ ResourceManager::ResourceManager(Device* iDevice, VkFormat iDefaultColorFormat, 
 
   VkDescriptorSetLayout setLayout = mBindlessManager->getDescriptorSetLayout();
   VkPushConstantRange pushConstantRange{};
-  pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+  pushConstantRange.stageFlags = gpu::kPushConstantStages;
   pushConstantRange.offset = 0;
-  pushConstantRange.size = sizeof(gpu::PushConstants);
+  pushConstantRange.size = gpu::kPushConstantsSize;
 
-  mScenePipelineLayout =
-      Pipeline::createPipelineLayout(mDevice->getDevice(), {setLayout}, {pushConstantRange}, "Scene_PipelineLayout");
+  mPipelineLayout =
+      Pipeline::createPipelineLayout(mDevice->getDevice(), {setLayout}, {pushConstantRange}, "Bindless_PipelineLayout");
 
   // New materials start on kFallbackTextureIndex, so the white texture must be created first
   ImageData whiteData = ImageData::createWhite1x1();
@@ -45,7 +45,7 @@ ResourceManager::~ResourceManager() {
   mStagingManager.reset();
   mTextures.clear();
   mPipelines.clear();
-  Pipeline::destroyPipelineLayout(mDevice->getDevice(), mScenePipelineLayout);
+  Pipeline::destroyPipelineLayout(mDevice->getDevice(), mPipelineLayout);
   mBindlessManager.reset();
   mGeometryAllocator.reset();
   mSamplerManager.reset();
@@ -61,7 +61,7 @@ std::shared_ptr<Pipeline> ResourceManager::getOrCreatePipeline(const std::string
 
   Pipeline::Config config{
       .shaderName = shaderName,
-      .layout = mScenePipelineLayout,
+      .layout = mPipelineLayout,
       .colorAttachmentFormat = mDefaultColorFormat,
       .depthAttachmentFormat = mDefaultDepthFormat,
   };

@@ -26,15 +26,15 @@ ImGuiManager::ImGuiManager(Window* iWindow, Instance* iInstance, Device* iDevice
   ImGui_ImplGlfw_InitForVulkan(mWindow->getGLFWwindow(), true);
 
   VkFormat colorFormat = iFrameRenderer->getColorFormat();
-  VkFormat depthFormat = iFrameRenderer->getDepthFormat();
 
   VkPipelineRenderingCreateInfoKHR renderingInfo{};
   renderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
   renderingInfo.pNext = nullptr;
   renderingInfo.colorAttachmentCount = 1;
   renderingInfo.pColorAttachmentFormats = &colorFormat;
-  renderingInfo.depthAttachmentFormat = depthFormat;
-  renderingInfo.stencilAttachmentFormat = depthFormat;
+  // Drawn in the swapchain scope, which has no depth attachment
+  renderingInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
+  renderingInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 
   ImGui_ImplVulkan_InitInfo initInfo{};
   initInfo.ApiVersion = iInstance->getApiVersion();

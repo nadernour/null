@@ -134,23 +134,11 @@ void StagingManager::stageImageUpload(Image& iDstImage, const void* iPixelData, 
     tempStaging.writeToBuffer(iPixelData, iSize, 0);
 
     VkCommandBuffer cmd = mDevice->beginOneTimeCommand();
-
-    vk_utils::transitionImageLayout(cmd, iDstImage.getImage(), iDstImage.getSubresourceRange(), iDstImage.getCurrentLayout(),
-                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, iDstImage.getCurrentAccessMask(),
-                                    VK_ACCESS_2_TRANSFER_WRITE_BIT, iDstImage.getCurrentStageMask(),
-                                    VK_PIPELINE_STAGE_2_COPY_BIT);
-
+    iDstImage.transition(cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_COPY_BIT);
     recordImageCopy(cmd, tempStaging.getBuffer(), iDstImage);
-
-    vk_utils::transitionImageLayout(cmd, iDstImage.getImage(), iDstImage.getSubresourceRange(),
-                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                    VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_COPY_BIT,
-                                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
-
+    iDstImage.transition(cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_2_SHADER_READ_BIT,
+                         VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
     mDevice->endOneTimeCommand(cmd);
-
-    iDstImage.setLayoutState(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_2_SHADER_READ_BIT,
-                             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
     return;
   }
 
@@ -169,32 +157,13 @@ void StagingManager::flushBatch() {
   VkCommandBuffer cmd = mDevice->beginOneTimeCommand();
 
   // One barrier batch before all copies and one after
-  if (!mPendingImageUploads.empty()) {
-    std::vector<VkImageMemoryBarrier2> preCopyBarriers;
-    preCopyBarriers.reserve(mPendingImageUploads.size());
-
-    for (const auto& item : mPendingImageUploads) {
-      VkImageMemoryBarrier2 barrier{};
-      barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-      barrier.srcStageMask = item.image->getCurrentStageMask();
-      barrier.srcAccessMask = item.image->getCurrentAccessMask();
-      barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-      barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-      barrier.oldLayout = item.image->getCurrentLayout();
-      barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-      barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      barrier.image = item.image->getImage();
-      barrier.subresourceRange = item.image->getSubresourceRange();
-      preCopyBarriers.push_back(barrier);
-    }
-
-    VkDependencyInfo preDepInfo{};
-    preDepInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    preDepInfo.imageMemoryBarrierCount = static_cast<uint32_t>(preCopyBarriers.size());
-    preDepInfo.pImageMemoryBarriers = preCopyBarriers.data();
-    vkCmdPipelineBarrier2(cmd, &preDepInfo);
+  std::vector<VkImageMemoryBarrier2> barriers;
+  barriers.reserve(mPendingImageUploads.size());
+  for (const auto& item : mPendingImageUploads) {
+    barriers.push_back(item.image->transitionBarrier(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                                                     VK_PIPELINE_STAGE_2_COPY_BIT));
   }
+  vk_utils::pipelineBarrier(cmd, barriers);
 
   for (const auto& item : mPendingImageUploads) {
     recordImageCopy(cmd, mStagingBuffer->getBuffer(), *item.image, item.srcOffset);
@@ -204,39 +173,14 @@ void StagingManager::flushBatch() {
     recordBufferCopy(cmd, mStagingBuffer->getBuffer(), copy.dstBuffer, copy.size, copy.srcOffset, copy.dstOffset);
   }
 
-  if (!mPendingImageUploads.empty()) {
-    std::vector<VkImageMemoryBarrier2> postCopyBarriers;
-    postCopyBarriers.reserve(mPendingImageUploads.size());
-
-    for (const auto& item : mPendingImageUploads) {
-      VkImageMemoryBarrier2 barrier{};
-      barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-      barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-      barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-      barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-      barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-      barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-      barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-      barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      barrier.image = item.image->getImage();
-      barrier.subresourceRange = item.image->getSubresourceRange();
-      postCopyBarriers.push_back(barrier);
-    }
-
-    VkDependencyInfo postDepInfo{};
-    postDepInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    postDepInfo.imageMemoryBarrierCount = static_cast<uint32_t>(postCopyBarriers.size());
-    postDepInfo.pImageMemoryBarriers = postCopyBarriers.data();
-    vkCmdPipelineBarrier2(cmd, &postDepInfo);
+  barriers.clear();
+  for (const auto& item : mPendingImageUploads) {
+    barriers.push_back(item.image->transitionBarrier(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_2_SHADER_READ_BIT,
+                                                     VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT));
   }
+  vk_utils::pipelineBarrier(cmd, barriers);
 
   mDevice->endOneTimeCommand(cmd);
-
-  for (const auto& item : mPendingImageUploads) {
-    item.image->setLayoutState(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_2_SHADER_READ_BIT,
-                               VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
-  }
 
   mPendingBufferCopies.clear();
   mPendingImageUploads.clear();

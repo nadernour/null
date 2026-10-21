@@ -21,7 +21,7 @@ Physically based rendering for Null, split into six phases. Each phase leaves th
 ## Decisions
 
 ### Frame and render targets
-- **No render graph.** `Renderer` is the only place that orders passes. Passes record into the images they're given and never pick their own targets. `Image` emits its own barriers from the layout, access, and stage it already tracks. *Why:* the frame is a fixed sequence, and later a loop over views. Revisit only if the frame becomes data-driven (user-defined sensor pipelines), many short-lived post passes pile up, or profiling calls for async compute.
+- **No render graph.** `Renderer` is the only place that orders passes. It records every barrier, opens every rendering scope (attachments, load ops, clear values, viewport), and hands each pass its per-frame resources (the command buffer, the upload buffer); passes only draw into the scope they're given. `Image` builds its own barriers from the layout, access, and stage it already tracks, and back-to-back barriers go out together in one `vk_utils::pipelineBarrier`. *Why:* the frame is a fixed sequence, and later a loop over views. One scope can hold several passes (the tonemap and the UI; later the shadow cascades in one atlas), so scopes can't belong to passes. Revisit only if the frame becomes data-driven (user-defined sensor pipelines), many short-lived post passes pile up, or profiling calls for async compute.
 - **Scene color format:** `VK_FORMAT_R16G16B16A16_SFLOAT`. *Why:* color attachment, blending, and sampling are mandatory for it.
 - **Depth format:** `Device::findDepthFormat()`, looked up once in `Application`.
 - **Swapchain format:** prefer `VK_FORMAT_B8G8R8A8_UNORM`, and let the tonemap shader apply the sRGB encode. A push-constant flag skips the encode if the surface only offers an `_SRGB` format. *Why:* ImGui's colors are sRGB values meant to be written as-is. On an `_SRGB` swapchain they get encoded twice and look washed out.
@@ -65,30 +65,40 @@ Physically based rendering for Null, split into six phases. Each phase leaves th
 ---
 
 ## Phase 1: HDR Scene Target & Frame Orchestration
-**Status:** not started
+**Status:** done (2026-10-19)
 
 **Goal:** The scene renders into its own HDR color and depth images, a tonemap pass writes the result to the swapchain, and ImGui draws on top in the same swapchain pass. `Renderer` runs the whole frame. Nothing changes on screen except the tonemap curve and the UI colors.
 
-This is the Oct 15 stage 1 plan, plus the `Image::transition` helper, the shared pipeline layout, and a resize test.
+This is the Oct 15 stage 1 plan, plus the `Image` barrier helpers, the shared pipeline layout, and a resize test. The review of Oct 21 moved the scene's barriers and rendering scope into `Renderer` and the upload buffer out of `SceneRenderer`; the frame and tasks below describe the result.
 
 **The frame:**
 ```
 Renderer::render
+├─ ResourceManager::flushUploads       everything created since the last frame reaches the GPU
 ├─ swapchain extent changed? → Device::waitIdle, recreate HDR + depth, updateSampledImage
-├─ FrameRenderer::beginFrame         wait fence, acquire, begin command buffer
+├─ SceneRenderer::prepare              find the camera, gather + sort draws, return the upload size
+├─ FrameRenderer::beginFrame           wait fence, acquire, begin command buffer
+├─ FrameRenderer::reserveUploadBuffer  grow the frame's upload buffer to that size
 ├─ bind bindless set 0 (shared layout)
-├─ SceneRenderer::record             HDR color + depth: clear, draw
-├─ HDR color → SHADER_READ_ONLY      Image::transition
-├─ swapchain → COLOR_ATTACHMENT      manual barrier (swapchain images aren't Image objects)
-├─ swapchain pass                    one vkCmdBeginRendering, loadOp DONT_CARE
-│   ├─ TonemapPass::record           fullscreen triangle, PBR Neutral, sRGB encode
+├─ HDR color, depth → attachments      one barrier batch
+├─ scene pass                          clear HDR color + depth
+│   └─ SceneRenderer::record           draw
+├─ HDR color → SHADER_READ_ONLY,       one barrier batch (swapchain images aren't Image objects)
+│  swapchain → COLOR_ATTACHMENT
+├─ swapchain pass                      one vkCmdBeginRendering, loadOp DONT_CARE
+│   ├─ TonemapPass::record             fullscreen triangle, PBR Neutral, sRGB encode
 │   └─ ImGuiManager::draw
-├─ swapchain → PRESENT_SRC           manual barrier
-└─ FrameRenderer::endFrame           submit, present
+├─ swapchain → PRESENT_SRC             manual barrier
+└─ FrameRenderer::endFrame             submit, present
 ```
 
 **Tasks:**
-1. **`Image::transition(iCommandBuffer, iNewLayout, iDstAccessMask, iDstStageMask)`** in `src/renderer/image.{h,cpp}`. It emits one barrier from the tracked state (`mCurrentLayout`, `mCurrentAccessMask`, `mCurrentStageMask`) through `vk_utils::transitionImageLayout`, then records the new state. Every barrier on the HDR color and depth images goes through it:
+1. **`Image` barriers** in `src/renderer/image.{h,cpp}`:
+   - `transitionBarrier(iNewLayout, iDstAccessMask, iDstStageMask)` builds the barrier from the tracked state (`mCurrentLayout`, `mCurrentAccessMask`, `mCurrentStageMask`) and tracks the new state. The caller records it, batched with the barriers next to it through `vk_utils::pipelineBarrier`.
+   - `transition(iCommandBuffer, ...)` records one barrier on its own.
+   - The tracked state is private; `StagingManager` builds its upload barriers through these too.
+
+   Every barrier on the HDR color and depth images goes through them:
    - HDR color for the scene pass: `COLOR_ATTACHMENT_OPTIMAL`, `COLOR_ATTACHMENT_OUTPUT`, `COLOR_ATTACHMENT_READ | WRITE`.
    - Depth for the scene pass: `DEPTH_STENCIL_ATTACHMENT_OPTIMAL`, `EARLY | LATE_FRAGMENT_TESTS`, `DEPTH_STENCIL_ATTACHMENT_READ | WRITE`.
    - HDR color for the tonemap pass: `SHADER_READ_ONLY_OPTIMAL`, `FRAGMENT_SHADER`, `SHADER_SAMPLED_READ`.
@@ -97,10 +107,12 @@ Renderer::render
    - Rename `getScenePipelineLayout` to `getPipelineLayout` (debug name `Bindless_PipelineLayout`).
    - Every `vkCmdPushConstants` passes `VERTEX | FRAGMENT`; Vulkan requires the flags to match the range.
 4. **`Pipeline::Config`** gains `VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT`.
-5. **`FrameRenderer`** keeps only the swapchain, frame sync, and upload buffers. Remove the depth image, `getDepthImage`, `getDepthFormat`, and `createDepthImage`.
+5. **`FrameRenderer`** keeps only the swapchain, frame sync, and upload buffers. Remove the depth image, `getDepthImage`, `getDepthFormat`, and `createDepthImage`. `reserveUploadBuffer(iSize)` replaces `recreateUploadBuffer` and takes over the growth policy (at least doubling) from `SceneRenderer`; it runs before the frame's first upload.
 6. **Swapchain:** `Swapchain::Config::preferredFormat` becomes `VK_FORMAT_B8G8R8A8_UNORM`.
-7. **`SceneRenderer`** only records the scene pass into the color and depth images it's given, e.g. `record(iCommandBuffer, iRegistry, ioColorTarget, ioDepthTarget)`.
-   - It does the barriers through `Image::transition`, clears, sets the viewport from the target size, and draws.
+7. **`SceneRenderer`** only draws, into the scope `Renderer` opens:
+   - `prepare(iRegistry, iAspectRatio)` finds the primary camera, gathers and sorts the draws, and returns the upload bytes `record` needs. It runs before `beginFrame`.
+   - `record(iCommandBuffer, ioUploadBuffer)` binds the index buffer, uploads the per-draw data, and draws.
+   - It no longer knows `FrameRenderer`, the targets, their barriers, or the load ops.
    - Remove `draw()`, `waitIdle()`, the swapchain code, the ImGui call, and the bindless bind (`Renderer` binds once per frame).
    - The draw-call and instancing code stays as it is.
 8. **`TonemapPass`** (`src/renderer/tonemap_pass.{h,cpp}`) and **`shaders/tonemap.slang`**:
@@ -115,13 +127,13 @@ Renderer::render
 9. **`Renderer`** (`src/renderer/renderer.{h,cpp}`):
    - `Config { Device*, FrameRenderer*, ResourceManager*, VkFormat depthFormat }` and `static constexpr VkFormat kSceneColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT`.
    - It owns `SceneRenderer`, `TonemapPass`, the HDR color image (`COLOR_ATTACHMENT | SAMPLED`), the depth image, and the HDR image's bindless slot, registered once.
-   - `render(iRegistry, iGuiManager)` runs the frame above. It compares `FrameRenderer::getExtent()` with the targets *before* `beginFrame`, so it never waits for idle while recording.
+   - `render(iRegistry, iGuiManager)` runs the frame above: it flushes the uploads, records every barrier, and opens both rendering scopes. It compares `FrameRenderer::getExtent()` with the targets *before* `beginFrame`, so it never waits for idle while recording.
    - `encodeSrgb = !vkuFormatIsSRGB(frameRenderer->getColorFormat())`.
 10. **`ImGuiManager`:** the depth and stencil attachment formats become `VK_FORMAT_UNDEFINED`, because the swapchain pass has no depth image.
 11. **`Application`:**
     - looks up the depth format once and builds `ResourceManager(device, Renderer::kSceneColorFormat, depthFormat)`;
     - holds a `Renderer` instead of a `SceneRenderer`;
-    - `render()` calls `flushUploads()`, then `mRenderer->render(...)`;
+    - `render()` calls `mRenderer->render(...)`, which flushes the uploads itself;
     - `waitIdle` calls go to `mDevice->waitIdle()`;
     - destruction stays in reverse creation order.
 12. **Tests** (`src/tests/unit/renderer_test.cpp`, suite `renderer`):
@@ -465,10 +477,10 @@ float getEv100() const { return math::log2(aperture * aperture / shutterSpeed * 
 float getExposure() const { return 1.0f / (1.2f * math::exp2(getEv100())); }
 ```
 3. **`SceneRenderer`:**
-   - gathers `TransformComponent` + `LightComponent` into the frame's upload buffer (position = world translation, direction = normalized world +X) and precomputes the spot scale and offset;
+   - gathers `TransformComponent` + `LightComponent` in `prepare` and uploads them in `record` (position = world translation, direction = normalized world +X), precomputing the spot scale and offset;
    - reads the `EnvironmentComponent`; with none, the ambient is black;
    - fills `GlobalUniforms` from the primary camera (position, exposure);
-   - includes the lights in the upload-size estimate.
+   - includes the lights in the upload size `prepare` returns.
 4. **glTF importer:** multiply emissive by `kGltfEmissiveNits = 1000.0f`.
 5. **Shader** (`base_shader.slang`):
    - Remove the fixed light and ambient.
@@ -551,17 +563,17 @@ float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
 **Goal:** The directional light casts stable cascaded shadows. First, the scene's draws are gathered once per frame and recorded per view; Render Views reuses this for sensors.
 
 **Part A: per-view drawing** (no visual change)
-1. Split `SceneRenderer` into two calls:
-   - `prepare(iRegistry)`, once per frame:
-     - gathers and sorts draws and lights;
+1. Split `SceneRenderer::record` per view:
+   - `prepare(iRegistry)` (from Phase 1), once per frame before `beginFrame`: gathers and sorts draws and lights, and returns the per-frame upload size. The camera lookup moves to `Renderer`, which adds one `GlobalUniforms` per view before reserving the upload buffer.
+   - `upload(ioUploadBuffer)`, once per frame:
      - uploads instance data, draw infos, and indirect commands;
      - builds the batch list.
-   - `recordView(iCommandBuffer, iView, iTargets)`, once per view:
+   - `recordView(iCommandBuffer, ioUploadBuffer, iView)`, once per view, into the scope `Renderer` opened:
      - uploads that view's `GlobalUniforms`;
      - binds each batch's pipeline;
      - issues the multi-draws.
 2. A `View` struct holds the view-projection matrix, camera position, exposure, and pass kind (color or depth-only).
-3. `Renderer` calls `prepare` once, then `recordView` for the camera.
+3. `Renderer` finds the primary camera, calls `prepare` and `upload` once, then `recordView` for the camera.
 
 **Part B: cascaded shadow maps**
 1. `LightComponent` gains `bool castShadows = false`. The first directional light that casts shadows gets cascades.
@@ -580,7 +592,7 @@ float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
    - Opaque materials use an empty `fragmentEntry`, which means a vertex-only pipeline.
    - Mask materials use `fragMainMasked`.
    - Blend materials don't cast shadows.
-5. Render each cascade with `recordView` into its tile; the viewport and scissor are the tile.
+5. `Renderer` opens one depth-only scope on the atlas, cleared once, and renders each cascade with `recordView`, the viewport and scissor set to its tile.
 6. **Shading:**
    - Upload a `gpu::ShadowData` per frame (4 view-projection matrices, split depths, atlas texture index, texel size) and put its address in `GlobalUniforms`.
    - Pick the cascade from view depth.

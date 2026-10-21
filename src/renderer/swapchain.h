@@ -17,7 +17,7 @@ public:
     uint32_t width = 0;
     uint32_t height = 0;
     VkPresentModeKHR preferredPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
-    VkFormat preferredFormat = VK_FORMAT_B8G8R8A8_SRGB;
+    VkFormat preferredFormat = VK_FORMAT_B8G8R8A8_UNORM; // The tonemap encodes sRGB; ImGui's colors are sRGB already
     VkColorSpaceKHR preferredColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     VkImageUsageFlags imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
   };

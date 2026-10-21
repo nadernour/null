@@ -19,6 +19,8 @@ public:
   BindlessManager& operator=(BindlessManager&&) = delete;
 
   uint32_t registerSampledImage(VkImageView iImageView);
+  // Points a registered slot at another view. The caller makes sure no submitted frame can still read the slot.
+  void updateSampledImage(uint32_t iIndex, VkImageView iImageView);
   void bind(VkCommandBuffer iCommandBuffer, VkPipelineLayout iPipelineLayout);
 
   VkDescriptorSetLayout getDescriptorSetLayout() const { return mDescriptorSetLayout; }
@@ -28,6 +30,8 @@ public:
   bool isFull() const { return mNextSampledImageIndex >= mMaxSampledImages; }
 
 private:
+  void writeSampledImage(uint32_t iIndex, VkImageView iImageView);
+
   VkDevice mDevice = VK_NULL_HANDLE;
   uint32_t mMaxSampledImages = vk_utils::kMaxSampledImages;
   uint32_t mNextSampledImageIndex = 0;

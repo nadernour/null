@@ -12,7 +12,6 @@ namespace ne {
 
 class Window;
 class Buffer;
-class Image;
 class Device;
 class Swapchain;
 
@@ -29,22 +28,22 @@ public:
   VkCommandBuffer beginFrame();
   void endFrame();
 
-  Image* getDepthImage() const { return mDepthImage.get(); }
   VkFormat getColorFormat() const;
-  VkFormat getDepthFormat() const;
   uint32_t getImageCount() const;
   VkExtent2D getExtent() const;
 
   VkImage getActiveImage() const;
   VkImageView getActiveImageView() const;
 
+  // The current frame's, between beginFrame and endFrame
   Buffer* getUploadBuffer() const { return mFrames[mFrameIndex].uploadBuffer.get(); }
-  void recreateUploadBuffer(VkDeviceSize iNewSize);
+  // Recreates the current frame's upload buffer larger when it holds fewer than iSize bytes. Call it before the frame's
+  // first upload: a new buffer drops what the old one holds.
+  void reserveUploadBuffer(VkDeviceSize iSize);
 
 private:
   std::unique_ptr<Buffer> createUploadBuffer(VkDeviceSize iSize, std::string iDebugName = "");
 
-  void createDepthImage();
   void createFramesResources();
 
   void recreateSwapChain(bool iForce = false);
@@ -54,8 +53,6 @@ private:
   Device* mDevice = nullptr;
   Window* mWindow = nullptr;
   std::unique_ptr<Swapchain> mSwapchain;
-
-  std::unique_ptr<Image> mDepthImage;
 
   struct FrameResources {
     VkCommandPool commandPool = VK_NULL_HANDLE;

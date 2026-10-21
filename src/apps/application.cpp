@@ -9,8 +9,8 @@
 #include "renderer/frame_renderer.h"
 #include "renderer/imgui_manager.h"
 #include "renderer/instance.h"
+#include "renderer/renderer.h"
 #include "renderer/resource_manager.h"
-#include "renderer/scene_renderer.h"
 #include "renderer/utils.h"
 #include "scene/transform_system.h"
 
@@ -36,19 +36,18 @@ Application::Application(const std::string& iAppName, uint32_t iWidth, uint32_t 
 
   mFrameRenderer = std::make_unique<FrameRenderer>(mDevice.get(), mWindow.get());
 
-  mResourceManager =
-      std::make_unique<ResourceManager>(mDevice.get(), mFrameRenderer->getColorFormat(), mFrameRenderer->getDepthFormat());
+  const VkFormat depthFormat = mDevice->findDepthFormat();
+  mResourceManager = std::make_unique<ResourceManager>(mDevice.get(), Renderer::kSceneColorFormat, depthFormat);
 
   Input::init(mWindow.get());
 
-  SceneRenderer::Config sceneRendererConfig{
+  Renderer::Config rendererConfig{
       .device = mDevice.get(),
-      .geometryAllocator = mResourceManager->getGeometryAllocator(),
-      .bindlessManager = mResourceManager->getBindlessManager(),
-      .scenePipelineLayout = mResourceManager->getScenePipelineLayout(),
       .frameRenderer = mFrameRenderer.get(),
+      .resourceManager = mResourceManager.get(),
+      .depthFormat = depthFormat,
   };
-  mSceneRenderer = std::make_unique<SceneRenderer>(sceneRendererConfig);
+  mRenderer = std::make_unique<Renderer>(rendererConfig);
 
   mImGuiManager = std::make_unique<ImGuiManager>(mWindow.get(), mInstance.get(), mDevice.get(), mFrameRenderer.get());
 
@@ -63,7 +62,7 @@ Application::~Application() {
   // Reverse order of creation
   mRegistry.reset();
   mImGuiManager.reset();
-  mSceneRenderer.reset();
+  mRenderer.reset();
   mResourceManager.reset();
   mFrameRenderer.reset();
   mDevice.reset();
@@ -78,10 +77,7 @@ Application::~Application() {
 
 void Application::update(float) {}
 
-void Application::render() {
-  mResourceManager->flushUploads();
-  mSceneRenderer->draw(mRegistry.get(), mImGuiManager.get());
-}
+void Application::render() { mRenderer->render(mRegistry.get(), mImGuiManager.get()); }
 
 void Application::stepFrame() {
   Time::tick();
@@ -102,7 +98,7 @@ void Application::runForFrames(size_t iFrameCount) {
   for (size_t i = 0; i < iFrameCount && !mWindow->shouldClose(); ++i) {
     stepFrame();
   }
-  mSceneRenderer->waitIdle();
+  mDevice->waitIdle();
 }
 
 void Application::run() {
@@ -114,7 +110,7 @@ void Application::run() {
     stepFrame();
   }
 
-  mSceneRenderer->waitIdle();
+  mDevice->waitIdle();
   NE_LOG("{} Done!", mAppName);
 }
 

@@ -3,27 +3,21 @@
 #include "core/math/math.h"
 #include "renderer/mesh.h"
 #include <memory>
+#include <optional>
 #include <vector>
 #include <volk/volk.h>
 
 namespace ne {
 
-class Device;
-class FrameRenderer;
+class Buffer;
 class GeometryAllocator;
-class BindlessManager;
-class ImGuiManager;
 class Pipeline;
 class Registry;
 
 class SceneRenderer {
 public:
   struct Config {
-    Device* device = nullptr;
     GeometryAllocator* geometryAllocator = nullptr;
-    BindlessManager* bindlessManager = nullptr;
-    VkPipelineLayout scenePipelineLayout = VK_NULL_HANDLE;
-    FrameRenderer* frameRenderer = nullptr;
   };
 
   SceneRenderer(const Config& iConfig);
@@ -34,14 +28,13 @@ public:
   SceneRenderer(SceneRenderer&&) = delete;
   SceneRenderer& operator=(SceneRenderer&&) = delete;
 
-  void waitIdle();
-
-  void render(VkCommandBuffer iCommandBuffer, Registry* iRegistry, ImGuiManager* iGuiManager = nullptr);
-  void draw(Registry* iRegistry, ImGuiManager* iGuiManager = nullptr);
+  // Finds the primary camera, then gathers and sorts the frame's draws. Returns the upload bytes record() needs.
+  VkDeviceSize prepare(Registry* iRegistry, float iAspectRatio);
+  // Draws what prepare() gathered into the current rendering scope, writing the per-draw data to ioUploadBuffer. The
+  // caller opens the scope, sets the viewport, and binds the bindless set.
+  void record(VkCommandBuffer iCommandBuffer, Buffer& ioUploadBuffer);
 
 private:
-  void submit(VkCommandBuffer iCommandBuffer, const Mat4& iViewProj);
-
   struct DrawCall {
     Pipeline* pipeline;
     const Mesh::Submesh* submesh;
@@ -51,11 +44,8 @@ private:
     uint32_t samplerIndex;
   };
 
-  Device* mDevice = nullptr;
   GeometryAllocator* mGeometryAllocator = nullptr;
-  BindlessManager* mBindlessManager = nullptr;
-  VkPipelineLayout mScenePipelineLayout = VK_NULL_HANDLE;
-  FrameRenderer* mFrameRenderer = nullptr;
+  std::optional<Mat4> mViewProj; // Of the primary camera; without one nothing is drawn
   std::vector<DrawCall> mDrawCalls;
 };
 

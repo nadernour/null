@@ -64,4 +64,21 @@ Image::~Image() {
   mDevice->getMemoryAllocator()->destroyImage(mImage, mAllocation);
 }
 
+VkImageMemoryBarrier2 Image::transitionBarrier(VkImageLayout iNewLayout, VkAccessFlags2 iDstAccessMask,
+                                               VkPipelineStageFlags2 iDstStageMask) {
+  const VkImageMemoryBarrier2 barrier = vk_utils::makeImageBarrier(mImage, mSubresourceRange, mCurrentLayout, iNewLayout,
+                                                                   mCurrentAccessMask, iDstAccessMask, mCurrentStageMask,
+                                                                   iDstStageMask);
+  mCurrentLayout = iNewLayout;
+  mCurrentAccessMask = iDstAccessMask;
+  mCurrentStageMask = iDstStageMask;
+  return barrier;
+}
+
+void Image::transition(VkCommandBuffer iCommandBuffer, VkImageLayout iNewLayout, VkAccessFlags2 iDstAccessMask,
+                       VkPipelineStageFlags2 iDstStageMask) {
+  const VkImageMemoryBarrier2 barrier = transitionBarrier(iNewLayout, iDstAccessMask, iDstStageMask);
+  vk_utils::pipelineBarrier(iCommandBuffer, {&barrier, 1});
+}
+
 } // namespace ne
