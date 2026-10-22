@@ -124,7 +124,7 @@ void FrameManager::endFrame() {
   VkSemaphoreSubmitInfo waitSemaphoreInfo{};
   waitSemaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
   waitSemaphoreInfo.semaphore = currentFrame.imageAcquiredSemaphore;
-  waitSemaphoreInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+  waitSemaphoreInfo.stageMask = kImageAcquiredStage;
 
   VkCommandBufferSubmitInfo commandBufferInfo{};
   commandBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;

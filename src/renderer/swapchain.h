@@ -36,7 +36,7 @@ public:
   Swapchain(Swapchain&&) = delete;
   Swapchain& operator=(Swapchain&&) = delete;
 
-  VkResult acquireNextImage(VkSemaphore iPresentCompleteSemaphore, uint32_t* oImageIndex, uint64_t iTimeout = UINT64_MAX);
+  VkResult acquireNextImage(VkSemaphore iSemaphore, uint32_t* oImageIndex, uint64_t iTimeout = UINT64_MAX);
   VkResult present(VkQueue iQueue, uint32_t iImageIndex, VkSemaphore iWaitSemaphore);
 
   void recreate(uint32_t iWidth, uint32_t iHeight);

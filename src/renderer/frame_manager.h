@@ -17,6 +17,10 @@ class UploadAllocator;
 // The swapchain and the frames in flight, each with its command buffer, sync objects, and upload allocator
 class FrameManager {
 public:
+  // The stage at which a frame's submit waits for its swapchain image; earlier stages may run while the display still
+  // reads it. The frame's first barrier on the image uses it as its source stage, so the layout change waits for the display too.
+  static constexpr VkPipelineStageFlags2 kImageAcquiredStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
   FrameManager(Device* iDevice, Window* iWindow);
   ~FrameManager();
 

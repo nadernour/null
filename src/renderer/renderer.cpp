@@ -170,10 +170,10 @@ void Renderer::recordSwapchainPass(VkCommandBuffer iCommandBuffer, VkExtent2D iE
   const std::array barriers{
       mSceneColor->transitionBarrier(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
                                      VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT),
-      vk_utils::makeImageBarrier(
-          swapchainImage, colorSubresourceRange, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-          VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-          VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT),
+      vk_utils::makeImageBarrier(swapchainImage, colorSubresourceRange, VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_2_NONE,
+                                 VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                                 FrameManager::kImageAcquiredStage, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT),
   };
   vk_utils::pipelineBarrier(iCommandBuffer, barriers);
 

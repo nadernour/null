@@ -159,10 +159,9 @@ void Swapchain::createSwapchain(VkSwapchainKHR iOldSwapchain) {
              mPresentMode == VK_PRESENT_MODE_FIFO_KHR ? "V-Sync" : "Mailbox", mImages.size(), mExtent.width, mExtent.height);
 }
 
-VkResult Swapchain::acquireNextImage(VkSemaphore iPresentCompleteSemaphore, uint32_t* oImageIndex, uint64_t iTimeout) {
+VkResult Swapchain::acquireNextImage(VkSemaphore iSemaphore, uint32_t* oImageIndex, uint64_t iTimeout) {
   NE_ASSERT(oImageIndex != nullptr, "Output image index must not be null");
-  return vkAcquireNextImageKHR(mDevice->getDevice(), mSwapchain, iTimeout, iPresentCompleteSemaphore, VK_NULL_HANDLE,
-                               oImageIndex);
+  return vkAcquireNextImageKHR(mDevice->getDevice(), mSwapchain, iTimeout, iSemaphore, VK_NULL_HANDLE, oImageIndex);
 }
 
 VkResult Swapchain::present(VkQueue iQueue, uint32_t iImageIndex, VkSemaphore iWaitSemaphore) {
