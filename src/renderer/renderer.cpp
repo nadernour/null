@@ -1,14 +1,16 @@
 #include "renderer/renderer.h"
 #include "core/assert.h"
 #include "core/logger.h"
+#include "platform/window.h"
 #include "renderer/bindless_manager.h"
 #include "renderer/device.h"
-#include "renderer/frame_renderer.h"
+#include "renderer/frame_manager.h"
 #include "renderer/image.h"
 #include "renderer/imgui_manager.h"
+#include "renderer/instance.h"
 #include "renderer/resource_manager.h"
 #include "renderer/scene_renderer.h"
-#include "renderer/tonemap_pass.h"
+#include "renderer/tonemapper.h"
 #include "renderer/utils.h"
 
 #include <vulkan/utility/vk_format_utils.h>
@@ -29,41 +31,62 @@ void setViewportAndScissor(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent) {
 
 } // namespace
 
-Renderer::Renderer(const Config& iConfig)
-    : mDevice(iConfig.device), mFrameRenderer(iConfig.frameRenderer), mResourceManager(iConfig.resourceManager),
-      mDepthFormat(iConfig.depthFormat) {
-  NE_ASSERT(mDevice && mFrameRenderer && mResourceManager && mDepthFormat != VK_FORMAT_UNDEFINED);
+Renderer::Renderer(Window* iWindow, const std::string& iAppName) : mWindow(iWindow) {
+  NE_ASSERT(mWindow);
 
-  SceneRenderer::Config sceneRendererConfig{
-      .geometryAllocator = mResourceManager->getGeometryAllocator(),
+  Instance::Config instanceConfig{
+      .appName = iAppName,
+      .requiredExtensions = mWindow->getRequiredInstanceExtensions(),
   };
-  mSceneRenderer = std::make_unique<SceneRenderer>(sceneRendererConfig);
+  mInstance = std::make_unique<Instance>(instanceConfig);
 
-  const VkFormat swapchainFormat = mFrameRenderer->getColorFormat();
-  TonemapPass::Config tonemapConfig{
-      .device = mDevice,
-      .pipelineLayout = mResourceManager->getPipelineLayout(),
-      .colorFormat = swapchainFormat,
+  VK_CHECK(mWindow->createSurface(mInstance->getInstance()));
+
+  Device::Config deviceConfig{
+      .surface = mWindow->getSurface(),
   };
-  mTonemapPass = std::make_unique<TonemapPass>(tonemapConfig);
+  mDevice = std::make_unique<Device>(mInstance.get(), deviceConfig);
+
+  mFrameManager = std::make_unique<FrameManager>(mDevice.get(), mWindow);
+
+  // The pipelines ResourceManager creates draw into the scene targets, so they share these formats
+  mDepthFormat = mDevice->findDepthFormat();
+  mResourceManager = std::make_unique<ResourceManager>(mDevice.get(), kSceneColorFormat, mDepthFormat);
+
+  mImGuiManager = std::make_unique<ImGuiManager>(mWindow, mInstance.get(), mDevice.get(), mFrameManager.get());
+
+  mSceneRenderer = std::make_unique<SceneRenderer>(mResourceManager->getGeometryAllocator());
+
+  const VkFormat swapchainFormat = mFrameManager->getColorFormat();
+  mTonemapper = std::make_unique<Tonemapper>(mDevice.get(), mResourceManager->getPipelineLayout(), swapchainFormat);
   mEncodeSrgb = !vkuFormatIsSRGB(swapchainFormat);
 
-  createTargets(mFrameRenderer->getExtent());
+  createTargets(mFrameManager->getExtent());
   mSceneColorTextureIndex = mResourceManager->getBindlessManager()->registerSampledImage(mSceneColor->getImageView());
 }
 
-Renderer::~Renderer() = default;
+Renderer::~Renderer() {
+  // Reverse order of creation
+  mSceneDepth.reset();
+  mSceneColor.reset();
+  mTonemapper.reset();
+  mSceneRenderer.reset();
+  mImGuiManager.reset();
+  mResourceManager.reset();
+  mFrameManager.reset();
+  mDevice.reset();
 
-void Renderer::render(Registry* iRegistry, ImGuiManager* iGuiManager) {
+  mWindow->destroySurface(mInstance->getInstance());
+
+  mInstance.reset();
+}
+
+void Renderer::render(Registry& ioRegistry) {
   // Everything created since the last frame reaches the GPU before this frame's draws read it
   mResourceManager->flushUploads();
 
-  if (!iRegistry) {
-    return;
-  }
-
   // Checked before beginFrame, so the wait for idle never happens while a frame is recording
-  const VkExtent2D extent = mFrameRenderer->getExtent();
+  const VkExtent2D extent = mFrameManager->getExtent();
   if (extent.width != mSceneColor->getConfig().width || extent.height != mSceneColor->getConfig().height) {
     mDevice->waitIdle(); // No submitted frame may still read the HDR image's slot
     createTargets(extent);
@@ -74,22 +97,24 @@ void Renderer::render(Registry* iRegistry, ImGuiManager* iGuiManager) {
   // CPU only, so it runs before beginFrame waits for the frame's fence. The upload buffer grows to the size it returns
   // before anything is written to it.
   const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
-  const VkDeviceSize uploadSize = mSceneRenderer->prepare(iRegistry, aspectRatio);
+  const VkDeviceSize uploadSize = mSceneRenderer->prepare(ioRegistry, aspectRatio);
 
-  VkCommandBuffer commandBuffer = mFrameRenderer->beginFrame();
+  VkCommandBuffer commandBuffer = mFrameManager->beginFrame();
   if (commandBuffer == VK_NULL_HANDLE) {
     return;
   }
-  mFrameRenderer->reserveUploadBuffer(uploadSize);
+  mFrameManager->reserveUploadBuffer(uploadSize);
 
   // One layout for every graphics pipeline, so the set stays bound across passes
   mResourceManager->getBindlessManager()->bind(commandBuffer, mResourceManager->getPipelineLayout());
 
   recordScenePass(commandBuffer, extent);
-  recordSwapchainPass(commandBuffer, extent, iGuiManager);
+  recordSwapchainPass(commandBuffer, extent);
 
-  mFrameRenderer->endFrame();
+  mFrameManager->endFrame();
 }
+
+void Renderer::waitIdle() const { mDevice->waitIdle(); }
 
 void Renderer::recordScenePass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent) {
   const std::array barriers{
@@ -119,9 +144,6 @@ void Renderer::recordScenePass(VkCommandBuffer iCommandBuffer, VkExtent2D iExten
   depthAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
   depthAttachmentInfo.clearValue.depthStencil = {0.0f, 0}; // Reverse-Z: 0 is the far plane
 
-  // Pipelines declare a stencil attachment whenever the depth format has stencil, so the scope must too
-  const bool hasStencil = (mSceneDepth->getSubresourceRange().aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT) != 0;
-
   VkRenderingInfo renderingInfo{};
   renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
   renderingInfo.renderArea = {.offset = {0, 0}, .extent = iExtent};
@@ -129,18 +151,17 @@ void Renderer::recordScenePass(VkCommandBuffer iCommandBuffer, VkExtent2D iExten
   renderingInfo.colorAttachmentCount = 1;
   renderingInfo.pColorAttachments = &colorAttachmentInfo;
   renderingInfo.pDepthAttachment = &depthAttachmentInfo;
-  renderingInfo.pStencilAttachment = hasStencil ? &depthAttachmentInfo : nullptr;
 
   vkCmdBeginRendering(iCommandBuffer, &renderingInfo);
   setViewportAndScissor(iCommandBuffer, iExtent);
-  mSceneRenderer->record(iCommandBuffer, *mFrameRenderer->getUploadBuffer());
+  mSceneRenderer->record(iCommandBuffer, *mFrameManager->getUploadBuffer());
   vkCmdEndRendering(iCommandBuffer);
 }
 
-void Renderer::recordSwapchainPass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent, ImGuiManager* iGuiManager) {
+void Renderer::recordSwapchainPass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent) {
   // Swapchain images aren't Images, so their barriers are written by hand. The tonemap writes every pixel, so the old
   // contents are discarded.
-  const VkImage swapchainImage = mFrameRenderer->getActiveImage();
+  const VkImage swapchainImage = mFrameManager->getActiveImage();
   const VkImageSubresourceRange colorSubresourceRange{
       .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
       .baseMipLevel = 0,
@@ -151,17 +172,16 @@ void Renderer::recordSwapchainPass(VkCommandBuffer iCommandBuffer, VkExtent2D iE
   const std::array barriers{
       mSceneColor->transitionBarrier(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
                                      VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT),
-      vk_utils::makeImageBarrier(swapchainImage, colorSubresourceRange, VK_IMAGE_LAYOUT_UNDEFINED,
-                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_2_NONE,
-                                 VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT),
+      vk_utils::makeImageBarrier(
+          swapchainImage, colorSubresourceRange, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+          VK_ACCESS_2_NONE, VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+          VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT),
   };
   vk_utils::pipelineBarrier(iCommandBuffer, barriers);
 
   VkRenderingAttachmentInfo colorAttachmentInfo{};
   colorAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-  colorAttachmentInfo.imageView = mFrameRenderer->getActiveImageView();
+  colorAttachmentInfo.imageView = mFrameManager->getActiveImageView();
   colorAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
   colorAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
   colorAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -175,10 +195,8 @@ void Renderer::recordSwapchainPass(VkCommandBuffer iCommandBuffer, VkExtent2D iE
 
   vkCmdBeginRendering(iCommandBuffer, &renderingInfo);
   setViewportAndScissor(iCommandBuffer, iExtent);
-  mTonemapPass->record(iCommandBuffer, mSceneColorTextureIndex, mEncodeSrgb);
-  if (iGuiManager) {
-    iGuiManager->draw(iCommandBuffer);
-  }
+  mTonemapper->record(iCommandBuffer, mSceneColorTextureIndex, mEncodeSrgb);
+  mImGuiManager->draw(iCommandBuffer);
   vkCmdEndRendering(iCommandBuffer);
 
   vk_utils::transitionImageLayout(iCommandBuffer, swapchainImage, colorSubresourceRange, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -194,7 +212,7 @@ void Renderer::createTargets(VkExtent2D iExtent) {
       .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
       .debugName = "Scene_Color",
   };
-  mSceneColor = std::make_unique<Image>(mDevice, colorConfig);
+  mSceneColor = std::make_unique<Image>(mDevice.get(), colorConfig);
 
   Image::Config depthConfig{
       .width = iExtent.width,
@@ -203,7 +221,7 @@ void Renderer::createTargets(VkExtent2D iExtent) {
       .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
       .debugName = "Scene_Depth",
   };
-  mSceneDepth = std::make_unique<Image>(mDevice, depthConfig);
+  mSceneDepth = std::make_unique<Image>(mDevice.get(), depthConfig);
 }
 
 } // namespace ne

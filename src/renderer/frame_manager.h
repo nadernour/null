@@ -15,15 +15,16 @@ class Buffer;
 class Device;
 class Swapchain;
 
-class FrameRenderer {
+// The swapchain and the frames in flight, each with its command buffer, sync objects, and upload buffer
+class FrameManager {
 public:
-  FrameRenderer(Device* iDevice, Window* iWindow);
-  ~FrameRenderer();
+  FrameManager(Device* iDevice, Window* iWindow);
+  ~FrameManager();
 
-  FrameRenderer(const FrameRenderer&) = delete;
-  FrameRenderer& operator=(const FrameRenderer&) = delete;
-  FrameRenderer(FrameRenderer&&) = delete;
-  FrameRenderer& operator=(FrameRenderer&&) = delete;
+  FrameManager(const FrameManager&) = delete;
+  FrameManager& operator=(const FrameManager&) = delete;
+  FrameManager(FrameManager&&) = delete;
+  FrameManager& operator=(FrameManager&&) = delete;
 
   VkCommandBuffer beginFrame();
   void endFrame();
@@ -57,7 +58,7 @@ private:
   struct FrameResources {
     VkCommandPool commandPool = VK_NULL_HANDLE;
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
-    VkSemaphore presentCompleteSemaphore = VK_NULL_HANDLE;
+    VkSemaphore imageAcquiredSemaphore = VK_NULL_HANDLE;
     VkFence drawFence = VK_NULL_HANDLE;
     std::unique_ptr<Buffer> uploadBuffer;
   };

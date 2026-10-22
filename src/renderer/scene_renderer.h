@@ -16,11 +16,7 @@ class Registry;
 
 class SceneRenderer {
 public:
-  struct Config {
-    GeometryAllocator* geometryAllocator = nullptr;
-  };
-
-  SceneRenderer(const Config& iConfig);
+  explicit SceneRenderer(GeometryAllocator* iGeometryAllocator);
   ~SceneRenderer();
 
   SceneRenderer(const SceneRenderer&) = delete;
@@ -29,9 +25,9 @@ public:
   SceneRenderer& operator=(SceneRenderer&&) = delete;
 
   // Finds the primary camera, then gathers and sorts the frame's draws. Returns the upload bytes record() needs.
-  VkDeviceSize prepare(Registry* iRegistry, float iAspectRatio);
-  // Draws what prepare() gathered into the current rendering scope, writing the per-draw data to ioUploadBuffer. The
-  // caller opens the scope, sets the viewport, and binds the bindless set.
+  VkDeviceSize prepare(Registry& ioRegistry, float iAspectRatio);
+  // Draws what prepare() gathered into the current pass, writing the per-draw data to ioUploadBuffer. The caller opens
+  // the pass, sets the viewport, and binds the bindless set.
   void record(VkCommandBuffer iCommandBuffer, Buffer& ioUploadBuffer);
 
 private:

@@ -130,6 +130,7 @@ inline std::string formatBytes(VkDeviceSize iBytes) {
 inline VkImageAspectFlags deduceAspectFlags(VkFormat iFormat) {
   switch (iFormat) {
     case VK_FORMAT_D16_UNORM:
+    case VK_FORMAT_X8_D24_UNORM_PACK32:
     case VK_FORMAT_D32_SFLOAT:
       return VK_IMAGE_ASPECT_DEPTH_BIT;
     case VK_FORMAT_D16_UNORM_S8_UINT:

@@ -8,11 +8,11 @@ namespace ne {
 class Window;
 class Instance;
 class Device;
-class FrameRenderer;
+class FrameManager;
 
 class ImGuiManager {
 public:
-  ImGuiManager(Window* iWindow, Instance* iInstance, Device* iDevice, const FrameRenderer* iFrameRenderer);
+  ImGuiManager(Window* iWindow, Instance* iInstance, Device* iDevice, const FrameManager* iFrameManager);
   ~ImGuiManager();
 
   ImGuiManager(const ImGuiManager&) = delete;

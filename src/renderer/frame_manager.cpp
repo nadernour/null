@@ -1,4 +1,4 @@
-#include "renderer/frame_renderer.h"
+#include "renderer/frame_manager.h"
 #include "core/assert.h"
 #include "core/logger.h"
 #include "core/math/math_utils.h"
@@ -15,7 +15,7 @@
 
 namespace ne {
 
-FrameRenderer::FrameRenderer(Device* iDevice, Window* iWindow) : mDevice(iDevice), mWindow(iWindow) {
+FrameManager::FrameManager(Device* iDevice, Window* iWindow) : mDevice(iDevice), mWindow(iWindow) {
   NE_ASSERT(mDevice && mWindow && mWindow->getSurface() != VK_NULL_HANDLE);
   mFrameBufferResizeCallbackId = mWindow->addFrameBufferResizeCallback([this](int32_t, int32_t) { mFrameBufferResized = true; });
 
@@ -32,25 +32,25 @@ FrameRenderer::FrameRenderer(Device* iDevice, Window* iWindow) : mDevice(iDevice
   createFramesResources();
 }
 
-FrameRenderer::~FrameRenderer() {
-  NE_VERBOSE("Destroying Vulkan FrameRenderer and deallocating resources...");
+FrameManager::~FrameManager() {
+  NE_VERBOSE("Destroying Vulkan FrameManager and deallocating resources...");
 
   if (mWindow && mFrameBufferResizeCallbackId != 0)
     mWindow->removeFrameBufferResizeCallback(mFrameBufferResizeCallbackId);
 
   for (FrameResources& frame : mFrames) {
     vkDestroyCommandPool(mDevice->getDevice(), frame.commandPool, nullptr);
-    vkDestroySemaphore(mDevice->getDevice(), frame.presentCompleteSemaphore, nullptr);
+    vkDestroySemaphore(mDevice->getDevice(), frame.imageAcquiredSemaphore, nullptr);
     vkDestroyFence(mDevice->getDevice(), frame.drawFence, nullptr);
     frame.uploadBuffer.reset();
   }
 
   mSwapchain.reset();
 
-  NE_VERBOSE("Vulkan FrameRenderer destroyed successfully.");
+  NE_VERBOSE("Vulkan FrameManager destroyed successfully.");
 }
 
-std::unique_ptr<Buffer> FrameRenderer::createUploadBuffer(VkDeviceSize iSize, std::string iDebugName) {
+std::unique_ptr<Buffer> FrameManager::createUploadBuffer(VkDeviceSize iSize, std::string iDebugName) {
   Buffer::Config config{
       .size = iSize,
       .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
@@ -61,7 +61,7 @@ std::unique_ptr<Buffer> FrameRenderer::createUploadBuffer(VkDeviceSize iSize, st
   return std::make_unique<Buffer>(mDevice, config);
 }
 
-void FrameRenderer::createFramesResources() {
+void FrameManager::createFramesResources() {
   NE_ASSERT(mFrames.empty());
   mFrames.resize(kMaxFramesInFlight);
   for (size_t i = 0; i < mFrames.size(); i++) {
@@ -80,7 +80,7 @@ void FrameRenderer::createFramesResources() {
 
     VkSemaphoreCreateInfo semaphoreCreateInfo{};
     semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    VK_CHECK(vkCreateSemaphore(mDevice->getDevice(), &semaphoreCreateInfo, nullptr, &mFrames[i].presentCompleteSemaphore));
+    VK_CHECK(vkCreateSemaphore(mDevice->getDevice(), &semaphoreCreateInfo, nullptr, &mFrames[i].imageAcquiredSemaphore));
 
     VkFenceCreateInfo fenceCreateInfo{};
     fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -92,18 +92,18 @@ void FrameRenderer::createFramesResources() {
     vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].commandPool, std::format("Frame_CommandPool_{}", i).c_str());
     vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].commandBuffer,
                                  std::format("Frame_CommandBuffer_{}", i).c_str());
-    vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].presentCompleteSemaphore,
-                                 std::format("PresentComplete_Semaphore_{}", i).c_str());
+    vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].imageAcquiredSemaphore,
+                                 std::format("ImageAcquired_Semaphore_{}", i).c_str());
     vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].drawFence, std::format("Draw_Fence_{}", i).c_str());
   }
 }
 
-VkCommandBuffer FrameRenderer::beginFrame() {
+VkCommandBuffer FrameManager::beginFrame() {
   auto& currentFrame = mFrames[mFrameIndex];
 
   VK_CHECK(vkWaitForFences(mDevice->getDevice(), 1, &currentFrame.drawFence, VK_TRUE, UINT64_MAX));
 
-  VkResult result = mSwapchain->acquireNextImage(currentFrame.presentCompleteSemaphore, &mActiveImageIndex);
+  VkResult result = mSwapchain->acquireNextImage(currentFrame.imageAcquiredSemaphore, &mActiveImageIndex);
 
   if (result == VK_ERROR_OUT_OF_DATE_KHR) {
     recreateSwapChain(true);
@@ -126,7 +126,7 @@ VkCommandBuffer FrameRenderer::beginFrame() {
   return currentFrame.commandBuffer;
 }
 
-void FrameRenderer::reserveUploadBuffer(VkDeviceSize iSize) {
+void FrameManager::reserveUploadBuffer(VkDeviceSize iSize) {
   auto& currentFrame = mFrames[mFrameIndex];
   const VkDeviceSize currentSize = currentFrame.uploadBuffer->getConfig().size;
   if (iSize <= currentSize) {
@@ -141,7 +141,7 @@ void FrameRenderer::reserveUploadBuffer(VkDeviceSize iSize) {
   currentFrame.uploadBuffer = createUploadBuffer(newSize, std::format("UploadBuffer_Frame_{}", mFrameIndex));
 }
 
-void FrameRenderer::endFrame() {
+void FrameManager::endFrame() {
   auto& currentFrame = mFrames[mFrameIndex];
   VK_CHECK(vkEndCommandBuffer(currentFrame.commandBuffer));
 
@@ -149,7 +149,7 @@ void FrameRenderer::endFrame() {
 
   VkSemaphoreSubmitInfo waitSemaphoreInfo{};
   waitSemaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-  waitSemaphoreInfo.semaphore = currentFrame.presentCompleteSemaphore;
+  waitSemaphoreInfo.semaphore = currentFrame.imageAcquiredSemaphore;
   waitSemaphoreInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 
   VkCommandBufferSubmitInfo commandBufferInfo{};
@@ -187,7 +187,7 @@ void FrameRenderer::endFrame() {
   mFrameIndex = (mFrameIndex + 1) % kMaxFramesInFlight;
 }
 
-void FrameRenderer::recreateSwapChain(bool iForce) {
+void FrameManager::recreateSwapChain(bool iForce) {
   int32_t width = 0, height = 0;
   mWindow->getFrameBufferSize(&width, &height);
   while (width == 0 || height == 0) {
@@ -203,14 +203,14 @@ void FrameRenderer::recreateSwapChain(bool iForce) {
   mSwapchain->recreate(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 }
 
-VkFormat FrameRenderer::getColorFormat() const { return mSwapchain->getSurfaceFormat().format; }
+VkFormat FrameManager::getColorFormat() const { return mSwapchain->getSurfaceFormat().format; }
 
-uint32_t FrameRenderer::getImageCount() const { return static_cast<uint32_t>(mSwapchain->getImages().size()); }
+uint32_t FrameManager::getImageCount() const { return static_cast<uint32_t>(mSwapchain->getImages().size()); }
 
-VkExtent2D FrameRenderer::getExtent() const { return mSwapchain->getExtent(); }
+VkExtent2D FrameManager::getExtent() const { return mSwapchain->getExtent(); }
 
-VkImage FrameRenderer::getActiveImage() const { return mSwapchain->getImages()[mActiveImageIndex].image; }
+VkImage FrameManager::getActiveImage() const { return mSwapchain->getImages()[mActiveImageIndex].image; }
 
-VkImageView FrameRenderer::getActiveImageView() const { return mSwapchain->getImages()[mActiveImageIndex].view; }
+VkImageView FrameManager::getActiveImageView() const { return mSwapchain->getImages()[mActiveImageIndex].view; }
 
 } // namespace ne

@@ -30,14 +30,14 @@ struct InstanceData {
   uint samplerIndex;
 };
 
-struct PushConstants {
+struct ScenePushConstants {
   DrawInfo* drawInfos;
   GlobalUniforms* globalUniforms;
   InstanceData* instances;
 };
 
 [vk::push_constant]
-PushConstants pc;
+ScenePushConstants pc;
 
 struct VSInput {
   uint vertexId : SV_VertexID;

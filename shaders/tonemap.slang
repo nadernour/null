@@ -7,13 +7,13 @@ SamplerState gSamplers[];
 [vk::binding(1, 0)]
 Texture2D gTextures[];
 
-struct TonemapConstants {
+struct TonemapPushConstants {
   uint hdrTexture;
   uint encodeSrgb;
 };
 
 [vk::push_constant]
-TonemapConstants pc;
+TonemapPushConstants pc;
 
 // Khronos PBR Neutral (reference implementation); linear in, linear out
 float3 pbrNeutral(float3 color) {

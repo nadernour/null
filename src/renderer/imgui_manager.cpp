@@ -4,7 +4,7 @@
 #include "core/logger.h"
 #include "platform/window.h"
 #include "renderer/device.h"
-#include "renderer/frame_renderer.h"
+#include "renderer/frame_manager.h"
 #include "renderer/instance.h"
 
 #include <imgui.h>
@@ -13,9 +13,9 @@
 
 namespace ne {
 
-ImGuiManager::ImGuiManager(Window* iWindow, Instance* iInstance, Device* iDevice, const FrameRenderer* iFrameRenderer)
+ImGuiManager::ImGuiManager(Window* iWindow, Instance* iInstance, Device* iDevice, const FrameManager* iFrameManager)
     : mWindow(iWindow) {
-  NE_ASSERT(mWindow && iInstance && iDevice && iFrameRenderer);
+  NE_ASSERT(mWindow && iInstance && iDevice && iFrameManager);
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -25,7 +25,7 @@ ImGuiManager::ImGuiManager(Window* iWindow, Instance* iInstance, Device* iDevice
 
   ImGui_ImplGlfw_InitForVulkan(mWindow->getGLFWwindow(), true);
 
-  VkFormat colorFormat = iFrameRenderer->getColorFormat();
+  VkFormat colorFormat = iFrameManager->getColorFormat();
 
   VkPipelineRenderingCreateInfoKHR renderingInfo{};
   renderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
@@ -47,7 +47,7 @@ ImGuiManager::ImGuiManager(Window* iWindow, Instance* iInstance, Device* iDevice
   initInfo.DescriptorPool = VK_NULL_HANDLE;
   initInfo.DescriptorPoolSize = 128;
   initInfo.MinImageCount = 2;
-  initInfo.ImageCount = iFrameRenderer->getImageCount();
+  initInfo.ImageCount = iFrameManager->getImageCount();
   initInfo.UseDynamicRendering = true;
   initInfo.PipelineInfoMain.PipelineRenderingCreateInfo = renderingInfo;
   initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;

@@ -290,11 +290,12 @@ Device::SwapChainSupportDetails Device::querySwapChainSupport(VkSurfaceKHR iSurf
 }
 
 VkFormat Device::findDepthFormat() const {
-  VkFormat depthFormat =
-      findSupportedFormat({VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM_S8_UINT},
-                          VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
-  if (depthFormat != VK_FORMAT_D32_SFLOAT_S8_UINT) {
-    NE_WARN("Preferred depth format D32_SFLOAT_S8_UINT unsupported; falling back to {}, which loses Reverse-Z precision",
+  // Depth-only: nothing uses stencil, and a depth-only image can be sampled through its one view. Vulkan guarantees
+  // D16_UNORM and at least one of the other two.
+  VkFormat depthFormat = findSupportedFormat({VK_FORMAT_D32_SFLOAT, VK_FORMAT_X8_D24_UNORM_PACK32, VK_FORMAT_D16_UNORM},
+                                             VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+  if (depthFormat != VK_FORMAT_D32_SFLOAT) {
+    NE_WARN("Preferred depth format D32_SFLOAT unsupported; falling back to {}, which loses Reverse-Z precision",
             string_VkFormat(depthFormat));
   }
   return depthFormat;

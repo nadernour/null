@@ -5,13 +5,8 @@
 #include "core/time.h"
 #include "platform/input.h"
 #include "platform/window.h"
-#include "renderer/device.h"
-#include "renderer/frame_renderer.h"
 #include "renderer/imgui_manager.h"
-#include "renderer/instance.h"
 #include "renderer/renderer.h"
-#include "renderer/resource_manager.h"
-#include "renderer/utils.h"
 #include "scene/transform_system.h"
 
 namespace ne {
@@ -20,36 +15,10 @@ Application::Application(const std::string& iAppName, uint32_t iWidth, uint32_t 
     : mWidth(static_cast<int32_t>(iWidth)), mHeight(static_cast<int32_t>(iHeight)), mAppName(iAppName) {
   mWindow = std::make_unique<Window>(mWidth, mHeight, mAppName);
 
-  Instance::Config instanceConfig{
-      .engineName = mEngineName,
-      .appName = mAppName,
-      .requiredExtensions = mWindow->getRequiredInstanceExtensions(),
-  };
-  mInstance = std::make_unique<Instance>(instanceConfig);
-
-  VK_CHECK(mWindow->createSurface(mInstance->getInstance()));
-
-  Device::Config deviceConfig{
-      .surface = mWindow->getSurface(),
-  };
-  mDevice = std::make_unique<Device>(mInstance.get(), deviceConfig);
-
-  mFrameRenderer = std::make_unique<FrameRenderer>(mDevice.get(), mWindow.get());
-
-  const VkFormat depthFormat = mDevice->findDepthFormat();
-  mResourceManager = std::make_unique<ResourceManager>(mDevice.get(), Renderer::kSceneColorFormat, depthFormat);
-
+  // Before the renderer: ImGui's GLFW backend chains to the input callbacks installed here
   Input::init(mWindow.get());
 
-  Renderer::Config rendererConfig{
-      .device = mDevice.get(),
-      .frameRenderer = mFrameRenderer.get(),
-      .resourceManager = mResourceManager.get(),
-      .depthFormat = depthFormat,
-  };
-  mRenderer = std::make_unique<Renderer>(rendererConfig);
-
-  mImGuiManager = std::make_unique<ImGuiManager>(mWindow.get(), mInstance.get(), mDevice.get(), mFrameRenderer.get());
+  mRenderer = std::make_unique<Renderer>(mWindow.get(), mAppName);
 
   mRegistry = std::make_unique<Registry>();
 
@@ -61,33 +30,28 @@ Application::~Application() {
 
   // Reverse order of creation
   mRegistry.reset();
-  mImGuiManager.reset();
   mRenderer.reset();
-  mResourceManager.reset();
-  mFrameRenderer.reset();
-  mDevice.reset();
-
-  mWindow->destroySurface(mInstance->getInstance());
-
-  mInstance.reset();
   mWindow.reset();
 
   NE_VERBOSE("Engine Application '{}' destroyed successfully.", mAppName);
 }
 
+ResourceManager* Application::getResourceManager() const { return mRenderer->getResourceManager(); }
+
 void Application::update(float) {}
 
-void Application::render() { mRenderer->render(mRegistry.get(), mImGuiManager.get()); }
+void Application::render() { mRenderer->render(*mRegistry); }
 
 void Application::stepFrame() {
   Time::tick();
   Input::update();
   mWindow->processEvents();
 
-  mImGuiManager->beginFrame();
-  Input::setUICapture(mImGuiManager->wantsCaptureMouse(), mImGuiManager->wantsCaptureKeyboard());
+  ImGuiManager& imGuiManager = *mRenderer->getImGuiManager();
+  imGuiManager.beginFrame();
+  Input::setUICapture(imGuiManager.wantsCaptureMouse(), imGuiManager.wantsCaptureKeyboard());
   renderUI();
-  mImGuiManager->endFrame();
+  imGuiManager.endFrame();
 
   update(Time::getDeltaTime());
   TransformSystem::update(*mRegistry);
@@ -98,7 +62,7 @@ void Application::runForFrames(size_t iFrameCount) {
   for (size_t i = 0; i < iFrameCount && !mWindow->shouldClose(); ++i) {
     stepFrame();
   }
-  mDevice->waitIdle();
+  mRenderer->waitIdle();
 }
 
 void Application::run() {
@@ -110,7 +74,7 @@ void Application::run() {
     stepFrame();
   }
 
-  mDevice->waitIdle();
+  mRenderer->waitIdle();
   NE_LOG("{} Done!", mAppName);
 }
 

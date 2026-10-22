@@ -18,19 +18,17 @@
 
 namespace ne {
 
-SceneRenderer::SceneRenderer(const Config& iConfig) : mGeometryAllocator(iConfig.geometryAllocator) {
+SceneRenderer::SceneRenderer(GeometryAllocator* iGeometryAllocator) : mGeometryAllocator(iGeometryAllocator) {
   NE_ASSERT(mGeometryAllocator);
 }
 
 SceneRenderer::~SceneRenderer() = default;
 
-VkDeviceSize SceneRenderer::prepare(Registry* iRegistry, float iAspectRatio) {
-  NE_ASSERT(iRegistry);
-
+VkDeviceSize SceneRenderer::prepare(Registry& ioRegistry, float iAspectRatio) {
   mViewProj.reset();
   mDrawCalls.clear();
 
-  iRegistry->view<TransformComponent, CameraComponent>().each(
+  ioRegistry.view<TransformComponent, CameraComponent>().each(
       [&](const TransformComponent& iTransform, const CameraComponent& iCamera) {
         if (iCamera.primary) {
           NE_ASSERT(!mViewProj, "At most one camera may be primary");
@@ -41,7 +39,7 @@ VkDeviceSize SceneRenderer::prepare(Registry* iRegistry, float iAspectRatio) {
     return 0;
   }
 
-  iRegistry->view<TransformComponent, MeshComponent>().each(
+  ioRegistry.view<TransformComponent, MeshComponent>().each(
       [&](Entity, const TransformComponent& iTransform, const MeshComponent& iMesh) {
         if (!iMesh.mesh) {
           return;
@@ -153,13 +151,13 @@ void SceneRenderer::record(VkCommandBuffer iCommandBuffer, Buffer& ioUploadBuffe
     VkDeviceSize indirectOffset =
         ioUploadBuffer.upload(indirectCommands.data(), indirectCommands.size() * sizeof(VkDrawIndexedIndirectCommand));
 
-    gpu::PushConstants pc{};
+    gpu::ScenePushConstants pc{};
     pc.drawInfos = drawInfosAddr;
     pc.globalUniforms = globalUniformsAddr;
     pc.instances = instancesAddr;
 
     vkCmdPushConstants(iCommandBuffer, currentPipeline->getPipelineLayout(), gpu::kPushConstantStages, 0,
-                       sizeof(gpu::PushConstants), &pc);
+                       sizeof(gpu::ScenePushConstants), &pc);
 
     vkCmdDrawIndexedIndirect(iCommandBuffer, ioUploadBuffer.getBuffer(), indirectOffset, numUniqueSubmeshes,
                              sizeof(VkDrawIndexedIndirectCommand));

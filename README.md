@@ -16,7 +16,7 @@ A digital twin platform for robot simulation, built on a Vulkan 1.4 renderer wri
 
 ## ✅ What Works Today
 
-- **Rendering**: Vulkan 1.3 / 1.4 with dynamic rendering and synchronization2. The scene renders into its own HDR target, which a tonemap pass (Khronos PBR Neutral) writes to the window, with the UI drawn on top. The vertex shader fetches vertices and per-draw data through GPU pointers, and draws go out as multi-draw indirect. All textures live in one bindless array with full mip chains (built on the CPU with an sRGB-correct box filter), every buffer and image comes from VMA, depth is reverse-Z, and every Vulkan object is named for RenderDoc and validation messages.
+- **Rendering**: Vulkan 1.3 / 1.4 with dynamic rendering and synchronization2. The scene renders into its own HDR target, which a tonemapper (Khronos PBR Neutral) writes to the window, with the UI drawn on top. The vertex shader fetches vertices and per-draw data through GPU pointers, and draws go out as multi-draw indirect. All textures live in one bindless array with full mip chains (built on the CPU with an sRGB-correct box filter), every buffer and image comes from VMA, depth is reverse-Z, and every Vulkan object is named for RenderDoc and validation messages.
 - **Assets**: glTF / GLB models, whose node trees become reusable prefabs, and PNG / JPEG textures.
 - **Scene & Input**: An ECS with parent / child transforms, perspective and orthographic cameras, and a free-fly camera controller (WASD + QE, right-click to look) on typed keyboard and mouse input.
 - **Tools**: A Dear ImGui overlay with frame stats, camera settings, and a simulation time scale (0-3x); it blocks 3D input while in use, and `H` toggles it. A logger with colored console output keeps one log file per run (the last 10).
@@ -36,7 +36,7 @@ The sections below group work by area; their order is not fixed. The open decisi
 
 ### Rendering
 The steps are in order, each building on the one before; they bring physically based rendering to the glTF and robot materials that camera sensors will see. [rendering_plan.md](rendering_plan.md) has each step's decisions and tasks.
-- [x] **HDR Scene Target & Frame Orchestration**: The scene renders into its own HDR color and depth images instead of the swapchain, a tonemap pass (Khronos PBR Neutral) writes the result to the window, and the UI draws on top in its own step afterwards. One place runs the whole frame: scene, tonemap, UI.
+- [x] **HDR Scene Target & Frame Orchestration**: The scene renders into its own HDR color and depth images instead of the swapchain, a tonemapper (Khronos PBR Neutral) writes the result to the window, and the UI draws on top in its own step afterwards. One place runs the whole frame: scene, tonemap, UI.
 - [ ] **Materials & glTF Textures**: Materials become GPU data, a material buffer indexed per instance, with the glTF metal-roughness fields (base color, metallic, roughness, normal, occlusion, and emissive, each with an optional texture). glTF materials and textures are imported instead of one shared default.
 - [ ] **Tangents, Normal Maps & Alpha**: Tangents from glTF or generated with MikkTSpace, normal mapping, alpha mask and blend, and double-sided materials.
 - [ ] **Lights, Exposure & PBR Shading**: Lights become ECS components (directional, point, and spot, in lux and candela) and replace the light fixed in the shader. The glTF metal-roughness BRDF (GGX, Smith, Schlick), camera exposure from aperture, shutter speed, and ISO, and a sky / ground ambient that metals reflect.

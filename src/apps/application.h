@@ -6,12 +6,8 @@
 namespace ne {
 
 class Window;
-class Instance;
-class Device;
-class FrameRenderer;
 class ResourceManager;
 class Renderer;
-class ImGuiManager;
 class Registry;
 
 class Application {
@@ -33,28 +29,19 @@ public:
   void runForFrames(size_t iFrameCount = 1);
 
   Window* getWindow() const { return mWindow.get(); }
-  ResourceManager* getResourceManager() const { return mResourceManager.get(); }
+  ResourceManager* getResourceManager() const;
   Registry* getRegistry() const { return mRegistry.get(); }
 
 protected:
   int32_t mWidth = 1200;
   int32_t mHeight = 1000;
-  std::string mEngineName = "Null Engine";
   std::string mAppName = "Null App";
 
 private:
   void render();
 
-  std::unique_ptr<Instance> mInstance;
-  std::unique_ptr<Device> mDevice;
-
   std::unique_ptr<Window> mWindow;
-  std::unique_ptr<FrameRenderer> mFrameRenderer;
-
-  std::unique_ptr<ResourceManager> mResourceManager;
   std::unique_ptr<Renderer> mRenderer;
-
-  std::unique_ptr<ImGuiManager> mImGuiManager;
   std::unique_ptr<Registry> mRegistry;
 };
 
