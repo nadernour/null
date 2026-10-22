@@ -22,7 +22,8 @@ Physically based rendering for Null, split into six phases. Each phase leaves th
 
 ### Frame and render targets
 - **Ownership:** `Application` holds the `Window`, the `Renderer`, and the `Registry`, and runs the loop and the UI hooks. `Renderer` owns everything on the GPU side: the instance, the device, `FrameManager`, `ResourceManager`, `ImGuiManager`, the classes that draw, and the render targets. *Why:* the app holds rendering API objects, not their implementation, so it never has to keep two of them in agreement (such as the formats `ResourceManager`'s pipelines and the targets share), and apps built on the core library don't repeat the setup.
-- **No render graph.** `Renderer` is the only place that orders passes; a pass is one `vkCmdBeginRendering` scope, as in Vulkan. It records every barrier, opens every pass (attachments, load ops, clear values, viewport), and hands the classes that draw into a pass their per-frame resources (the command buffer, the upload buffer); those classes only draw. `Image` builds its own barriers from the layout, access, and stage it already tracks, and back-to-back barriers go out together in one `vk_utils::pipelineBarrier`. *Why:* the frame is a fixed sequence, and later a loop over views. One pass can hold several draws (the tonemap and the UI; later the shadow cascades in one atlas), so a pass can't belong to what draws into it. Revisit only if the frame becomes data-driven (user-defined sensor pipelines), many short-lived post passes pile up, or profiling calls for async compute.
+- **No render graph.** `Renderer` is the only place that orders passes; a pass is one `vkCmdBeginRendering` scope, as in Vulkan. It records every barrier, opens every pass (attachments, load ops, clear values, viewport), and hands the classes that draw into a pass their per-frame resources (the command buffer, the frame's upload allocator); those classes only draw. `Image` builds its own barriers from the layout, access, and stage it already tracks, and back-to-back barriers go out together in one `vk_utils::pipelineBarrier`. *Why:* the frame is a fixed sequence, and later a loop over views. One pass can hold several draws (the tonemap and the UI; later the shadow cascades in one atlas), so a pass can't belong to what draws into it. Revisit only if the frame becomes data-driven (user-defined sensor pipelines), many short-lived post passes pile up, or profiling calls for async compute.
+- **Per-frame uploads:** each frame in flight has an `UploadAllocator` in `FrameManager`: 16 MB host-visible blocks filled in order, the next block taking over when one is full (an upload larger than a block gets a block of its own size), all reused once that frame's fence has signaled. *Why:* nothing predicts a frame's upload size, so adding a per-frame upload is one call. A prediction that came out short would overflow the buffer in Shipping, where asserts are compiled out.
 - **Scene color format:** `VK_FORMAT_R16G16B16A16_SFLOAT`. *Why:* color attachment, blending, and sampling are mandatory for it.
 - **Depth format:** `VK_FORMAT_D32_SFLOAT` from `Device::findDepthFormat()`, which falls back only to other depth-only formats; looked up once in `Renderer`. *Why:* nothing uses stencil, and a depth-only image can be sampled through its one view (the Hi-Z pyramid later).
 - **Swapchain format:** prefer `VK_FORMAT_B8G8R8A8_UNORM`, and let the tonemap shader apply the sRGB encode. A push-constant flag skips the encode if the surface only offers an `_SRGB` format. *Why:* ImGui's colors are sRGB values meant to be written as-is. On an `_SRGB` swapchain they get encoded twice and look washed out.
@@ -70,16 +71,15 @@ Physically based rendering for Null, split into six phases. Each phase leaves th
 
 **Goal:** The scene renders into its own HDR color and depth images, a tonemapper writes the result to the swapchain, and ImGui draws on top in the same swapchain pass. `Renderer` runs the whole frame. Nothing changes on screen except the tonemap curve and the UI colors.
 
-This is the Oct 15 stage 1 plan, plus the `Image` barrier helpers, the shared pipeline layout, and a resize test. The review of Oct 21 moved the scene's barriers and rendering scope into `Renderer` and the upload buffer out of `SceneRenderer`. A second review that day moved the GPU setup from `Application` into `Renderer`, renamed `FrameRenderer` to `FrameManager` and `TonemapPass` to `Tonemapper`, replaced the `Config` structs that only held dependencies with constructor parameters, and made depth `D32_SFLOAT`. The frame and tasks below describe the result.
+This is the Oct 15 stage 1 plan, plus the `Image` barrier helpers, the shared pipeline layout, and a resize test. The review of Oct 21 moved the scene's barriers and rendering scope into `Renderer` and the upload buffer out of `SceneRenderer`. A second review that day moved the GPU setup from `Application` into `Renderer`, renamed `FrameRenderer` to `FrameManager` and `TonemapPass` to `Tonemapper`, replaced the `Config` structs that only held dependencies with constructor parameters, and made depth `D32_SFLOAT`. It also replaced the upload buffer, which `SceneRenderer::prepare` had to size before the frame, with a per-frame block allocator. The frame and tasks below describe the result.
 
 **The frame:**
 ```
 Renderer::render
 ├─ ResourceManager::flushUploads       everything created since the last frame reaches the GPU
 ├─ swapchain extent changed? → Device::waitIdle, recreate HDR + depth, updateSampledImage
-├─ SceneRenderer::prepare              find the camera, gather + sort draws, return the upload size
-├─ FrameManager::beginFrame            wait fence, acquire, begin command buffer
-├─ FrameManager::reserveUploadBuffer   grow the frame's upload buffer to that size
+├─ SceneRenderer::prepare              find the camera, gather + sort draws
+├─ FrameManager::beginFrame            wait fence, acquire, reset the frame's upload allocator, begin command buffer
 ├─ bind bindless set 0 (shared layout)
 ├─ HDR color, depth → attachments      one barrier batch
 ├─ scene pass                          clear HDR color + depth
@@ -108,12 +108,15 @@ Renderer::render
    - Rename `getScenePipelineLayout` to `getPipelineLayout` (debug name `Bindless_PipelineLayout`).
    - Every `vkCmdPushConstants` passes `VERTEX | FRAGMENT`; Vulkan requires the flags to match the range.
 4. **`Pipeline::Config`** gains `VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT`.
-5. **`FrameManager`** keeps only the swapchain, frame sync, and upload buffers. Remove the depth image, `getDepthImage`, `getDepthFormat`, and `createDepthImage`. `reserveUploadBuffer(iSize)` replaces `recreateUploadBuffer` and takes over the growth policy (at least doubling) from `SceneRenderer`; it runs before the frame's first upload.
+5. **`FrameManager`** keeps only the swapchain, frame sync, and each frame's upload allocator. Remove the depth image, `getDepthImage`, `getDepthFormat`, and `createDepthImage`. **`UploadAllocator`** (`src/renderer/upload_allocator.{h,cpp}`) replaces the upload buffer and `recreateUploadBuffer`:
+   - `upload(iData, iSize)` returns the buffer, offset, and device address of the copy;
+   - when the current block is full it moves on to the next, creating it the first time (`kUploadBlockSize`, or the upload's size if larger);
+   - `beginFrame` calls `reset()` after the frame's fence wait, which reuses every block.
 6. **Swapchain:** `Swapchain::Config::preferredFormat` becomes `VK_FORMAT_B8G8R8A8_UNORM`.
 7. **`SceneRenderer`** only draws, into the pass `Renderer` opens:
    - `SceneRenderer(iGeometryAllocator)`, the one object it uses.
-   - `prepare(ioRegistry, iAspectRatio)` finds the primary camera, gathers and sorts the draws, and returns the upload bytes `record` needs. It runs before `beginFrame`.
-   - `record(iCommandBuffer, ioUploadBuffer)` binds the index buffer, uploads the per-draw data, and draws.
+   - `prepare(ioRegistry, iAspectRatio)` finds the primary camera and gathers and sorts the draws. It runs before `beginFrame`.
+   - `record(iCommandBuffer, ioUploadAllocator)` binds the index buffer, uploads the per-draw data, and draws.
    - It no longer knows `FrameManager`, the targets, their barriers, or the load ops.
    - Remove `draw()`, `waitIdle()`, the swapchain code, the ImGui call, and the bindless bind (`Renderer` binds once per frame).
    - The draw-call and instancing code stays as it is.
@@ -148,6 +151,7 @@ Renderer::render
       4. Assert the count is unchanged.
 
       A tiling window manager may ignore the resize locally; under CI's Xvfb it happens.
+    - **"A Frame's Uploads Can Outgrow One Block":** one more cube than a block's worth of `gpu::InstanceData`, behind the camera so they're clipped, then `runForFrames(3)` and remove them. The instance data takes a block of its own and the indirect commands after it start another, so the run checks both ways of adding a block, and the third frame reuses the first frame's blocks.
 
 **PBR Neutral** (Khronos reference; linear in, linear out) **and the sRGB encode:**
 ```slang
@@ -482,8 +486,7 @@ float getExposure() const { return 1.0f / (1.2f * math::exp2(getEv100())); }
 3. **`SceneRenderer`:**
    - gathers `TransformComponent` + `LightComponent` in `prepare` and uploads them in `record` (position = world translation, direction = normalized world +X), precomputing the spot scale and offset;
    - reads the `EnvironmentComponent`; with none, the ambient is black;
-   - fills `GlobalUniforms` from the primary camera (position, exposure);
-   - includes the lights in the upload size `prepare` returns.
+   - fills `GlobalUniforms` from the primary camera (position, exposure).
 4. **glTF importer:** multiply emissive by `kGltfEmissiveNits = 1000.0f`.
 5. **Shader** (`base_shader.slang`):
    - Remove the fixed light and ambient.
@@ -567,11 +570,11 @@ float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
 
 **Part A: per-view drawing** (no visual change)
 1. Split `SceneRenderer::record` per view:
-   - `prepare(iRegistry)` (from Phase 1), once per frame before `beginFrame`: gathers and sorts draws and lights, and returns the per-frame upload size. The camera lookup moves to `Renderer`, which adds one `GlobalUniforms` per view before reserving the upload buffer.
-   - `upload(ioUploadBuffer)`, once per frame:
+   - `prepare(ioRegistry)` (from Phase 1), once per frame before `beginFrame`: gathers and sorts draws and lights. The camera lookup moves to `Renderer`.
+   - `upload(ioUploadAllocator)`, once per frame:
      - uploads instance data, draw infos, and indirect commands;
      - builds the batch list.
-   - `recordView(iCommandBuffer, ioUploadBuffer, iView)`, once per view, into the pass `Renderer` opened:
+   - `recordView(iCommandBuffer, ioUploadAllocator, iView)`, once per view, into the pass `Renderer` opened:
      - uploads that view's `GlobalUniforms`;
      - binds each batch's pipeline;
      - issues the multi-draws.

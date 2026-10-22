@@ -33,7 +33,7 @@ namespace ne::vk_utils {
 
 constexpr VkDeviceSize kVertexPoolSize = 64 * 1024 * 1024;
 constexpr VkDeviceSize kIndexPoolSize = 32 * 1024 * 1024;
-constexpr VkDeviceSize kUploadBufferSize = 16 * 1024 * 1024;
+constexpr VkDeviceSize kUploadBlockSize = 16 * 1024 * 1024;
 constexpr VkDeviceSize kStagingBufferSize = 64 * 1024 * 1024;
 constexpr uint32_t kMaxSampledImages = 4096;
 constexpr const char* kDefaultShader = "base_shader";

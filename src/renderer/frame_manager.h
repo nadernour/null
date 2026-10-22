@@ -5,17 +5,16 @@
 
 // std lib headers
 #include <memory>
-#include <string>
 #include <vector>
 
 namespace ne {
 
 class Window;
-class Buffer;
 class Device;
 class Swapchain;
+class UploadAllocator;
 
-// The swapchain and the frames in flight, each with its command buffer, sync objects, and upload buffer
+// The swapchain and the frames in flight, each with its command buffer, sync objects, and upload allocator
 class FrameManager {
 public:
   FrameManager(Device* iDevice, Window* iWindow);
@@ -37,14 +36,9 @@ public:
   VkImageView getActiveImageView() const;
 
   // The current frame's, between beginFrame and endFrame
-  Buffer* getUploadBuffer() const { return mFrames[mFrameIndex].uploadBuffer.get(); }
-  // Recreates the current frame's upload buffer larger when it holds fewer than iSize bytes. Call it before the frame's
-  // first upload: a new buffer drops what the old one holds.
-  void reserveUploadBuffer(VkDeviceSize iSize);
+  UploadAllocator* getUploadAllocator() const { return mFrames[mFrameIndex].uploadAllocator.get(); }
 
 private:
-  std::unique_ptr<Buffer> createUploadBuffer(VkDeviceSize iSize, std::string iDebugName = "");
-
   void createFramesResources();
 
   void recreateSwapChain(bool iForce = false);
@@ -60,7 +54,7 @@ private:
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
     VkSemaphore imageAcquiredSemaphore = VK_NULL_HANDLE;
     VkFence drawFence = VK_NULL_HANDLE;
-    std::unique_ptr<Buffer> uploadBuffer;
+    std::unique_ptr<UploadAllocator> uploadAllocator;
   };
   std::vector<FrameResources> mFrames;
 

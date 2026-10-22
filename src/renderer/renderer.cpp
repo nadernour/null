@@ -94,16 +94,14 @@ void Renderer::render(Registry& ioRegistry) {
     NE_VERBOSE("Renderer: Scene targets resized to {}x{}", extent.width, extent.height);
   }
 
-  // CPU only, so it runs before beginFrame waits for the frame's fence. The upload buffer grows to the size it returns
-  // before anything is written to it.
+  // CPU only, so it runs before beginFrame waits for the frame's fence
   const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
-  const VkDeviceSize uploadSize = mSceneRenderer->prepare(ioRegistry, aspectRatio);
+  mSceneRenderer->prepare(ioRegistry, aspectRatio);
 
   VkCommandBuffer commandBuffer = mFrameManager->beginFrame();
   if (commandBuffer == VK_NULL_HANDLE) {
     return;
   }
-  mFrameManager->reserveUploadBuffer(uploadSize);
 
   // One layout for every graphics pipeline, so the set stays bound across passes
   mResourceManager->getBindlessManager()->bind(commandBuffer, mResourceManager->getPipelineLayout());
@@ -154,7 +152,7 @@ void Renderer::recordScenePass(VkCommandBuffer iCommandBuffer, VkExtent2D iExten
 
   vkCmdBeginRendering(iCommandBuffer, &renderingInfo);
   setViewportAndScissor(iCommandBuffer, iExtent);
-  mSceneRenderer->record(iCommandBuffer, *mFrameManager->getUploadBuffer());
+  mSceneRenderer->record(iCommandBuffer, *mFrameManager->getUploadAllocator());
   vkCmdEndRendering(iCommandBuffer);
 }
 

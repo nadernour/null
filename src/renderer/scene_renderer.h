@@ -9,10 +9,10 @@
 
 namespace ne {
 
-class Buffer;
 class GeometryAllocator;
 class Pipeline;
 class Registry;
+class UploadAllocator;
 
 class SceneRenderer {
 public:
@@ -24,11 +24,11 @@ public:
   SceneRenderer(SceneRenderer&&) = delete;
   SceneRenderer& operator=(SceneRenderer&&) = delete;
 
-  // Finds the primary camera, then gathers and sorts the frame's draws. Returns the upload bytes record() needs.
-  VkDeviceSize prepare(Registry& ioRegistry, float iAspectRatio);
-  // Draws what prepare() gathered into the current pass, writing the per-draw data to ioUploadBuffer. The caller opens
-  // the pass, sets the viewport, and binds the bindless set.
-  void record(VkCommandBuffer iCommandBuffer, Buffer& ioUploadBuffer);
+  // Finds the primary camera, then gathers and sorts the frame's draws
+  void prepare(Registry& ioRegistry, float iAspectRatio);
+  // Draws what prepare() gathered into the current pass, writing the per-draw data through ioUploadAllocator. The caller
+  // opens the pass, sets the viewport, and binds the bindless set.
+  void record(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUploadAllocator);
 
 private:
   struct DrawCall {

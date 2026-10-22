@@ -5,12 +5,12 @@
 #include "core/assert.h"
 #include "core/ecs.h"
 #include "core/math/math_utils.h"
-#include "renderer/buffer.h"
 #include "renderer/geometry_allocator.h"
 #include "renderer/gpu_types.h"
 #include "renderer/material.h"
 #include "renderer/mesh.h"
 #include "renderer/pipeline.h"
+#include "renderer/upload_allocator.h"
 
 // std
 #include <algorithm>
@@ -24,7 +24,7 @@ SceneRenderer::SceneRenderer(GeometryAllocator* iGeometryAllocator) : mGeometryA
 
 SceneRenderer::~SceneRenderer() = default;
 
-VkDeviceSize SceneRenderer::prepare(Registry& ioRegistry, float iAspectRatio) {
+void SceneRenderer::prepare(Registry& ioRegistry, float iAspectRatio) {
   mViewProj.reset();
   mDrawCalls.clear();
 
@@ -36,7 +36,7 @@ VkDeviceSize SceneRenderer::prepare(Registry& ioRegistry, float iAspectRatio) {
         }
       });
   if (!mViewProj) {
-    return 0;
+    return;
   }
 
   ioRegistry.view<TransformComponent, MeshComponent>().each(
@@ -66,27 +66,9 @@ VkDeviceSize SceneRenderer::prepare(Registry& ioRegistry, float iAspectRatio) {
     }
     return iA.submesh < iB.submesh;
   });
-
-  // +16 per upload covers its worst-case alignment padding
-  VkDeviceSize uploadSize = sizeof(gpu::GlobalUniforms) + 16;
-  Pipeline* lastPipeline = nullptr;
-  const Mesh::Submesh* lastSubmesh = nullptr;
-  for (const auto& call : mDrawCalls) {
-    if (call.pipeline != lastPipeline) {
-      lastPipeline = call.pipeline;
-      lastSubmesh = nullptr;
-    }
-    if (call.submesh != lastSubmesh) {
-      lastSubmesh = call.submesh;
-      uploadSize += sizeof(gpu::DrawInfo) + 16;
-      uploadSize += sizeof(VkDrawIndexedIndirectCommand) + 16;
-    }
-    uploadSize += sizeof(gpu::InstanceData) + 16;
-  }
-  return uploadSize;
 }
 
-void SceneRenderer::record(VkCommandBuffer iCommandBuffer, Buffer& ioUploadBuffer) {
+void SceneRenderer::record(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUploadAllocator) {
   if (!mViewProj || mDrawCalls.empty()) {
     return;
   }
@@ -97,8 +79,7 @@ void SceneRenderer::record(VkCommandBuffer iCommandBuffer, Buffer& ioUploadBuffe
 
   gpu::GlobalUniforms globalUniforms;
   globalUniforms.viewProj = *mViewProj;
-  VkDeviceAddress globalUniformsAddr =
-      ioUploadBuffer.getDeviceAddress(ioUploadBuffer.upload(&globalUniforms, sizeof(gpu::GlobalUniforms)));
+  VkDeviceAddress globalUniformsAddr = ioUploadAllocator.upload(&globalUniforms, sizeof(gpu::GlobalUniforms)).address;
 
   size_t i = 0;
   Pipeline* currentPipeline = nullptr;
@@ -144,12 +125,11 @@ void SceneRenderer::record(VkCommandBuffer iCommandBuffer, Buffer& ioUploadBuffe
 
     uint32_t numUniqueSubmeshes = static_cast<uint32_t>(drawInfos.size());
 
-    VkDeviceAddress drawInfosAddr =
-        ioUploadBuffer.getDeviceAddress(ioUploadBuffer.upload(drawInfos.data(), drawInfos.size() * sizeof(gpu::DrawInfo)));
-    VkDeviceAddress instancesAddr = ioUploadBuffer.getDeviceAddress(
-        ioUploadBuffer.upload(instanceData.data(), instanceData.size() * sizeof(gpu::InstanceData)));
-    VkDeviceSize indirectOffset =
-        ioUploadBuffer.upload(indirectCommands.data(), indirectCommands.size() * sizeof(VkDrawIndexedIndirectCommand));
+    VkDeviceAddress drawInfosAddr = ioUploadAllocator.upload(drawInfos.data(), drawInfos.size() * sizeof(gpu::DrawInfo)).address;
+    VkDeviceAddress instancesAddr =
+        ioUploadAllocator.upload(instanceData.data(), instanceData.size() * sizeof(gpu::InstanceData)).address;
+    UploadAllocator::Allocation indirectAllocation =
+        ioUploadAllocator.upload(indirectCommands.data(), indirectCommands.size() * sizeof(VkDrawIndexedIndirectCommand));
 
     gpu::ScenePushConstants pc{};
     pc.drawInfos = drawInfosAddr;
@@ -159,7 +139,7 @@ void SceneRenderer::record(VkCommandBuffer iCommandBuffer, Buffer& ioUploadBuffe
     vkCmdPushConstants(iCommandBuffer, currentPipeline->getPipelineLayout(), gpu::kPushConstantStages, 0,
                        sizeof(gpu::ScenePushConstants), &pc);
 
-    vkCmdDrawIndexedIndirect(iCommandBuffer, ioUploadBuffer.getBuffer(), indirectOffset, numUniqueSubmeshes,
+    vkCmdDrawIndexedIndirect(iCommandBuffer, indirectAllocation.buffer, indirectAllocation.offset, numUniqueSubmeshes,
                              sizeof(VkDrawIndexedIndirectCommand));
   }
 }

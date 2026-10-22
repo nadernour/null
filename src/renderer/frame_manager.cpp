@@ -1,11 +1,10 @@
 #include "renderer/frame_manager.h"
 #include "core/assert.h"
 #include "core/logger.h"
-#include "core/math/math_utils.h"
 #include "platform/window.h"
-#include "renderer/buffer.h"
 #include "renderer/device.h"
 #include "renderer/swapchain.h"
+#include "renderer/upload_allocator.h"
 #include "renderer/utils.h"
 
 // std
@@ -42,23 +41,12 @@ FrameManager::~FrameManager() {
     vkDestroyCommandPool(mDevice->getDevice(), frame.commandPool, nullptr);
     vkDestroySemaphore(mDevice->getDevice(), frame.imageAcquiredSemaphore, nullptr);
     vkDestroyFence(mDevice->getDevice(), frame.drawFence, nullptr);
-    frame.uploadBuffer.reset();
+    frame.uploadAllocator.reset();
   }
 
   mSwapchain.reset();
 
   NE_VERBOSE("Vulkan FrameManager destroyed successfully.");
-}
-
-std::unique_ptr<Buffer> FrameManager::createUploadBuffer(VkDeviceSize iSize, std::string iDebugName) {
-  Buffer::Config config{
-      .size = iSize,
-      .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-      .memoryUsage = MemoryUsage::Upload,
-      .debugName = std::move(iDebugName),
-  };
-  return std::make_unique<Buffer>(mDevice, config);
 }
 
 void FrameManager::createFramesResources() {
@@ -87,7 +75,8 @@ void FrameManager::createFramesResources() {
     fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     VK_CHECK(vkCreateFence(mDevice->getDevice(), &fenceCreateInfo, nullptr, &mFrames[i].drawFence));
 
-    mFrames[i].uploadBuffer = createUploadBuffer(vk_utils::kUploadBufferSize, std::format("UploadBuffer_Frame_{}", i));
+    mFrames[i].uploadAllocator =
+        std::make_unique<UploadAllocator>(mDevice, vk_utils::kUploadBlockSize, std::format("Upload_Frame_{}", i));
 
     vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].commandPool, std::format("Frame_CommandPool_{}", i).c_str());
     vk_utils::setDebugObjectName(mDevice->getDevice(), mFrames[i].commandBuffer,
@@ -117,28 +106,13 @@ VkCommandBuffer FrameManager::beginFrame() {
 
   vkResetCommandPool(mDevice->getDevice(), currentFrame.commandPool, 0);
 
-  currentFrame.uploadBuffer->resetUploadOffset();
+  currentFrame.uploadAllocator->reset();
 
   VkCommandBufferBeginInfo commandBufferBeginInfo{};
   commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   VK_CHECK(vkBeginCommandBuffer(currentFrame.commandBuffer, &commandBufferBeginInfo));
 
   return currentFrame.commandBuffer;
-}
-
-void FrameManager::reserveUploadBuffer(VkDeviceSize iSize) {
-  auto& currentFrame = mFrames[mFrameIndex];
-  const VkDeviceSize currentSize = currentFrame.uploadBuffer->getConfig().size;
-  if (iSize <= currentSize) {
-    return;
-  }
-  NE_ASSERT(currentFrame.uploadBuffer->getUploadOffset() == 0, "Recreating the upload buffer would drop this frame's uploads");
-
-  // At least doubled, so a growing scene recreates it only a few times
-  const VkDeviceSize newSize = math::max(iSize, currentSize * 2);
-  NE_VERBOSE("Upload buffer resizing from {} to {} bytes", currentSize, newSize);
-
-  currentFrame.uploadBuffer = createUploadBuffer(newSize, std::format("UploadBuffer_Frame_{}", mFrameIndex));
 }
 
 void FrameManager::endFrame() {
