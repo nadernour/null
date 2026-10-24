@@ -1,10 +1,5 @@
 #language slang latest
 
-// slangc 2026.19 warns "profile implicitly upgraded" (41012) for NonUniformResourceIndex and lists capabilities the
-// module never declares. It only adds ShaderNonUniform and SampledImageArrayNonUniformIndexing, which the device
-// enables, and the validation layer checks a module's capabilities when it's created.
-#pragma warning(disable : 41012)
-
 [vk::binding(0, 0)]
 SamplerState gSamplers[];
 

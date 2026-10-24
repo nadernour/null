@@ -236,7 +236,7 @@ void MainUI::drawAboutModal() {
     ImGui::Text("Core Technical Architecture:");
     ImGui::BulletText("Vulkan 1.4 Dynamic Rendering & Synchronization2");
     ImGui::BulletText("Programmable Vertex Pulling via BDA & MDI");
-    ImGui::BulletText("Slang Shading Language -> SPIR-V 1.4");
+    ImGui::BulletText("Slang Shading Language -> SPIR-V");
     ImGui::BulletText("ROS REP-103 Coordinate System (+X Fwd, +Y Left, +Z Up)");
     ImGui::BulletText("Floating-Point Reverse-Z Depth (0.0 Far Clear)");
     ImGui::Spacing();

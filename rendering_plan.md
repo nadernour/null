@@ -325,7 +325,7 @@ struct Material {
        return gTextures[NonUniformResourceIndex(packed & 0xFFFF)].Sample(gSamplers[NonUniformResourceIndex(packed >> 16)], uv);
      }
      ```
-   - Put `#pragma warning(disable : 41012)` after `#language`, with a comment. slangc 2026.19 warns "profile implicitly upgraded" whenever a texture or sampler index goes through `NonUniformResourceIndex`, and lists capabilities the module never declares. The SPIR-V adds only `ShaderNonUniform` and `SampledImageArrayNonUniformIndexing` to today's capabilities, which the enabled descriptor-indexing features cover, and validation checks capabilities when the shader module is created.
+   - Compile every shader with `-profile sm_5_1+spirv_1_4`. With `-profile spirv_1_4` alone, slangc warns "profile implicitly upgraded" (41012) whenever a texture or sampler index goes through `NonUniformResourceIndex`, a Shader Model 5.1 intrinsic, because that profile lacks the capabilities Slang requires for it. Shader Model 5.1 includes them. Later features, such as wave operations and ray queries, still warn until a shader declares them with `[require(...)]`: Vulkan 1.3 doesn't guarantee them, and Ray-Query LiDAR keeps a fallback for GPUs without ray tracing. `+spirv_1_4` keeps the SPIR-V version, which Slang would otherwise pick from the shader model, so slangc 2026.20 writes the same bytes as with `spirv_1_4` alone. Indexing adds only `ShaderNonUniform` and `SampledImageArrayNonUniformIndexing` to today's capabilities, covered by the enabled descriptor-indexing features.
    - Base color = factor × texture × vertex color × instance tint.
    - Occlusion multiplies only the ambient term: `ao = 1 + strength * (texture.r - 1)`.
    - Emissive is added after lighting.

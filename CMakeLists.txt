@@ -98,11 +98,12 @@ set_target_properties(${EngineTarget} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${BinD
 # ----------------------------------------------------------------------
 # Shaders
 # ----------------------------------------------------------------------
-# Slang shader compiler, the archive for this platform
+# Slang shader compiler, the release and the archive for this platform
+set(SlangVersion "2026.20")
 set(SlangArchive_Windows "windows-x86_64.zip")
 set(SlangArchive_Linux "linux-x86_64-glibc-2.28.tar.gz") # No LLVM backend: 20 MB instead of 74 MB
 include(FetchContent)
-FetchContent_Declare(slang URL "https://github.com/shader-slang/slang/releases/download/v2026.19/slang-2026.19-${SlangArchive_${CMAKE_HOST_SYSTEM_NAME}}")
+FetchContent_Declare(slang URL "https://github.com/shader-slang/slang/releases/download/v${SlangVersion}/slang-${SlangVersion}-${SlangArchive_${CMAKE_HOST_SYSTEM_NAME}}")
 FetchContent_MakeAvailable(slang)
 set(SlangcExecutable "${slang_SOURCE_DIR}/bin/slangc${CMAKE_EXECUTABLE_SUFFIX}")
 message(STATUS "slangc: ${SlangcExecutable}")
@@ -119,7 +120,7 @@ foreach(shader_file ${ENGINE_SHADERS})
     OUTPUT ${spirv_file}
     COMMAND ${SlangcExecutable} ${absolute_shader_path}
             -target spirv
-            -profile spirv_1_4
+            -profile sm_5_1+spirv_1_4 # Shader Model 5.1 adds NonUniformResourceIndex; later features still warn 41012
             -emit-spirv-directly
             -fvk-use-entrypoint-name
             -o ${spirv_file}
