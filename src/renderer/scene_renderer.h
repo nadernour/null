@@ -14,9 +14,14 @@ class Pipeline;
 class Registry;
 class UploadAllocator;
 
+namespace gpu {
+enum class DebugView : uint32_t;
+}
+
 class SceneRenderer {
 public:
-  explicit SceneRenderer(GeometryAllocator* iGeometryAllocator);
+  // iMaterialBufferAddress is ResourceManager's material buffer, which never moves
+  SceneRenderer(GeometryAllocator* iGeometryAllocator, VkDeviceAddress iMaterialBufferAddress);
   ~SceneRenderer();
 
   SceneRenderer(const SceneRenderer&) = delete;
@@ -28,7 +33,7 @@ public:
   void prepare(Registry& ioRegistry, float iAspectRatio);
   // Draws what prepare() gathered into the current pass, writing the per-draw data through ioUploadAllocator. The caller
   // opens the pass, sets the viewport, and binds the bindless set.
-  void record(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUploadAllocator);
+  void record(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUploadAllocator, gpu::DebugView iDebugView);
 
 private:
   struct DrawCall {
@@ -36,11 +41,11 @@ private:
     const Mesh::Submesh* submesh;
     Mat4 transform;
     LinearColor color;
-    uint32_t textureIndex;
-    uint32_t samplerIndex;
+    uint32_t materialIndex;
   };
 
   GeometryAllocator* mGeometryAllocator = nullptr;
+  VkDeviceAddress mMaterialBufferAddress = 0;
   std::optional<Mat4> mViewProj; // Of the primary camera; without one nothing is drawn
   std::vector<DrawCall> mDrawCalls;
 };

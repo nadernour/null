@@ -10,6 +10,7 @@ Texture2D gTextures[];
 struct TonemapPushConstants {
   uint hdrTexture;
   uint encodeSrgb;
+  uint applyCurve; // 0 in debug views
 };
 
 [vk::push_constant]
@@ -47,7 +48,10 @@ float4 vertMain(uint vertexId : SV_VertexID) : SV_Position {
 // The HDR image and the attachment are the same size, so each pixel loads its own texel: no sampler, no UVs
 [shader("fragment")]
 float4 fragMain(float4 position : SV_Position) : SV_TARGET {
-  float3 color = pbrNeutral(gTextures[pc.hdrTexture].Load(int3(int2(position.xy), 0)).rgb);
+  float3 color = gTextures[pc.hdrTexture].Load(int3(int2(position.xy), 0)).rgb;
+  if (pc.applyCurve != 0) {
+    color = pbrNeutral(color);
+  }
   if (pc.encodeSrgb != 0) {
     color = float3(linearToSrgb(color.r), linearToSrgb(color.g), linearToSrgb(color.b));
   }

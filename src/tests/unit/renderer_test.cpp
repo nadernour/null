@@ -45,7 +45,7 @@ NE_TEST_CASE("renderer", "A Frame's Uploads Can Outgrow One Block") {
   ResourceManager& resources = *ioContext.app->getResourceManager();
   Registry& registry = *ioContext.app->getRegistry();
   std::shared_ptr<Mesh> cube = resources.createMesh(MeshUtils::createBoxMeshData());
-  std::shared_ptr<Material> material = resources.createMaterial();
+  std::shared_ptr<Material> material = resources.getDefaultMaterial();
 
   // Behind BasicApp's camera (at x = -4, looking along +X), so the cubes are clipped and lavapipe stays fast
   std::vector<Entity> entities(vk_utils::kUploadBlockSize / sizeof(gpu::InstanceData) + 1);

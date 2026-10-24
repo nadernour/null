@@ -5,6 +5,7 @@
 #include "components/transform_component.h"
 #include "core/image_data.h"
 #include "core/logger.h"
+#include "core/material_data.h"
 #include "core/math/math.h"
 #include "core/time.h"
 #include "importers/gltf_importer.h"
@@ -13,8 +14,8 @@
 #include "renderer/mesh.h"
 #include "renderer/mesh_utils.h"
 #include "renderer/resource_manager.h"
-#include "renderer/rhi_types.h"
 #include "scene/prefab.h"
+#include <array>
 #include <format>
 
 namespace ne {
@@ -32,11 +33,13 @@ BasicApp::BasicApp() : Application("Basic App (MDI Showcase)", 1200, 1000) {
     checkerTextureId = getResourceManager()->createTexture(*checkerImageData, "UV_Checker_Texture");
   }
 
-  mCube1Material = getResourceManager()->createMaterial();
-  mCube1Material->setTexture(checkerTextureId, SamplerType::LinearRepeat);
-
-  mCube2Material = getResourceManager()->createMaterial();
-  mCube2Material->setTexture(checkerTextureId, SamplerType::NearestRepeat);
+  // Both cubes use the checker as their base color, the second without filtering
+  const std::array checkerTextureIds{checkerTextureId};
+  mCube1Material = getResourceManager()->createMaterial(
+      MaterialData{.name = "Checker_Linear", .baseColorTexture = {.image = 0}}, checkerTextureIds);
+  mCube2Material = getResourceManager()->createMaterial(
+      MaterialData{.name = "Checker_Nearest", .baseColorTexture = {.image = 0, .filter = TextureFilter::Nearest}},
+      checkerTextureIds);
 
   mCameraEntity = getRegistry()->createEntity();
   getRegistry()->addComponent<TransformComponent>(mCameraEntity, Transform(Vec3(-4.0f, 0.0f, 0.0f)));

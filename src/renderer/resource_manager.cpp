@@ -3,8 +3,10 @@
 #include "core/image_data.h"
 #include "core/image_utils.h"
 #include "core/logger.h"
+#include "core/material_data.h"
 #include "core/mesh_data.h"
 #include "renderer/bindless_manager.h"
+#include "renderer/buffer.h"
 #include "renderer/device.h"
 #include "renderer/geometry_allocator.h"
 #include "renderer/gpu_types.h"
@@ -17,6 +19,17 @@
 #include "renderer/utils.h"
 
 namespace ne {
+
+namespace {
+
+// A material's texture as the shader reads it: the bindless index (low 16 bits) and the sampler index (high 16 bits)
+uint32_t packTexture(uint32_t iTextureId, const TextureRef& iTexture) {
+  static_assert(vk_utils::kMaxSampledImages <= 0x10000, "Bindless indices must fit in 16 bits");
+  static_assert(SamplerManager::kSamplerCount <= 0x10000, "Sampler indices must fit in 16 bits");
+  return iTextureId | (SamplerManager::getTextureSamplerIndex(iTexture.filter, iTexture.wrapU, iTexture.wrapV) << 16);
+}
+
+} // namespace
 
 ResourceManager::ResourceManager(Device* iDevice, VkFormat iDefaultColorFormat, VkFormat iDefaultDepthFormat)
     : mDevice(iDevice), mDefaultColorFormat(iDefaultColorFormat), mDefaultDepthFormat(iDefaultDepthFormat) {
@@ -35,45 +48,90 @@ ResourceManager::ResourceManager(Device* iDevice, VkFormat iDefaultColorFormat, 
   mPipelineLayout =
       Pipeline::createPipelineLayout(mDevice->getDevice(), {setLayout}, {pushConstantRange}, "Bindless_PipelineLayout");
 
-  // New materials start on kFallbackTextureIndex, so the white texture must be created first
+  // Textures a material lacks resolve to kFallbackTextureIndex, so the white texture must be created first
   ImageData whiteData = ImageData::createWhite1x1();
   uint32_t defaultTexIdx = createTexture(whiteData, "Default_White_Texture");
   NE_ASSERT(defaultTexIdx == kFallbackTextureIndex, "Fallback white texture must occupy bindless index kFallbackTextureIndex");
+
+  Buffer::Config materialBufferConfig{
+      .size = vk_utils::kMaxMaterials * sizeof(gpu::Material),
+      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+      .memoryUsage = MemoryUsage::DeviceLocal,
+      .debugName = "ResourceManager_MaterialBuffer",
+  };
+  mMaterialBuffer = std::make_unique<Buffer>(mDevice, materialBufferConfig);
+  mDefaultMaterial = createMaterial(MaterialData{.name = "Default"});
+  NE_ASSERT(mDefaultMaterial->getMaterialIndex() == 0, "The default material must be material 0");
 }
 
 ResourceManager::~ResourceManager() {
+  // The staging manager may still flush copies into the textures and the material buffer, so it goes first
   mStagingManager.reset();
   mTextures.clear();
-  mPipelines.clear();
+  mDefaultMaterial.reset();
+  mScenePipeline.reset();
   Pipeline::destroyPipelineLayout(mDevice->getDevice(), mPipelineLayout);
+  mMaterialBuffer.reset();
   mBindlessManager.reset();
   mGeometryAllocator.reset();
   mSamplerManager.reset();
 }
 
-std::shared_ptr<Pipeline> ResourceManager::getOrCreatePipeline(const std::string& iShaderName) {
-  const std::string& shaderName = iShaderName.empty() ? vk_utils::kSceneShader : iShaderName;
+std::shared_ptr<Pipeline> ResourceManager::getOrCreatePipeline() {
+  if (!mScenePipeline) {
+    Pipeline::Config config{
+        .shaderName = vk_utils::kSceneShader,
+        .layout = mPipelineLayout,
+        .colorAttachmentFormat = mDefaultColorFormat,
+        .depthAttachmentFormat = mDefaultDepthFormat,
+    };
+    mScenePipeline = std::make_shared<Pipeline>(mDevice->getDevice(), config);
+  }
+  return mScenePipeline;
+}
 
-  auto it = mPipelines.find(shaderName);
-  if (it != mPipelines.end()) {
-    return it->second;
+std::shared_ptr<Material> ResourceManager::createMaterial(const MaterialData& iData, std::span<const uint32_t> iTextureIds) {
+  if (mMaterialCount == vk_utils::kMaxMaterials) {
+    NE_ERROR("ResourceManager: Material '{}' has no slot left in the material buffer (all {} are taken); using the default "
+             "material",
+             iData.name, vk_utils::kMaxMaterials);
+    return mDefaultMaterial;
   }
 
-  Pipeline::Config config{
-      .shaderName = shaderName,
-      .layout = mPipelineLayout,
-      .colorAttachmentFormat = mDefaultColorFormat,
-      .depthAttachmentFormat = mDefaultDepthFormat,
+  const auto resolveTexture = [&](const TextureRef& iTexture) {
+    NE_ASSERT(iTexture.image < static_cast<int32_t>(iTextureIds.size()),
+              "Material '{}' uses image {}, but only {} texture ids were given", iData.name, iTexture.image, iTextureIds.size());
+    return iTexture.image >= 0 ? iTextureIds[iTexture.image] : kFallbackTextureIndex;
+  };
+  // A normal texture that fell back to white would read as a (1, 1, 1) normal map
+  const uint32_t normalTextureId = resolveTexture(iData.normalTexture);
+  const gpu::Material material{
+      .baseColor = iData.baseColor,
+      .emissive = iData.emissive,
+      .metallic = iData.metallic,
+      .roughness = iData.roughness,
+      .normalScale = iData.normalScale,
+      .occlusionStrength = iData.occlusionStrength,
+      .alphaCutoff = iData.alphaCutoff,
+      .baseColorTexture = packTexture(resolveTexture(iData.baseColorTexture), iData.baseColorTexture),
+      .metallicRoughnessTexture = packTexture(resolveTexture(iData.metallicRoughnessTexture), iData.metallicRoughnessTexture),
+      .normalTexture = packTexture(normalTextureId, iData.normalTexture),
+      .occlusionTexture = packTexture(resolveTexture(iData.occlusionTexture), iData.occlusionTexture),
+      .emissiveTexture = packTexture(resolveTexture(iData.emissiveTexture), iData.emissiveTexture),
+      .flags = normalTextureId != kFallbackTextureIndex ? gpu::kMaterialHasNormalTexture : 0u,
   };
 
-  auto pipeline = std::make_shared<Pipeline>(mDevice->getDevice(), config);
-  mPipelines[shaderName] = pipeline;
-  return pipeline;
+  if (!mStagingManager->isBatching()) {
+    mStagingManager->beginBatch();
+  }
+  const uint32_t materialIndex = mMaterialCount++;
+  mStagingManager->stageBufferCopy(mMaterialBuffer->getBuffer(), &material, sizeof(gpu::Material),
+                                   materialIndex * sizeof(gpu::Material));
+  NE_VERBOSE("ResourceManager: Material '{}' takes slot {} of the material buffer", iData.name, materialIndex);
+  return std::make_shared<Material>(getOrCreatePipeline(), materialIndex, iData.alphaMode, iData.doubleSided);
 }
 
-std::shared_ptr<Material> ResourceManager::createMaterial(const std::string& iShaderName) {
-  return std::make_shared<Material>(getOrCreatePipeline(iShaderName), kFallbackTextureIndex);
-}
+VkDeviceAddress ResourceManager::getMaterialBufferAddress() const { return mMaterialBuffer->getDeviceAddress(); }
 
 std::shared_ptr<Mesh> ResourceManager::createMesh(const MeshData& iMeshData) {
   // Malformed data is rejected before anything is staged. The vertex shader fetches vertices through a raw device

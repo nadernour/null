@@ -36,6 +36,7 @@ constexpr VkDeviceSize kIndexPoolSize = 32 * 1024 * 1024;
 constexpr VkDeviceSize kUploadBlockSize = 16 * 1024 * 1024;
 constexpr VkDeviceSize kStagingBufferSize = 64 * 1024 * 1024;
 constexpr uint32_t kMaxSampledImages = 4096;
+constexpr uint32_t kMaxMaterials = 4096;
 constexpr const char* kSceneShader = "scene";
 
 inline void setDebugUtilsObjectName([[maybe_unused]] VkDevice iDevice, [[maybe_unused]] VkObjectType iObjectType,

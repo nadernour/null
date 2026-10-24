@@ -21,10 +21,11 @@ Tonemapper::Tonemapper(Device* iDevice, VkPipelineLayout iPipelineLayout, VkForm
 
 Tonemapper::~Tonemapper() = default;
 
-void Tonemapper::record(VkCommandBuffer iCommandBuffer, uint32_t iHdrTextureIndex, bool iEncodeSrgb) {
+void Tonemapper::record(VkCommandBuffer iCommandBuffer, uint32_t iHdrTextureIndex, bool iEncodeSrgb, bool iApplyCurve) {
   mPipeline->bind(iCommandBuffer);
 
-  gpu::TonemapPushConstants constants{.hdrTexture = iHdrTextureIndex, .encodeSrgb = iEncodeSrgb ? 1u : 0u};
+  gpu::TonemapPushConstants constants{
+      .hdrTexture = iHdrTextureIndex, .encodeSrgb = iEncodeSrgb ? 1u : 0u, .applyCurve = iApplyCurve ? 1u : 0u};
   vkCmdPushConstants(iCommandBuffer, mPipeline->getPipelineLayout(), gpu::kPushConstantStages, 0,
                      sizeof(gpu::TonemapPushConstants), &constants);
 

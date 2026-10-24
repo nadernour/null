@@ -18,8 +18,9 @@
 
 namespace ne {
 
-SceneRenderer::SceneRenderer(GeometryAllocator* iGeometryAllocator) : mGeometryAllocator(iGeometryAllocator) {
-  NE_ASSERT(mGeometryAllocator);
+SceneRenderer::SceneRenderer(GeometryAllocator* iGeometryAllocator, VkDeviceAddress iMaterialBufferAddress)
+    : mGeometryAllocator(iGeometryAllocator), mMaterialBufferAddress(iMaterialBufferAddress) {
+  NE_ASSERT(mGeometryAllocator && mMaterialBufferAddress != 0);
 }
 
 SceneRenderer::~SceneRenderer() = default;
@@ -53,8 +54,7 @@ void SceneRenderer::prepare(Registry& ioRegistry, float iAspectRatio) {
                                           .submesh = &submeshes[i],
                                           .transform = iTransform.getWorldMatrix(),
                                           .color = iMesh.colorTint,
-                                          .textureIndex = material->getTextureIndex(),
-                                          .samplerIndex = static_cast<uint32_t>(material->getSamplerType())});
+                                          .materialIndex = material->getMaterialIndex()});
           }
         }
       });
@@ -68,7 +68,7 @@ void SceneRenderer::prepare(Registry& ioRegistry, float iAspectRatio) {
   });
 }
 
-void SceneRenderer::record(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUploadAllocator) {
+void SceneRenderer::record(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUploadAllocator, gpu::DebugView iDebugView) {
   if (!mViewProj || mDrawCalls.empty()) {
     return;
   }
@@ -79,6 +79,7 @@ void SceneRenderer::record(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUp
 
   gpu::GlobalUniforms globalUniforms;
   globalUniforms.viewProj = *mViewProj;
+  globalUniforms.debugView = static_cast<uint32_t>(iDebugView);
   VkDeviceAddress globalUniformsAddr = ioUploadAllocator.upload(&globalUniforms, sizeof(gpu::GlobalUniforms)).address;
 
   size_t i = 0;
@@ -103,8 +104,7 @@ void SceneRenderer::record(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUp
         instanceData.push_back(gpu::InstanceData{.modelMatrix = mDrawCalls[i].transform,
                                                  .normalMatrix = normalMatrix,
                                                  .color = mDrawCalls[i].color,
-                                                 .textureIndex = mDrawCalls[i].textureIndex,
-                                                 .samplerIndex = mDrawCalls[i].samplerIndex});
+                                                 .materialIndex = mDrawCalls[i].materialIndex});
         instanceCount++;
         i++;
       }
@@ -135,6 +135,7 @@ void SceneRenderer::record(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUp
     pc.drawInfos = drawInfosAddr;
     pc.globalUniforms = globalUniformsAddr;
     pc.instances = instancesAddr;
+    pc.materials = mMaterialBufferAddress;
 
     vkCmdPushConstants(iCommandBuffer, currentPipeline->getPipelineLayout(), gpu::kPushConstantStages, 0,
                        sizeof(gpu::ScenePushConstants), &pc);

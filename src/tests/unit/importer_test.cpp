@@ -2,7 +2,7 @@
 
 #include "tests/test_runner.h"
 #include "core/filesystem.h"
-#include "core/mesh_data.h"
+#include "core/model_data.h"
 #include "importers/gltf_importer.h"
 
 #include <cgltf.h>
@@ -92,9 +92,11 @@ bool matchesGltfWorldPositions(const ModelData& iModel, const std::vector<Vec3>&
 
 // Writes a one-triangle glTF and its .bin buffer to the temp directory and returns the .gltf path. Accessor 0 holds the
 // positions (VEC3), 1 the indices, and 2 and 3 two UV sets (VEC2, all zeros and all ones). iAttributes is the primitive's
-// attribute list, and iTopLevel is inserted after "asset" with its trailing comma.
+// attribute list, iTopLevel is inserted after "asset" with its trailing comma, and iPrimitive after the primitive's
+// indices with its leading comma.
 std::filesystem::path writeTriangleGltf(const std::string& iName, const std::array<uint16_t, 3>& iIndices,
-                                        const std::string& iAttributes = R"("POSITION": 0)", const std::string& iTopLevel = "") {
+                                        const std::string& iAttributes = R"("POSITION": 0)", const std::string& iTopLevel = "",
+                                        const std::string& iPrimitive = "") {
   const std::filesystem::path dir = std::filesystem::temp_directory_path();
   const std::array<float, 9> positions = {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f};
   const std::array<uint8_t, 2> padding = {0, 0}; // Keeps the UV views 4-byte aligned
@@ -115,7 +117,7 @@ std::filesystem::path writeTriangleGltf(const std::string& iName, const std::arr
   "scenes": [{"nodes": [0]}],
   "nodes": [{"mesh": 0}],
   "meshes": [{"primitives": [{"attributes": {)" +
-                                                iAttributes + R"(}, "indices": 1}]}],
+                                                iAttributes + R"(}, "indices": 1)" + iPrimitive + R"(}]}],
   "buffers": [{"uri": ")" + iName + R"(.bin", "byteLength": 92}],
   "bufferViews": [
     {"buffer": 0, "byteOffset": 0, "byteLength": 36},
@@ -178,6 +180,84 @@ NE_TEST_CASE("importer", "glTF DamagedHelmet: Node TRS & Axis Conversion") {
                  "Helmet world positions must equal glTF world positions with axes permuted.");
 }
 
+NE_TEST_CASE("importer", "glTF Box: A Material Of Factors Only") {
+  ModelData model = GltfImporter::importModel("models/Box.gltf");
+
+  NE_TEST_ASSERT(model.materials.size() == 1 && model.images.empty(), "Box has one material and no images.");
+  const MaterialData& red = model.materials[0];
+  NE_TEST_ASSERT(red.name == "Red", "The material keeps its name, got '{}'.", red.name);
+  NE_TEST_ASSERT(math::equals(red.baseColor.r, 0.8f) && red.baseColor.g == 0.0f && red.baseColor.b == 0.0f &&
+                     red.baseColor.a == 1.0f,
+                 "Base color is (0.8, 0, 0, 1).");
+  NE_TEST_ASSERT(red.metallic == 0.0f && red.roughness == 1.0f,
+                 "Metallic is 0 as authored; roughness keeps glTF's default of 1.");
+  NE_TEST_ASSERT(red.baseColorTexture.image < 0 && red.metallicRoughnessTexture.image < 0 && red.normalTexture.image < 0 &&
+                     red.occlusionTexture.image < 0 && red.emissiveTexture.image < 0,
+                 "The material has no textures.");
+  NE_TEST_ASSERT(model.meshes[0].submeshes[0].materialIndex == 0, "The box uses material 0.");
+}
+
+NE_TEST_CASE("importer", "glTF DamagedHelmet: Material & Color Space Per Use") {
+  ModelData model = GltfImporter::importModel("models/DamagedHelmet.glb");
+
+  NE_TEST_ASSERT(model.materials.size() == 1 && model.images.size() == 5,
+                 "Helmet has one material and five images, got {} and {}.", model.materials.size(), model.images.size());
+  const MaterialData& material = model.materials[0];
+  const auto hasImage = [&](const TextureRef& iTexture, bool iSrgb) {
+    return iTexture.image >= 0 && model.images[iTexture.image].srgb == iSrgb;
+  };
+  NE_TEST_ASSERT(hasImage(material.baseColorTexture, true) && hasImage(material.emissiveTexture, true),
+                 "Base color and emissive images hold colors, so they're sRGB.");
+  NE_TEST_ASSERT(hasImage(material.metallicRoughnessTexture, false) && hasImage(material.normalTexture, false) &&
+                     hasImage(material.occlusionTexture, false),
+                 "Metallic-roughness, normal, and occlusion images hold data, so they're linear.");
+  NE_TEST_ASSERT(material.metallic == 1.0f && material.roughness == 1.0f, "Unset metallic and roughness factors are glTF's 1.");
+  NE_TEST_ASSERT(material.emissive.equals(Vec3(1.0f)), "The emissive factor is (1, 1, 1).");
+  NE_TEST_ASSERT(model.meshes[0].submeshes[0].materialIndex == 0, "The helmet uses material 0.");
+}
+
+// The base color texture's sampler is nearest, clamp S, and mirror T. The metallic-roughness texture uses the same
+// image without a sampler, and the normal texture reads TEXCOORD_1.
+NE_TEST_CASE("importer", "glTF Textures: Wrap Per Axis, Color Space Per Use, And Dropped UV Sets") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path();
+  std::filesystem::copy_file(fs::resolveContentPath("textures/uv_checker.png"), dir / "null_importer_test_texture.png",
+                             std::filesystem::copy_options::overwrite_existing);
+  const std::filesystem::path path = writeTriangleGltf(
+      "null_importer_test_texture", {0, 1, 2}, R"("POSITION": 0, "TEXCOORD_0": 2, "TEXCOORD_1": 3)",
+      R"("materials": [{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicRoughnessTexture": {"index": 1}},)"
+      R"( "normalTexture": {"index": 0, "texCoord": 1}}],)"
+      R"("textures": [{"source": 0, "sampler": 0}, {"source": 0}],)"
+      R"("samplers": [{"magFilter": 9728, "wrapS": 33071, "wrapT": 33648}],)"
+      R"("images": [{"uri": "null_importer_test_texture.png"}],)",
+      R"(, "material": 0)");
+  ModelData model = GltfImporter::importModel(path.string());
+
+  NE_TEST_ASSERT(model.materials.size() == 1 && model.meshes.size() == 1, "The triangle and its material import.");
+  const TextureRef& baseColor = model.materials[0].baseColorTexture;
+  const TextureRef& metallicRoughness = model.materials[0].metallicRoughnessTexture;
+  NE_TEST_ASSERT(baseColor.filter == TextureFilter::Nearest && baseColor.wrapU == TextureWrap::Clamp &&
+                     baseColor.wrapV == TextureWrap::Mirror,
+                 "A sampler's filter and per-axis wraps carry over.");
+  NE_TEST_ASSERT(metallicRoughness.filter == TextureFilter::Linear && metallicRoughness.wrapU == TextureWrap::Repeat &&
+                     metallicRoughness.wrapV == TextureWrap::Repeat,
+                 "A texture without a sampler gets glTF's defaults: linear and repeat.");
+  NE_TEST_ASSERT(model.images.size() == 2 && baseColor.image >= 0 && metallicRoughness.image >= 0 &&
+                     model.images[baseColor.image].srgb && !model.images[metallicRoughness.image].srgb,
+                 "An image used as a color and as data is imported once in each color space.");
+  NE_TEST_ASSERT(model.materials[0].normalTexture.image < 0, "A texture on TEXCOORD_1 is dropped.");
+  NE_TEST_ASSERT(model.meshes[0].submeshes[0].materialIndex == 0, "The triangle uses its material.");
+
+  writeTriangleGltf("null_importer_test_texture", {0, 1, 2});
+  ModelData untextured = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(untextured.materials.size() == 1 && untextured.materials[0].metallic == 1.0f &&
+                     untextured.materials[0].roughness == 1.0f && untextured.meshes[0].submeshes[0].materialIndex == 0,
+                 "A primitive without a material gets glTF's default one, fully metallic and fully rough.");
+
+  std::filesystem::remove(path);
+  std::filesystem::remove(std::filesystem::path(path).replace_extension(".bin"));
+  std::filesystem::remove(dir / "null_importer_test_texture.png");
+}
+
 NE_TEST_CASE("importer", "glTF With An Out-Of-Range Index Fails Validation") {
   const std::filesystem::path path = writeTriangleGltf("null_importer_test_triangle", {0, 1, 2});
   ModelData valid = GltfImporter::importModel(path.string());
@@ -199,7 +279,7 @@ NE_TEST_CASE("importer", "glTF Requiring An Unsupported Extension Imports Nothin
   ModelData draco = GltfImporter::importModel(path.string());
   NE_TEST_ASSERT(draco.meshes.empty() && draco.nodes.empty(), "A file that requires Draco is rejected whole.");
 
-  // Materials aren't imported, so a required material extension isn't honored either
+  // Materials are imported, but texture transforms aren't honored
   writeTriangleGltf("null_importer_test_required", {0, 1, 2}, R"("POSITION": 0)",
                     R"("extensionsUsed": ["KHR_texture_transform"], "extensionsRequired": ["KHR_texture_transform"],)");
   ModelData textureTransform = GltfImporter::importModel(path.string());
@@ -210,6 +290,12 @@ NE_TEST_CASE("importer", "glTF Requiring An Unsupported Extension Imports Nothin
                     R"("extensionsUsed": ["KHR_mesh_quantization"], "extensionsRequired": ["KHR_mesh_quantization"],)");
   ModelData quantized = GltfImporter::importModel(path.string());
   NE_TEST_ASSERT(quantized.meshes.size() == 1, "A file that requires KHR_mesh_quantization imports.");
+
+  writeTriangleGltf("null_importer_test_required", {0, 1, 2}, R"("POSITION": 0)",
+                    R"("extensionsUsed": ["KHR_materials_emissive_strength"],)"
+                    R"("extensionsRequired": ["KHR_materials_emissive_strength"],)");
+  ModelData emissiveStrength = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(emissiveStrength.meshes.size() == 1, "A file that requires KHR_materials_emissive_strength imports.");
 
   std::filesystem::remove(path);
   std::filesystem::remove(std::filesystem::path(path).replace_extension(".bin"));

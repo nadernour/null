@@ -7,13 +7,35 @@
 #include "renderer/resource_manager.h"
 #include "scene/transform_system.h"
 
+// std
+#include <format>
+
 namespace ne {
 
 Prefab::Prefab(ResourceManager& ioResourceManager, const ModelData& iModelData)
-    : mName(iModelData.name), mMaterial(ioResourceManager.createMaterial()), mNodes(iModelData.nodes) {
-  mMeshes.reserve(iModelData.meshes.size());
+    : mName(iModelData.name), mNodes(iModelData.nodes) {
+  std::vector<uint32_t> textureIds;
+  textureIds.reserve(iModelData.images.size());
+  for (size_t i = 0; i < iModelData.images.size(); ++i) {
+    textureIds.push_back(ioResourceManager.createTexture(iModelData.images[i], std::format("{}_Image{}", mName, i)));
+  }
+
+  std::vector<std::shared_ptr<Material>> materials;
+  materials.reserve(iModelData.materials.size());
+  for (const MaterialData& material : iModelData.materials) {
+    materials.push_back(ioResourceManager.createMaterial(material, textureIds));
+  }
+
+  mMeshComponents.reserve(iModelData.meshes.size());
   for (const MeshData& mesh : iModelData.meshes) {
-    mMeshes.push_back(ioResourceManager.createMesh(mesh));
+    MeshComponent& meshComponent = mMeshComponents.emplace_back();
+    meshComponent.mesh = ioResourceManager.createMesh(mesh);
+    for (const SubmeshData& submesh : mesh.submeshes) {
+      NE_ASSERT(submesh.materialIndex < static_cast<int32_t>(materials.size()),
+                "Submesh references a material outside the prefab");
+      meshComponent.materials.push_back(submesh.materialIndex >= 0 ? materials[submesh.materialIndex]
+                                                                   : ioResourceManager.getDefaultMaterial());
+    }
   }
 }
 
@@ -31,10 +53,11 @@ Entity Prefab::instantiate(Registry& ioRegistry, const Transform& iRootTransform
     ioRegistry.addComponent<NameComponent>(entity, node.name);
 
     if (node.meshIndex >= 0) {
-      NE_ASSERT(node.meshIndex < static_cast<int32_t>(mMeshes.size()), "Node references a mesh outside the prefab");
+      NE_ASSERT(node.meshIndex < static_cast<int32_t>(mMeshComponents.size()), "Node references a mesh outside the prefab");
       // A mesh rejected by ResourceManager::createMesh() is null; its node keeps only its transform and name
-      if (const std::shared_ptr<Mesh>& mesh = mMeshes[node.meshIndex]) {
-        ioRegistry.addComponent<MeshComponent>(entity, mesh, std::vector(mesh->getSubmeshes().size(), mMaterial));
+      const MeshComponent& meshComponent = mMeshComponents[node.meshIndex];
+      if (meshComponent.mesh) {
+        ioRegistry.addComponent<MeshComponent>(entity, meshComponent);
       }
     }
 

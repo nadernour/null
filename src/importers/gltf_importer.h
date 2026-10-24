@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/mesh_data.h"
+#include "core/model_data.h"
 #include <string>
 
 namespace ne {

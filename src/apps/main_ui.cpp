@@ -7,10 +7,22 @@
 #include "core/time.h"
 #include "platform/window.h"
 #include "platform/input.h"
+#include "renderer/gpu_types.h"
+#include "renderer/renderer.h"
 
 #include <imgui.h>
 
+#include <array>
+
 namespace ne {
+
+namespace {
+
+// Indexed by gpu::DebugView
+constexpr std::array kDebugViewNames{"Lit", "Base Color", "Normal", "Metallic", "Roughness", "Occlusion", "Emissive", "UV"};
+static_assert(kDebugViewNames.size() == static_cast<size_t>(gpu::DebugView::Count), "Every debug view needs a name");
+
+} // namespace
 
 void MainUI::draw(BasicApp& iApp) {
   if (Input::isKeyPressed(KeyCode::H) && !ImGui::GetIO().WantTextInput) {
@@ -96,7 +108,7 @@ void MainUI::drawMainMenuBar(BasicApp& iApp) {
 }
 
 void MainUI::drawDiagnostics(BasicApp& iApp) {
-  ImGui::SetNextWindowSize(ImVec2(340, 240), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(340, 290), ImGuiCond_FirstUseEver);
   if (ImGui::Begin("Diagnostics", &mShowDiagnostics)) {
     float currentFrameTime = Time::getUnscaledDeltaTime();
     float currentFPS = currentFrameTime > 0.0f ? 1.0f / currentFrameTime : 0.0f;
@@ -131,6 +143,14 @@ void MainUI::drawDiagnostics(BasicApp& iApp) {
     ImGui::SameLine();
     if (ImGui::Button("2.0x")) {
       Time::setTimeScale(2.0f);
+    }
+    ImGui::Spacing();
+    ImGui::Text("Rendering");
+    ImGui::Separator();
+    Renderer& renderer = *iApp.getRenderer();
+    int debugView = static_cast<int>(renderer.getDebugView());
+    if (ImGui::Combo("Debug View", &debugView, kDebugViewNames.data(), static_cast<int>(kDebugViewNames.size()))) {
+      renderer.setDebugView(static_cast<gpu::DebugView>(debugView));
     }
   }
   ImGui::End();

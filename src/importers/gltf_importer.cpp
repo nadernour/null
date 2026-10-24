@@ -1,11 +1,14 @@
 #include "importers/gltf_importer.h"
 #include "core/filesystem.h"
 #include "core/logger.h"
+#include "importers/image_importer.h"
 
 #include <cgltf.h>
 
 // std
+#include <array>
 #include <cstring>
+#include <filesystem>
 #include <optional>
 
 namespace ne {
@@ -46,8 +49,9 @@ const char* resultToString(cgltf_result iResult) {
 }
 
 // Required extensions the importer honors; a file that requires any other can't be loaded correctly, so it is rejected.
-// KHR_mesh_quantization only adds accessor component types, which cgltf_accessor_read_float converts.
-constexpr const char* kSupportedRequiredExtensions[] = {"KHR_mesh_quantization"};
+// KHR_mesh_quantization only adds accessor component types, which cgltf_accessor_read_float converts, and
+// KHR_materials_emissive_strength scales the emissive factor.
+constexpr const char* kSupportedRequiredExtensions[] = {"KHR_mesh_quantization", "KHR_materials_emissive_strength"};
 
 bool isSupportedRequiredExtension(const char* iName) {
   for (const char* supported : kSupportedRequiredExtensions) {
@@ -210,6 +214,162 @@ void importNode(const cgltf_data& iData, const cgltf_node& iNode, int32_t iParen
   }
 }
 
+// The ModelData images made from one glTF image: one per color space its textures use, decoded once
+struct ImageUses {
+  std::array<int32_t, 2> entries{-1, -1}; // ModelData::images index, linear then sRGB; -1 until a texture uses it so
+  bool isUnreadable = false;              // Decoding failed, so every texture that uses it is dropped
+};
+
+// The model's images, made from the file's images as its materials use them
+struct ModelImages {
+  const cgltf_data& data;
+  const std::string& path;        // The glTF file's, as importModel got it; image URIs are relative to it
+  std::vector<ImageUses> uses;    // One per glTF image
+  std::vector<ImageData>& images; // ModelData::images
+};
+
+// Null, with the reason logged, when the image can't be decoded
+std::optional<ImageData> decodeImage(const cgltf_image& iImage, cgltf_size iImageIndex, const std::string& iModelPath) {
+  if (iImage.buffer_view) {
+    const uint8_t* bytes = cgltf_buffer_view_data(iImage.buffer_view);
+    if (!bytes) {
+      NE_WARN("GltfImporter: Image {} lies in a buffer that isn't loaded", iImageIndex);
+      return std::nullopt;
+    }
+    return ImageImporter::importFromMemory({bytes, iImage.buffer_view->size});
+  }
+  if (!iImage.uri) {
+    NE_WARN("GltfImporter: Image {} has neither a buffer view nor a URI", iImageIndex);
+    return std::nullopt;
+  }
+  if (std::strncmp(iImage.uri, "data:", 5) == 0) {
+    NE_WARN("GltfImporter: Image {} is embedded as a data: URI, which the importer doesn't read", iImageIndex);
+    return std::nullopt;
+  }
+  if (std::strstr(iImage.uri, "://")) {
+    NE_WARN("GltfImporter: Image {} is at {}; only local files are read", iImageIndex, iImage.uri);
+    return std::nullopt;
+  }
+
+  // Relative to the glTF file, so importFromFile resolves it as importModel resolved the file: from the content
+  // directory, unless it's absolute
+  std::string uri = iImage.uri;
+  uri.resize(cgltf_decode_uri(uri.data()));
+  return ImageImporter::importFromFile((std::filesystem::path(iModelPath).parent_path() / uri).string());
+}
+
+// The ModelData::images index of iImage in the color space, or -1 when it can't be decoded
+int32_t useImage(ModelImages& ioImages, const cgltf_image& iImage, bool iSrgb) {
+  const cgltf_size imageIndex = cgltf_image_index(&ioImages.data, &iImage);
+  ImageUses& uses = ioImages.uses[imageIndex];
+  int32_t& entry = uses.entries[iSrgb ? 1 : 0];
+  if (entry >= 0 || uses.isUnreadable) {
+    return entry;
+  }
+
+  // An entry in the other color space already holds the pixels
+  const int32_t other = uses.entries[iSrgb ? 0 : 1];
+  std::optional<ImageData> image =
+      other >= 0 ? std::optional(ioImages.images[other]) : decodeImage(iImage, imageIndex, ioImages.path);
+  if (!image) {
+    uses.isUnreadable = true;
+    return -1;
+  }
+  image->srgb = iSrgb;
+  entry = static_cast<int32_t>(ioImages.images.size());
+  ioImages.images.push_back(std::move(*image));
+  return entry;
+}
+
+TextureWrap toTextureWrap(cgltf_wrap_mode iMode) {
+  switch (iMode) {
+    case cgltf_wrap_mode_clamp_to_edge:
+      return TextureWrap::Clamp;
+    case cgltf_wrap_mode_mirrored_repeat:
+      return TextureWrap::Mirror;
+    case cgltf_wrap_mode_repeat:
+      break;
+  }
+  return TextureWrap::Repeat; // Also for values glTF doesn't define
+}
+
+// The texture of one material slot, without an image when the importer can't honor it (the reason is logged)
+TextureRef importTexture(ModelImages& ioImages, const cgltf_texture_view& iView, bool iSrgb, const char* iSlot,
+                         const char* iMaterialName) {
+  TextureRef texture;
+  if (!iView.texture) {
+    return texture;
+  }
+  // KHR_texture_basisu and EXT_texture_webp keep their images apart, so a texture with only those has no image here
+  if (!iView.texture->image) {
+    NE_WARN("GltfImporter: Dropped the {} texture of material '{}': it has no PNG or JPEG image", iSlot, iMaterialName);
+    return texture;
+  }
+  if (iView.texcoord != 0) {
+    NE_WARN("GltfImporter: Dropped the {} texture of material '{}': it uses TEXCOORD_{}, and only TEXCOORD_0 is imported",
+            iSlot, iMaterialName, iView.texcoord);
+    return texture;
+  }
+  if (iView.has_transform) {
+    NE_WARN("GltfImporter: Ignored the KHR_texture_transform of the {} texture of material '{}'", iSlot, iMaterialName);
+  }
+
+  // A texture without a sampler keeps glTF's defaults: repeat and linear
+  if (const cgltf_sampler* sampler = iView.texture->sampler) {
+    texture.wrapU = toTextureWrap(sampler->wrap_s);
+    texture.wrapV = toTextureWrap(sampler->wrap_t);
+    texture.filter = sampler->mag_filter == cgltf_filter_type_nearest ? TextureFilter::Nearest : TextureFilter::Linear;
+  }
+  texture.image = useImage(ioImages, *iView.texture->image, iSrgb);
+  if (texture.image < 0) {
+    NE_WARN("GltfImporter: Dropped the {} texture of material '{}': its image can't be decoded", iSlot, iMaterialName);
+  }
+  return texture;
+}
+
+// Base color and emissive textures hold colors, so their images are sRGB; the other textures hold data, so theirs are
+// linear. An image used both ways is imported twice.
+MaterialData importMaterial(ModelImages& ioImages, const cgltf_material& iMaterial) {
+  const cgltf_pbr_metallic_roughness& pbr = iMaterial.pbr_metallic_roughness;
+  MaterialData material;
+  material.name = iMaterial.name ? iMaterial.name : "";
+  const char* name = material.name.c_str();
+
+  // cgltf starts from glTF's defaults, also when pbrMetallicRoughness is missing
+  material.baseColor = LinearColor{pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2],
+                                   pbr.base_color_factor[3]};
+  material.metallic = pbr.metallic_factor;
+  material.roughness = pbr.roughness_factor;
+  const float emissiveStrength = iMaterial.has_emissive_strength ? iMaterial.emissive_strength.emissive_strength : 1.0f;
+  material.emissive =
+      Vec3(iMaterial.emissive_factor[0], iMaterial.emissive_factor[1], iMaterial.emissive_factor[2]) * emissiveStrength;
+  material.alphaCutoff = iMaterial.alpha_cutoff;
+  if (iMaterial.alpha_mode == cgltf_alpha_mode_mask) {
+    material.alphaMode = AlphaMode::Mask;
+  } else if (iMaterial.alpha_mode == cgltf_alpha_mode_blend) {
+    material.alphaMode = AlphaMode::Blend;
+  }
+  material.doubleSided = iMaterial.double_sided;
+  // cgltf sets a texture's scale only along with the texture
+  if (iMaterial.normal_texture.texture) {
+    material.normalScale = iMaterial.normal_texture.scale;
+  }
+  if (iMaterial.occlusion_texture.texture) {
+    material.occlusionStrength = iMaterial.occlusion_texture.scale;
+  }
+
+  material.baseColorTexture = importTexture(ioImages, pbr.base_color_texture, true, "base color", name);
+  material.metallicRoughnessTexture =
+      importTexture(ioImages, pbr.metallic_roughness_texture, false, "metallic-roughness", name);
+  material.normalTexture = importTexture(ioImages, iMaterial.normal_texture, false, "normal", name);
+  material.occlusionTexture = importTexture(ioImages, iMaterial.occlusion_texture, false, "occlusion", name);
+  material.emissiveTexture = importTexture(ioImages, iMaterial.emissive_texture, true, "emissive", name);
+  return material;
+}
+
+// glTF's default material, for primitives that name none: white, fully metallic, and fully rough
+MaterialData makeGltfDefaultMaterial() { return MaterialData{.name = "glTF_Default", .metallic = 1.0f, .roughness = 1.0f}; }
+
 } // namespace
 
 namespace GltfImporter {
@@ -252,15 +412,37 @@ ModelData importModel(const std::string& iPath) {
   ModelData model;
   model.name = iPath;
 
-  // A glTF mesh used by several nodes is imported once; meshes without triangle primitives get index -1
+  // In file order, so ModelData::materials[i] is glTF material i; each image is imported when a material first uses it
+  ModelImages modelImages{
+      .data = *data, .path = iPath, .uses = std::vector<ImageUses>(data->images_count), .images = model.images};
+  model.materials.reserve(data->materials_count);
+  for (cgltf_size i = 0; i < data->materials_count; ++i) {
+    model.materials.push_back(importMaterial(modelImages, data->materials[i]));
+  }
+
+  // A glTF mesh used by several nodes is imported once; meshes without triangle primitives get index -1. A primitive
+  // that names no material gets glTF's default one, which follows the file's own.
+  int32_t defaultMaterialIndex = -1;
   std::vector<int32_t> meshIndices(data->meshes_count, -1);
   for (cgltf_size i = 0; i < data->meshes_count; ++i) {
     const char* meshName = data->meshes[i].name ? data->meshes[i].name : "";
     MeshData mesh;
     for (cgltf_size j = 0; j < data->meshes[i].primitives_count; ++j) {
-      if (std::optional<SubmeshData> submesh = importPrimitive(data->meshes[i].primitives[j], meshName, j)) {
-        mesh.submeshes.push_back(std::move(*submesh));
+      const cgltf_primitive& primitive = data->meshes[i].primitives[j];
+      std::optional<SubmeshData> submesh = importPrimitive(primitive, meshName, j);
+      if (!submesh) {
+        continue;
       }
+      if (primitive.material) {
+        submesh->materialIndex = static_cast<int32_t>(cgltf_material_index(data, primitive.material));
+      } else {
+        if (defaultMaterialIndex < 0) {
+          defaultMaterialIndex = static_cast<int32_t>(model.materials.size());
+          model.materials.push_back(makeGltfDefaultMaterial());
+        }
+        submesh->materialIndex = defaultMaterialIndex;
+      }
+      mesh.submeshes.push_back(std::move(*submesh));
     }
     if (!mesh.submeshes.empty()) {
       meshIndices[i] = static_cast<int32_t>(model.meshes.size());
@@ -283,7 +465,8 @@ ModelData importModel(const std::string& iPath) {
   }
 
   cgltf_free(data);
-  NE_LOG("GltfImporter: Imported {}: {} nodes, {} meshes", fullPath, model.nodes.size(), model.meshes.size());
+  NE_LOG("GltfImporter: Imported {}: {} nodes, {} meshes, {} materials, {} images", fullPath, model.nodes.size(),
+         model.meshes.size(), model.materials.size(), model.images.size());
   return model;
 }
 

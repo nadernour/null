@@ -18,6 +18,10 @@ class SceneRenderer;
 class Tonemapper;
 class Window;
 
+namespace gpu {
+enum class DebugView : uint32_t;
+}
+
 // Owns the GPU side of the engine, from the Vulkan instance to the render targets, and runs the frame. It's the only
 // place that orders passes: it records every barrier and opens every pass, and the classes it calls only draw into them.
 // The scene renders into the HDR color and depth images, then one swapchain pass holds the tonemap and the UI on top.
@@ -37,6 +41,10 @@ public:
   ResourceManager* getResourceManager() const { return mResourceManager.get(); }
   ImGuiManager* getImGuiManager() const { return mImGuiManager.get(); }
 
+  // What the scene pass writes: the lit color or one channel, which then skips the tonemap curve
+  void setDebugView(gpu::DebugView iDebugView) { mDebugView = iDebugView; }
+  gpu::DebugView getDebugView() const { return mDebugView; }
+
 private:
   static constexpr VkFormat kSceneColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 
@@ -55,6 +63,7 @@ private:
   std::unique_ptr<Tonemapper> mTonemapper;
   VkFormat mDepthFormat = VK_FORMAT_UNDEFINED;
   bool mEncodeSrgb = true; // False when the swapchain format encodes sRGB itself
+  gpu::DebugView mDebugView{}; // Lit
 
   // Swapchain-sized; both frames in flight share them
   std::unique_ptr<Image> mSceneColor;

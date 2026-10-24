@@ -12,7 +12,8 @@ BindlessManager::BindlessManager(VkDevice iDevice, SamplerManager* iSamplerManag
 
   const uint32_t samplerCount = static_cast<uint32_t>(iSamplerManager->getSamplers().size());
 
-  // Set 0: binding 0 holds one immutable sampler per SamplerType, binding 1 the sampled image array
+  // Set 0: binding 0 holds SamplerManager's immutable samplers, binding 1 the sampled image array. The layout is
+  // update-after-bind, so its samplers count against the update-after-bind limits, not maxPerStageDescriptorSamplers.
   std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
 
   bindings[0].binding = 0;

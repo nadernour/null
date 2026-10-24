@@ -4,6 +4,9 @@
 #include "renderer/device.h"
 #include "renderer/utils.h"
 
+#include <format>
+#include <string>
+
 namespace ne {
 
 namespace {
@@ -11,65 +14,61 @@ namespace {
 // Vulkan guarantees 16x wherever samplerAnisotropy is supported, which Device requires
 constexpr float kMaxAnisotropy = 16.0f;
 
+constexpr std::array kTextureFilters{TextureFilter::Linear, TextureFilter::Nearest};
+constexpr std::array kTextureWraps{TextureWrap::Repeat, TextureWrap::Clamp, TextureWrap::Mirror};
+static_assert(kTextureFilters.size() == SamplerManager::kTextureFilterCount, "kTextureFilters must list every TextureFilter");
+static_assert(kTextureWraps.size() == SamplerManager::kTextureWrapCount, "kTextureWraps must list every TextureWrap");
+
 struct SamplerConfig {
-  SamplerType type;
   VkFilter filter;
   VkSamplerMipmapMode mipmapMode;
-  VkSamplerAddressMode addressMode;
+  VkSamplerAddressMode addressModeU;
+  VkSamplerAddressMode addressModeV;
   bool anisotropic = false; // At kMaxAnisotropy
   bool compare = false;     // Reverse-Z depth comparison, for shadow maps
-  const char* debugName = "";
+  std::string debugName;
 };
 
-constexpr std::array kSamplerConfigs{
-    SamplerConfig{
-        .type = SamplerType::LinearRepeat,
-        .filter = VK_FILTER_LINEAR,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .anisotropic = true,
-        .debugName = "Sampler_LinearRepeat",
-    },
-    SamplerConfig{
-        .type = SamplerType::LinearClamp,
-        .filter = VK_FILTER_LINEAR,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .addressMode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .anisotropic = true,
-        .debugName = "Sampler_LinearClamp",
-    },
-    SamplerConfig{
-        .type = SamplerType::LinearMirror,
-        .filter = VK_FILTER_LINEAR,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .addressMode = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT,
-        .anisotropic = true,
-        .debugName = "Sampler_LinearMirror",
-    },
-    SamplerConfig{
-        .type = SamplerType::NearestClamp,
-        .filter = VK_FILTER_NEAREST,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
-        .addressMode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .debugName = "Sampler_NearestClamp",
-    },
-    SamplerConfig{
-        .type = SamplerType::NearestRepeat,
-        .filter = VK_FILTER_NEAREST,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
-        .addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .debugName = "Sampler_NearestRepeat",
-    },
-    SamplerConfig{
-        .type = SamplerType::Shadow,
-        .filter = VK_FILTER_LINEAR,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
-        .addressMode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
-        .compare = true,
-        .debugName = "Sampler_ShadowReverseZ",
-    },
-};
-static_assert(kSamplerConfigs.size() == static_cast<size_t>(SamplerType::Count), "Every SamplerType needs a config");
+VkSamplerAddressMode toAddressMode(TextureWrap iWrap) {
+  switch (iWrap) {
+    case TextureWrap::Repeat:
+      return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    case TextureWrap::Clamp:
+      return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    case TextureWrap::Mirror:
+      return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+    case TextureWrap::Count:
+      break;
+  }
+  return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+}
+
+const char* toString(TextureWrap iWrap) {
+  switch (iWrap) {
+    case TextureWrap::Repeat:
+      return "Repeat";
+    case TextureWrap::Clamp:
+      return "Clamp";
+    case TextureWrap::Mirror:
+      return "Mirror";
+    case TextureWrap::Count:
+      break;
+  }
+  return "Unknown";
+}
+
+// Linear samplers filter trilinearly with anisotropy; nearest ones pick the nearest texel and mip level
+SamplerConfig makeTextureSamplerConfig(TextureFilter iFilter, TextureWrap iWrapU, TextureWrap iWrapV) {
+  const bool isLinear = iFilter == TextureFilter::Linear;
+  return SamplerConfig{
+      .filter = isLinear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
+      .mipmapMode = isLinear ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST,
+      .addressModeU = toAddressMode(iWrapU),
+      .addressModeV = toAddressMode(iWrapV),
+      .anisotropic = isLinear,
+      .debugName = std::format("Sampler_{}_{}_{}", isLinear ? "Linear" : "Nearest", toString(iWrapU), toString(iWrapV)),
+  };
+}
 
 VkSampler createSampler(VkDevice iDevice, const SamplerConfig& iConfig) {
   VkSamplerCreateInfo info{};
@@ -77,9 +76,9 @@ VkSampler createSampler(VkDevice iDevice, const SamplerConfig& iConfig) {
   info.magFilter = iConfig.filter;
   info.minFilter = iConfig.filter;
   info.mipmapMode = iConfig.mipmapMode;
-  info.addressModeU = iConfig.addressMode;
-  info.addressModeV = iConfig.addressMode;
-  info.addressModeW = iConfig.addressMode;
+  info.addressModeU = iConfig.addressModeU;
+  info.addressModeV = iConfig.addressModeV;
+  info.addressModeW = iConfig.addressModeU;
   info.mipLodBias = 0.0f;
   info.anisotropyEnable = iConfig.anisotropic ? VK_TRUE : VK_FALSE;
   info.maxAnisotropy = iConfig.anisotropic ? kMaxAnisotropy : 1.0f;
@@ -99,25 +98,35 @@ VkSampler createSampler(VkDevice iDevice, const SamplerConfig& iConfig) {
 } // namespace
 
 SamplerManager::SamplerManager(Device* iDevice) : mDevice(iDevice->getDevice()) {
-  for (const SamplerConfig& config : kSamplerConfigs) {
-    VkSampler& sampler = mSamplers[static_cast<size_t>(config.type)];
-    NE_ASSERT(sampler == VK_NULL_HANDLE, "Two configs for sampler '{}'", config.debugName);
-    sampler = createSampler(mDevice, config);
+  // Every slot is filled through getTextureSamplerIndex, so the shaders and this table agree on the order
+  for (TextureFilter filter : kTextureFilters) {
+    for (TextureWrap wrapU : kTextureWraps) {
+      for (TextureWrap wrapV : kTextureWraps) {
+        const SamplerConfig config = makeTextureSamplerConfig(filter, wrapU, wrapV);
+        VkSampler& sampler = mSamplers[getTextureSamplerIndex(filter, wrapU, wrapV)];
+        NE_ASSERT(sampler == VK_NULL_HANDLE, "Two texture samplers share the slot of '{}'", config.debugName);
+        sampler = createSampler(mDevice, config);
+      }
+    }
   }
 
-  NE_VERBOSE("Initialized SamplerManager: {} standard samplers created", mSamplers.size());
+  mSamplers[kShadowSamplerIndex] = createSampler(mDevice, SamplerConfig{
+                                                              .filter = VK_FILTER_LINEAR,
+                                                              .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                                                              .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+                                                              .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+                                                              .compare = true,
+                                                              .debugName = "Sampler_ShadowReverseZ",
+                                                          });
+
+  NE_VERBOSE("Initialized SamplerManager: {} samplers created", mSamplers.size());
 }
 
 SamplerManager::~SamplerManager() {
   for (VkSampler sampler : mSamplers) {
     vkDestroySampler(mDevice, sampler, nullptr);
   }
-  NE_VERBOSE("Destroyed SamplerManager: cleaned up standard samplers");
-}
-
-VkSampler SamplerManager::get(SamplerType iType) const {
-  NE_ASSERT(static_cast<size_t>(iType) < mSamplers.size(), "Sampler type index out of bounds");
-  return mSamplers[static_cast<size_t>(iType)];
+  NE_VERBOSE("Destroyed SamplerManager: cleaned up {} samplers", mSamplers.size());
 }
 
 } // namespace ne

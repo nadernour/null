@@ -5,6 +5,7 @@
 #include "renderer/bindless_manager.h"
 #include "renderer/device.h"
 #include "renderer/frame_manager.h"
+#include "renderer/gpu_types.h"
 #include "renderer/image.h"
 #include "renderer/imgui_manager.h"
 #include "renderer/instance.h"
@@ -55,7 +56,8 @@ Renderer::Renderer(Window* iWindow, const std::string& iAppName) : mWindow(iWind
 
   mImGuiManager = std::make_unique<ImGuiManager>(mWindow, mInstance.get(), mDevice.get(), mFrameManager.get());
 
-  mSceneRenderer = std::make_unique<SceneRenderer>(mResourceManager->getGeometryAllocator());
+  mSceneRenderer = std::make_unique<SceneRenderer>(mResourceManager->getGeometryAllocator(),
+                                                   mResourceManager->getMaterialBufferAddress());
 
   const VkFormat swapchainFormat = mFrameManager->getColorFormat();
   mTonemapper = std::make_unique<Tonemapper>(mDevice.get(), mResourceManager->getPipelineLayout(), swapchainFormat);
@@ -152,7 +154,7 @@ void Renderer::recordScenePass(VkCommandBuffer iCommandBuffer, VkExtent2D iExten
 
   vkCmdBeginRendering(iCommandBuffer, &renderingInfo);
   setViewportAndScissor(iCommandBuffer, iExtent);
-  mSceneRenderer->record(iCommandBuffer, *mFrameManager->getUploadAllocator());
+  mSceneRenderer->record(iCommandBuffer, *mFrameManager->getUploadAllocator(), mDebugView);
   vkCmdEndRendering(iCommandBuffer);
 }
 
@@ -193,7 +195,7 @@ void Renderer::recordSwapchainPass(VkCommandBuffer iCommandBuffer, VkExtent2D iE
 
   vkCmdBeginRendering(iCommandBuffer, &renderingInfo);
   setViewportAndScissor(iCommandBuffer, iExtent);
-  mTonemapper->record(iCommandBuffer, mSceneColorTextureIndex, mEncodeSrgb);
+  mTonemapper->record(iCommandBuffer, mSceneColorTextureIndex, mEncodeSrgb, mDebugView == gpu::DebugView::Lit);
   mImGuiManager->draw(iCommandBuffer);
   vkCmdEndRendering(iCommandBuffer);
 

@@ -29,6 +29,7 @@ public:
   void runForFrames(size_t iFrameCount = 1);
 
   Window* getWindow() const { return mWindow.get(); }
+  Renderer* getRenderer() const { return mRenderer.get(); }
   ResourceManager* getResourceManager() const;
   Registry* getRegistry() const { return mRegistry.get(); }
 

@@ -196,21 +196,22 @@ float linearToSrgb(float value) {
 ---
 
 ## Phase 2: Materials & glTF Textures
-**Status:** not started
+**Status:** done (2026-10-24)
 
 **Goal:** glTF materials and textures reach the GPU.
 - A material buffer is indexed per instance.
 - The base color, metal-roughness, normal, occlusion, and emissive textures are imported with the right color space and their own sampler settings.
 - Shading stays the current fixed light, so every channel except metallic and roughness shows on screen. Debug views show each channel as the Khronos Sample Viewer does.
 
-This is the plan of Oct 15 and 18, checked against the code on Oct 24, after Phase 1. The check made texture wrapping per axis, because TextureSettingsTest, this phase's sampler check, mixes wrap modes on every test tile. It also made the debug views match the Sample Viewer's, and gave `SceneRenderer` the material buffer's address at construction and the debug view each frame. A second pass that day renamed `base_shader.slang` to `scene.slang` and dropped a planned `--model` flag: the verification assets are viewed through a local change to `BasicApp` instead.
+This is the plan of Oct 15 and 18, checked against the code on Oct 24, after Phase 1. The check made texture wrapping per axis, because TextureSettingsTest, this phase's sampler check, mixes wrap modes on every test tile. It also made the debug views match the Sample Viewer's, and gave `SceneRenderer` the material buffer's address at construction and the debug view each frame. A second pass that day renamed `base_shader.slang` to `scene.slang` and dropped a planned `--model` flag: the verification assets are viewed through a local change to `BasicApp` instead. A review that day mirrored `DebugView` in the shader as a Slang enum, derived the sampler counts from each enum's `Count`, asserted that a material's texture ids are registered bindless slots, moved `ModelNode` and `ModelData` to `model_data.h`, and gave `Prefab` one `MeshComponent` per mesh. The tasks below describe the result.
 
 **Data:**
 - `src/core/material_data.h`, next to `mesh_data.h`:
 ```cpp
 enum class AlphaMode : uint8_t { Opaque, Mask, Blend };
-enum class TextureWrap : uint8_t { Repeat, Clamp, Mirror };
-enum class TextureFilter : uint8_t { Linear, Nearest };
+// Count isn't a setting; SamplerManager sizes its sampler table with it
+enum class TextureWrap : uint8_t { Repeat, Clamp, Mirror, Count };
+enum class TextureFilter : uint8_t { Linear, Nearest, Count };
 
 // A material's texture and its sampler settings; image indexes ModelData::images, -1 for none
 struct TextureRef {
@@ -232,14 +233,14 @@ struct MaterialData {
   float alphaCutoff = 0.5f;
   AlphaMode alphaMode = AlphaMode::Opaque;
   bool doubleSided = false;
-  TextureRef baseColorTexture;         // sRGB
-  TextureRef metallicRoughnessTexture; // Linear; G = roughness, B = metallic
-  TextureRef normalTexture;            // Linear
-  TextureRef occlusionTexture;         // Linear; R
-  TextureRef emissiveTexture;          // sRGB
+  TextureRef baseColorTexture{};         // sRGB
+  TextureRef metallicRoughnessTexture{}; // Linear; G = roughness, B = metallic
+  TextureRef normalTexture{};            // Linear
+  TextureRef occlusionTexture{};         // Linear; R
+  TextureRef emissiveTexture{};          // sRGB
 };
 ```
-- `ModelData` gains `std::vector<ImageData> images` and `std::vector<MaterialData> materials`. `SubmeshData` gains `int32_t materialIndex = -1` (into `ModelData::materials`; -1 for the default material).
+- `ModelData` gains `std::vector<ImageData> images` and `std::vector<MaterialData> materials`, and moves with `ModelNode` to `src/core/model_data.h`, so `mesh_data.h` keeps only the geometry. `SubmeshData` gains `int32_t materialIndex = -1` (into `ModelData::materials`; -1 for the default material).
 - `gpu::Material` (72 bytes), mirrored in Slang and read through a pointer:
 ```cpp
 struct Material {
@@ -264,7 +265,7 @@ struct Material {
   - `ScenePushConstants` gains `VkDeviceAddress materials` (32 bytes).
   - `GlobalUniforms` gains `uint32_t debugView` (68 bytes).
   - `TonemapPushConstants` gains `uint32_t applyCurve` (12 bytes).
-- `enum class DebugView : uint32_t { Lit, BaseColor, Normal, Metallic, Roughness, Occlusion, Emissive, Uv, Count }` in `gpu_types.h`, because the shader reads its values.
+- `enum class DebugView : uint32_t { Lit, BaseColor, Normal, Metallic, Roughness, Occlusion, Emissive, Uv, Count }` in `gpu_types.h`, because the shader reads its values. `scene.slang` mirrors it as a Slang enum.
 
 **Tasks:**
 1. **Rename `shaders/base_shader.slang` to `shaders/scene.slang`**, first and in its own commit, so git follows the file through the rewrite. `vk_utils::kDefaultShader` becomes `kSceneShader = "scene"`, and the comments and the path test that name the file (`gpu_types.h`, `tonemap.slang`, `core_test.cpp`) follow.
@@ -278,7 +279,7 @@ struct Material {
      - `emissive_factor`, times `emissive_strength.emissive_strength` when `has_emissive_strength`;
      - `alpha_mode`, `alpha_cutoff`, `double_sided`.
 
-     cgltf already fills in glTF's defaults (base color 1, metallic 1, roughness 1, cutoff 0.5, texture scale 1), also when `pbrMetallicRoughness` is missing.
+     cgltf already fills in glTF's defaults (base color 1, metallic 1, roughness 1, cutoff 0.5), also when `pbrMetallicRoughness` is missing. It sets a texture's scale only along with the texture, so a material without a normal or occlusion texture keeps `MaterialData`'s 1.
    - **Primitives without a material** get glTF's default material (white, metallic 1, roughness 1), appended once after the file's own.
    - **Texture references:**
      - A texture view without a texture, or whose texture has no core image (`texture->image` is null when only KHR_texture_basisu or EXT_texture_webp gives one), has no image.
@@ -295,23 +296,23 @@ struct Material {
    - The summary log line adds material and image counts. Update the comment in the "Requiring An Unsupported Extension" test: materials are imported now, but KHR_texture_transform isn't honored, so a file that requires it is still rejected. Add the dropped textures to the README's **Errors** convention.
 3. **Samplers** (`src/renderer/sampler_manager.{h,cpp}`):
    - `SamplerType` (`rhi_types.h`) goes away. `SamplerManager` holds one sampler per `TextureFilter` × U `TextureWrap` × V `TextureWrap`, 18 in all, then the shadow sampler at `kShadowSamplerIndex` (18).
-   - `static constexpr uint32_t getTextureSamplerIndex(iFilter, iWrapU, iWrapV)` returns `(filter * 3 + wrapU) * 3 + wrapV`. The constructor fills every slot through it, so the order is defined in one place.
+   - `static constexpr uint32_t getTextureSamplerIndex(iFilter, iWrapU, iWrapV)` returns `(filter * kTextureWrapCount + wrapU) * kTextureWrapCount + wrapV`, with the counts (and `kTextureSamplerCount`) taken from each enum's `Count`. The constructor fills every slot through it, so the order is defined in one place.
    - Linear samplers keep trilinear filtering and 16× anisotropy; nearest ones keep nearest mips and no anisotropy. Debug names spell out the settings, such as `Sampler_Linear_Repeat_Clamp`.
    - Remove the unused `get(SamplerType)`. `getSamplers()` returns all 19 for the bindless set; update `BindlessManager`'s comment.
 4. **`ResourceManager`:**
    - **Material buffer:** device-local, `STORAGE | SHADER_DEVICE_ADDRESS | TRANSFER_DST`, sized for `kMaxMaterials = 4096` (in `utils.h` next to `kMaxSampledImages`) and written through `StagingManager`. It outlives the staging manager, whose shutdown flush may still copy into it.
    - **Default material:** index 0, created in the constructor after the white texture, from `MaterialData{}` (the engine's dielectric). `getDefaultMaterial()` returns it. The destructor releases it before the pipelines.
    - **`std::shared_ptr<Material> createMaterial(const MaterialData& iData, std::span<const uint32_t> iTextureIds = {})`** replaces `createMaterial(iShaderName)`:
-     - Each `TextureRef` becomes `iTextureIds[image]` (assert that `image` is in range), or `kFallbackTextureIndex` when it has no image, packed with `SamplerManager::getTextureSamplerIndex(filter, wrapU, wrapV)`. `static_assert` that `kMaxSampledImages` fits in 16 bits.
+     - Each `TextureRef` becomes `iTextureIds[image]` (assert that `image` is in range), or `kFallbackTextureIndex` when it has no image, packed with `SamplerManager::getTextureSamplerIndex(filter, wrapU, wrapV)`. `static_assert` that `kMaxSampledImages` and `kSamplerCount` fit in 16 bits, and assert that each texture id is a registered bindless slot: a larger one would spill into the sampler bits.
      - `flags` bit 0 is set when the normal texture resolves to a texture other than the fallback.
-     - The pipeline stays `getOrCreatePipeline()`, which drops its shader-name parameter: nothing sets it once `createMaterial` stops taking one.
+     - The pipeline stays `getOrCreatePipeline()`, which drops its shader-name parameter: nothing sets it once `createMaterial` stops taking one. Until Phase 3's variants it holds one pipeline, `mScenePipeline`.
      - When the buffer is full, log `NE_ERROR` and return the default material.
    - **`getMaterialBufferAddress()`**, for `SceneRenderer`.
 5. **`Material`** becomes immutable: `Material(iPipeline, iMaterialIndex, iAlphaMode, iDoubleSided)` and their getters. Remove `setTexture`, `setSampler`, and the texture and sampler getters.
 6. **`Prefab`:**
    - creates one texture per `ModelData` image, named after the model and the image index;
    - creates one material per `MaterialData`, passing those texture ids;
-   - keeps each mesh's submesh materials, with the default material for `-1` (assert that other indices are in range), and gives them to the `MeshComponent`s it instantiates. `mMaterial` goes away.
+   - keeps one `MeshComponent` per mesh, holding the mesh and its submeshes' materials (the default material for `-1`; assert that other indices are in range), and copies it into every node that draws the mesh. `mMaterial` goes away.
 7. **`SceneRenderer`:**
    - `SceneRenderer(iGeometryAllocator, iMaterialBufferAddress)`: the buffer never moves, so `Renderer` passes its address once.
    - `DrawCall` carries `materialIndex` instead of the texture and sampler indices; sorting and instancing stay as they are.
@@ -344,6 +345,7 @@ struct Material {
       - metallic and roughness factors are 1, emissive is (1, 1, 1);
       - its submesh uses material 0.
     - importer, Box.gltf: material "Red" has base color (0.8, 0, 0, 1), metallic 0, roughness 1, and no textures.
+    - importer: a file that requires KHR_materials_emissive_strength imports.
     - importer, a triangle from `writeTriangleGltf` (which gains a parameter for primitive fields such as `"material": 0`), with `uv_checker.png` copied next to it:
       - a base color texture whose sampler is nearest, clamp S, mirror T imports as `filter = Nearest`, `wrapU = Clamp`, `wrapV = Mirror`;
       - the same image as the metallic-roughness texture is imported a second time, linear;

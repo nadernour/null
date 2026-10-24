@@ -1,18 +1,16 @@
 #pragma once
 
+#include "components/mesh_component.h"
 #include "core/ecs.h"
 #include "core/math/transform.h"
-#include "core/mesh_data.h"
+#include "core/model_data.h"
 
 // std
-#include <memory>
 #include <string>
 #include <vector>
 
 namespace ne {
 
-class Mesh;
-class Material;
 class ResourceManager;
 
 /**
@@ -21,7 +19,7 @@ class ResourceManager;
  */
 class Prefab {
 public:
-  // Uploads the meshes; the ModelData is not referenced afterwards
+  // Uploads the textures, materials, and meshes; the ModelData is not referenced afterwards
   Prefab(ResourceManager& ioResourceManager, const ModelData& iModelData);
 
   // Returns the new root entity, which is named after the prefab
@@ -29,8 +27,7 @@ public:
 
 private:
   std::string mName;
-  std::vector<std::shared_ptr<Mesh>> mMeshes; // Indexed by ModelNode::meshIndex; null for meshes that failed validation
-  std::shared_ptr<Material> mMaterial;        // Shared by every submesh until glTF materials are imported
+  std::vector<MeshComponent> mMeshComponents; // Indexed by ModelNode::meshIndex; the mesh is null if it failed validation
   std::vector<ModelNode> mNodes;              // Parents always precede their children
 };
 

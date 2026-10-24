@@ -12,6 +12,7 @@
 #include "renderer/buffer.h"
 #include "renderer/geometry_allocator.h"
 #include "renderer/gpu_types.h"
+#include "renderer/material.h"
 #include "renderer/mesh.h"
 #include "renderer/resource_manager.h"
 #include "scene/prefab.h"
@@ -220,6 +221,32 @@ NE_TEST_CASE("scene", "Prefab Instantiates Node Tree") {
 
   Entity secondArm = transformOf(registry, transformOf(registry, second).getChildren()[0]).getChildren()[0];
   NE_TEST_ASSERT(registry.getComponent<MeshComponent>(secondArm).mesh == armMesh.mesh, "Instances share the same GPU mesh.");
+}
+
+NE_TEST_CASE("scene", "Prefab Gives Each Submesh Its Material") {
+  ResourceManager& resources = *ioContext.app->getResourceManager();
+  SubmeshData triangle;
+  triangle.positions = {Vec3(0.0f), Vec3(0.0f, 1.0f, 0.0f), Vec3(0.0f, 0.0f, 1.0f)};
+  triangle.indices = {0, 1, 2};
+  SubmeshData red = triangle;
+  red.materialIndex = 0;
+  SubmeshData blue = triangle;
+  blue.materialIndex = 1;
+  ModelData data;
+  data.name = "Painted";
+  data.materials = {MaterialData{.name = "Red", .baseColor = LinearColor{1.0f, 0.0f, 0.0f, 1.0f}},
+                    MaterialData{.name = "Blue", .baseColor = LinearColor{0.0f, 0.0f, 1.0f, 1.0f}}};
+  data.meshes = {MeshData{.submeshes = {red, blue, triangle}}};
+  data.nodes = {ModelNode{.name = "body", .localTransform = Transform{}, .parentIndex = -1, .meshIndex = 0}};
+
+  Registry registry;
+  Entity root = Prefab(resources, data).instantiate(registry);
+  const MeshComponent& mesh = registry.getComponent<MeshComponent>(transformOf(registry, root).getChildren()[0]);
+
+  NE_TEST_ASSERT(mesh.materials.size() == 3, "The mesh has one material per submesh.");
+  NE_TEST_ASSERT(mesh.materials[0]->getMaterialIndex() != mesh.materials[1]->getMaterialIndex(),
+                 "Submeshes with different materials use different slots of the material buffer.");
+  NE_TEST_ASSERT(mesh.materials[2] == resources.getDefaultMaterial(), "A submesh without a material gets the default one.");
 }
 
 NE_TEST_CASE("scene", "Malformed Meshes Are Rejected") {
