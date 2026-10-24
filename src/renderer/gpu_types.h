@@ -41,7 +41,7 @@ struct InstanceData {
   uint32_t samplerIndex = 0;
 };
 
-// Push constants of shaders/base_shader.slang
+// Push constants of shaders/scene.slang
 struct ScenePushConstants {
   VkDeviceAddress drawInfos = 0;
   VkDeviceAddress globalUniforms = 0;

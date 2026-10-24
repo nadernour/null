@@ -69,9 +69,9 @@ NE_TEST_CASE("core", "Platform & Filesystem Path Resolution") {
   NE_TEST_ASSERT(!contentPath.empty(), "fs::resolveContentPath must return non-empty path.");
   NE_TEST_ASSERT(contentPath.find("Box.gltf") != std::string::npos, "Resolved content path must contain target filename.");
 
-  std::string shaderPath = fs::resolveShaderPath("base_shader");
+  std::string shaderPath = fs::resolveShaderPath("scene");
   NE_TEST_ASSERT(!shaderPath.empty(), "fs::resolveShaderPath must return non-empty path.");
-  NE_TEST_ASSERT(shaderPath.find("base_shader.spv") != std::string::npos, "Resolved shader path must append .spv extension.");
+  NE_TEST_ASSERT(shaderPath.find("scene.spv") != std::string::npos, "Resolved shader path must append .spv extension.");
 
   std::string savedPath = fs::resolveSavedPath("imgui.ini");
   NE_TEST_ASSERT(!savedPath.empty(), "fs::resolveSavedPath must return non-empty path.");

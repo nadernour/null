@@ -52,7 +52,7 @@ ResourceManager::~ResourceManager() {
 }
 
 std::shared_ptr<Pipeline> ResourceManager::getOrCreatePipeline(const std::string& iShaderName) {
-  const std::string& shaderName = iShaderName.empty() ? vk_utils::kDefaultShader : iShaderName;
+  const std::string& shaderName = iShaderName.empty() ? vk_utils::kSceneShader : iShaderName;
 
   auto it = mPipelines.find(shaderName);
   if (it != mPipelines.end()) {

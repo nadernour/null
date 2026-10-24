@@ -1,6 +1,6 @@
 #language slang latest
 
-// The bindless set, declared as in base_shader.slang
+// The bindless set, declared as in scene.slang
 [vk::binding(0, 0)]
 SamplerState gSamplers[];
 
