@@ -28,6 +28,7 @@ add_subdirectory("${ThirdPartyDir}/glfw")
 add_subdirectory("${ThirdPartyDir}/cgltf")
 add_subdirectory("${ThirdPartyDir}/stb")
 add_subdirectory("${ThirdPartyDir}/imgui")
+add_subdirectory("${ThirdPartyDir}/mikktspace")
 
 # ----------------------------------------------------------------------
 # The Main App
@@ -64,6 +65,7 @@ target_link_libraries(${EngineTarget} PRIVATE
   cgltf
   stb
   imgui
+  mikktspace
 )
 target_compile_definitions(${EngineTarget} PRIVATE
   $<$<CONFIG:Debug>:NE_BUILD_DEBUG>

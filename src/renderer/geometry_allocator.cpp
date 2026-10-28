@@ -75,12 +75,14 @@ std::optional<Mesh> GeometryAllocator::stageMesh(StagingManager& iStagingManager
     const bool hasNormals = submesh.normals.size() == submeshVertexCount;
     const bool hasTexCoords = submesh.texCoords.size() == submeshVertexCount;
     const bool hasColors = submesh.colors.size() == submeshVertexCount;
+    const bool hasTangents = submesh.tangents.size() == submeshVertexCount;
     for (size_t i = 0; i < submeshVertexCount; ++i) {
       vertices.push_back(gpu::Vertex{
           .pos = submesh.positions[i],
           .normal = hasNormals ? submesh.normals[i] : Vec3(0.0f, 0.0f, 1.0f),
           .uv = hasTexCoords ? submesh.texCoords[i] : Vec2(0.0f, 0.0f),
           .color = hasColors ? submesh.colors[i] : LinearColor::White,
+          .tangent = hasTangents ? submesh.tangents[i] : Vec4(1.0f, 0.0f, 0.0f, 1.0f),
       });
     }
     indices.insert(indices.end(), submesh.indices.begin(), submesh.indices.end());

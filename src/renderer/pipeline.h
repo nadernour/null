@@ -14,16 +14,21 @@ public:
     ReadOnly   // Post-passes, transparents, or decals
   };
 
-  enum class StencilMode : uint8_t { Disabled, Enabled };
+  enum class BlendMode : uint8_t {
+    Disabled,
+    Alpha // Transparent surfaces: color x alpha + what's behind x (1 - alpha)
+  };
 
+  // The cull mode isn't part of it: it's dynamic state, which whoever records a draw sets with vkCmdSetCullMode
   struct Config {
     std::string shaderName;
+    std::string fragmentEntry = "fragMain";
+    std::string debugName; // Required; with no default, GCC warns about a Config that leaves it out
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VkFormat colorAttachmentFormat = VK_FORMAT_UNDEFINED;
     VkFormat depthAttachmentFormat = VK_FORMAT_UNDEFINED;
     DepthMode depthMode = DepthMode::ReadWrite;
-    StencilMode stencilMode = StencilMode::Disabled;
-    VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT;
+    BlendMode blendMode = BlendMode::Disabled;
   };
 
   static VkPipelineLayout createPipelineLayout(VkDevice iDevice, const std::vector<VkDescriptorSetLayout>& iDescriptorSetLayouts,

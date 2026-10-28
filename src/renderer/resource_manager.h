@@ -16,7 +16,6 @@ class BindlessManager;
 class Buffer;
 class Mesh;
 class Image;
-class Pipeline;
 class Material;
 struct ImageData;
 struct MaterialData;
@@ -27,7 +26,7 @@ public:
   // Bindless index of the white 1x1 texture, created first; textures a material lacks and rejected textures fall back to it
   static constexpr uint32_t kFallbackTextureIndex = 0;
 
-  ResourceManager(Device* iDevice, VkFormat iDefaultColorFormat, VkFormat iDefaultDepthFormat);
+  ResourceManager(Device* iDevice);
   ~ResourceManager();
 
   ResourceManager(const ResourceManager&) = delete;
@@ -40,7 +39,6 @@ public:
   // Writes the material into the next slot of the material buffer; iTextureIds maps each TextureRef::image to a
   // texture from createTexture(). The default material, with the reason logged, once the buffer is full.
   std::shared_ptr<Material> createMaterial(const MaterialData& iData, std::span<const uint32_t> iTextureIds = {});
-  std::shared_ptr<Pipeline> getOrCreatePipeline();
   void flushUploads();
 
   StagingManager* getStagingManager() const { return mStagingManager.get(); }
@@ -56,8 +54,6 @@ public:
 
 private:
   Device* mDevice = nullptr;
-  VkFormat mDefaultColorFormat = VK_FORMAT_UNDEFINED;
-  VkFormat mDefaultDepthFormat = VK_FORMAT_UNDEFINED;
 
   std::unique_ptr<StagingManager> mStagingManager;
   std::unique_ptr<GeometryAllocator> mGeometryAllocator;
@@ -65,7 +61,6 @@ private:
   std::unique_ptr<BindlessManager> mBindlessManager;
 
   VkPipelineLayout mPipelineLayout = VK_NULL_HANDLE;
-  std::shared_ptr<Pipeline> mScenePipeline;
   std::vector<std::unique_ptr<Image>> mTextures;
 
   // Append-only: a slot is written once, so no frame in flight ever sees it change

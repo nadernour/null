@@ -11,6 +11,7 @@ struct Vertex {
   float3 normal;
   float2 uv;
   float4 color;
+  float4 tangent; // xyz toward +u; cross(normal, xyz) * w points up the image (toward -v)
 };
 
 struct GlobalUniforms {
@@ -47,6 +48,9 @@ struct Material {
   uint flags;
 };
 
+// Mirrors gpu::kMaterialHasNormalTexture
+static const uint kMaterialHasNormalTexture = 1u << 0;
+
 struct ScenePushConstants {
   DrawInfo* drawInfos;
   GlobalUniforms* globalUniforms;
@@ -55,7 +59,20 @@ struct ScenePushConstants {
 };
 
 // Mirrors gpu::DebugView
-enum DebugView : uint { Lit, BaseColor, Normal, Metallic, Roughness, Occlusion, Emissive, Uv, Count };
+enum DebugView : uint {
+  Lit,
+  BaseColor,
+  Normal,
+  GeometryNormal,
+  Tangent,
+  Bitangent,
+  Metallic,
+  Roughness,
+  Occlusion,
+  Emissive,
+  Uv,
+  Count
+};
 
 [vk::push_constant]
 ScenePushConstants pc;
@@ -69,6 +86,7 @@ struct VSInput {
 struct VSOutput {
   float4 pos : SV_Position;
   float3 normal;
+  float4 tangent; // xyz in world space; w is the bitangent's sign
   float2 uv;
   float4 color;
   nointerpolation uint materialIndex;
@@ -95,28 +113,58 @@ VSOutput vertMain(VSInput input) {
 
   output.pos = mul(pc.globalUniforms->viewProj, mul(inst.modelMatrix, float4(v.pos, 1.0)));
   output.normal = normalize(mul((float3x3)inst.normalMatrix, v.normal));
+  // The model matrix, not the normal matrix: a tangent lies in the surface, and the normal matrix keeps the normal
+  // perpendicular to it under non-uniform scale
+  output.tangent = float4(normalize(mul((float3x3)inst.modelMatrix, v.tangent.xyz)), v.tangent.w);
   output.uv = v.uv;
   output.color = v.color * inst.color;
   output.materialIndex = inst.materialIndex;
   return output;
 }
 
-[shader("fragment")]
-float4 fragMain(VSOutput vertIn) : SV_TARGET {
-  Material material = pc.materials[vertIn.materialIndex];
-  float4 base = material.baseColor * sampleTexture(material.baseColorTexture, vertIn.uv) * vertIn.color;
+// Factor x texture x vertex color x instance tint; mask and blend materials read its alpha
+float4 baseColor(Material material, VSOutput vertIn) {
+  return material.baseColor * sampleTexture(material.baseColorTexture, vertIn.uv) * vertIn.color;
+}
+
+float4 shade(Material material, float4 base, VSOutput vertIn, bool isFrontFace) {
   float4 metallicRoughness = sampleTexture(material.metallicRoughnessTexture, vertIn.uv);
   float metallic = material.metallic * metallicRoughness.b;
   float roughness = material.roughness * metallicRoughness.g;
   float ao = 1.0 + material.occlusionStrength * (sampleTexture(material.occlusionTexture, vertIn.uv).r - 1.0);
   float3 emissive = material.emissive * sampleTexture(material.emissiveTexture, vertIn.uv).rgb;
-  float3 N = normalize(vertIn.normal);
+
+  // The tangent frame as mikktspace.h prescribes: the interpolated normal and tangent as they arrive, the bitangent
+  // from them, and only the final normal normalized. That is the exact inverse of what MikkTSpace bakers wrote.
+  float3 N = vertIn.normal;
+  float3 T = vertIn.tangent.xyz;
+  float3 B = vertIn.tangent.w * cross(N, T);
+  // Only double-sided materials draw back faces: the surface seen from behind, so every axis reverses. B reverses on
+  // its own, since cross(-N, -T) is cross(N, T).
+  if (!isFrontFace) {
+    N = -N;
+    T = -T;
+    B = -B;
+  }
+  float3 geometryNormal = normalize(N);
+  if ((material.flags & kMaterialHasNormalTexture) != 0) {
+    float3 n = sampleTexture(material.normalTexture, vertIn.uv).xyz * 2.0 - 1.0;
+    n.xy *= material.normalScale;
+    N = n.x * T + n.y * B + n.z * N;
+  }
+  N = normalize(N);
 
   switch ((DebugView)pc.globalUniforms->debugView) {
     case DebugView.BaseColor:
       return float4(base.rgb, 1.0);
     case DebugView.Normal:
       return float4(srgbToLinear(N * 0.5 + 0.5), 1.0);
+    case DebugView.GeometryNormal:
+      return float4(srgbToLinear(geometryNormal * 0.5 + 0.5), 1.0);
+    case DebugView.Tangent:
+      return float4(srgbToLinear(normalize(T) * 0.5 + 0.5), 1.0);
+    case DebugView.Bitangent:
+      return float4(srgbToLinear(normalize(B) * 0.5 + 0.5), 1.0);
     case DebugView.Metallic:
       return float4(srgbToLinear(float3(metallic)), 1.0);
     case DebugView.Roughness:
@@ -136,4 +184,23 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
   float NdotL = max(dot(N, lightDir), 0.0);
   float3 lighting = float3(0.18, 0.18, 0.18) * ao + float3(0.85, 0.85, 0.85) * NdotL;
   return float4(base.rgb * lighting + emissive, base.a);
+}
+
+// Opaque and blend materials; the alpha it returns matters only to blending
+[shader("fragment")]
+float4 fragMain(VSOutput vertIn, bool isFrontFace : SV_IsFrontFace) : SV_TARGET {
+  Material material = pc.materials[vertIn.materialIndex];
+  return shade(material, baseColor(material, vertIn), vertIn, isFrontFace);
+}
+
+// Mask materials only: depth can't be written before a shader that may discard has run, so opaque materials draw
+// through fragMain and keep early depth testing
+[shader("fragment")]
+float4 fragMainMasked(VSOutput vertIn, bool isFrontFace : SV_IsFrontFace) : SV_TARGET {
+  Material material = pc.materials[vertIn.materialIndex];
+  float4 base = baseColor(material, vertIn);
+  if (base.a < material.alphaCutoff) {
+    discard;
+  }
+  return shade(material, base, vertIn, isFrontFace);
 }

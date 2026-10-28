@@ -31,8 +31,7 @@ uint32_t packTexture(uint32_t iTextureId, const TextureRef& iTexture) {
 
 } // namespace
 
-ResourceManager::ResourceManager(Device* iDevice, VkFormat iDefaultColorFormat, VkFormat iDefaultDepthFormat)
-    : mDevice(iDevice), mDefaultColorFormat(iDefaultColorFormat), mDefaultDepthFormat(iDefaultDepthFormat) {
+ResourceManager::ResourceManager(Device* iDevice) : mDevice(iDevice) {
   NE_ASSERT(mDevice);
   mSamplerManager = std::make_unique<SamplerManager>(mDevice);
   mStagingManager = std::make_unique<StagingManager>(mDevice);
@@ -69,25 +68,11 @@ ResourceManager::~ResourceManager() {
   mStagingManager.reset();
   mTextures.clear();
   mDefaultMaterial.reset();
-  mScenePipeline.reset();
   Pipeline::destroyPipelineLayout(mDevice->getDevice(), mPipelineLayout);
   mMaterialBuffer.reset();
   mBindlessManager.reset();
   mGeometryAllocator.reset();
   mSamplerManager.reset();
-}
-
-std::shared_ptr<Pipeline> ResourceManager::getOrCreatePipeline() {
-  if (!mScenePipeline) {
-    Pipeline::Config config{
-        .shaderName = vk_utils::kSceneShader,
-        .layout = mPipelineLayout,
-        .colorAttachmentFormat = mDefaultColorFormat,
-        .depthAttachmentFormat = mDefaultDepthFormat,
-    };
-    mScenePipeline = std::make_shared<Pipeline>(mDevice->getDevice(), config);
-  }
-  return mScenePipeline;
 }
 
 std::shared_ptr<Material> ResourceManager::createMaterial(const MaterialData& iData, std::span<const uint32_t> iTextureIds) {
@@ -128,7 +113,7 @@ std::shared_ptr<Material> ResourceManager::createMaterial(const MaterialData& iD
   mStagingManager->stageBufferCopy(mMaterialBuffer->getBuffer(), &material, sizeof(gpu::Material),
                                    materialIndex * sizeof(gpu::Material));
   NE_VERBOSE("ResourceManager: Material '{}' takes slot {} of the material buffer", iData.name, materialIndex);
-  return std::make_shared<Material>(getOrCreatePipeline(), materialIndex, iData.alphaMode, iData.doubleSided);
+  return std::make_shared<Material>(materialIndex, iData.alphaMode, iData.doubleSided);
 }
 
 VkDeviceAddress ResourceManager::getMaterialBufferAddress() const { return mMaterialBuffer->getDeviceAddress(); }

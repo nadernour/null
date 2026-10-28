@@ -21,7 +21,7 @@ Physically based rendering for Null, split into six phases. Each phase leaves th
 ## Decisions
 
 ### Frame and render targets
-- **Ownership:** `Application` holds the `Window`, the `Renderer`, and the `Registry`, and runs the loop and the UI hooks. `Renderer` owns everything on the GPU side: the instance, the device, `FrameManager`, `ResourceManager`, `ImGuiManager`, the classes that draw, and the render targets. *Why:* the app holds rendering API objects, not their implementation, so it never has to keep two of them in agreement (such as the formats `ResourceManager`'s pipelines and the targets share), and apps built on the core library don't repeat the setup.
+- **Ownership:** `Application` holds the `Window`, the `Renderer`, and the `Registry`, and runs the loop and the UI hooks. `Renderer` owns everything on the GPU side: the instance, the device, `FrameManager`, `ResourceManager`, `ImGuiManager`, the classes that draw, and the render targets. *Why:* the app holds rendering API objects, not their implementation, so it never has to keep two of them in agreement (such as the formats `SceneRenderer`'s pipelines and the targets share), and apps built on the core library don't repeat the setup.
 - **No render graph.** `Renderer` is the only place that orders passes; a pass is one `vkCmdBeginRendering` scope, as in Vulkan. It records every barrier, opens every pass (attachments, load ops, clear values, viewport), and hands the classes that draw into a pass their per-frame resources (the command buffer, the frame's upload allocator); those classes only draw. `Image` builds its own barriers from the layout, access, and stage it already tracks, and back-to-back barriers go out together in one `vk_utils::pipelineBarrier`. *Why:* the frame is a fixed sequence, and later a loop over views. One pass can hold several draws (the tonemap and the UI; later the shadow cascades in one atlas), so a pass can't belong to what draws into it. Revisit only if the frame becomes data-driven (user-defined sensor pipelines), many short-lived post passes pile up, or profiling calls for async compute.
 - **Per-frame uploads:** each frame in flight has an `UploadAllocator` in `FrameManager`: 16 MB host-visible blocks filled in order, the next block taking over when one is full (an upload larger than a block gets a block of its own size), all reused once that frame's fence has signaled. *Why:* nothing predicts a frame's upload size, so adding a per-frame upload is one call. A prediction that came out short would overflow the buffer in Shipping, where asserts are compiled out.
 - **Scene color format:** `VK_FORMAT_R16G16B16A16_SFLOAT`. *Why:* color attachment, blending, and sampling are mandatory for it.
@@ -43,7 +43,7 @@ Physically based rendering for Null, split into six phases. Each phase leaves th
   *Why:* these are KHR_lights_punctual's units. glTF emissive has no unit, so the constant is the one place to tune it.
 - **Light direction:** a light shines along its entity's +X (forward), like cameras.
 - **Ambient until IBL:** a sky / ground hemisphere with both a diffuse and a specular term (`envBrdfApprox`). *Why:* without a specular ambient term, metals render black when only punctual lights hit them.
-- **Debug views:** a channel view shows what the Khronos Sample Viewer's debug channel shows: data (normals, metallic, roughness, occlusion, UVs) as stored, base color and emissive as colors, and no PBR Neutral. *Why:* the Sample Viewer is the reference renderer, so each view can be checked against it.
+- **Debug views:** a channel view shows what the Khronos Sample Viewer's debug channel shows: data (normals, tangents, metallic, roughness, occlusion, UVs) as stored, base color and emissive as colors, and no PBR Neutral. *Why:* the Sample Viewer is the reference renderer, so each view can be checked against it.
 
 ### Materials and meshes
 - **Material storage:** a device-local buffer of `gpu::Material`, append-only, written at load. The per-instance `colorTint` stays for runtime variation. *Why:* overwriting a slot that an in-flight frame reads needs a barrier, and nothing needs runtime edits before Episodes & Resets.
@@ -51,11 +51,12 @@ Physically based rendering for Null, split into six phases. Each phase leaves th
 - **Samplers:** one immutable sampler per texture filter (linear, nearest) × U wrap × V wrap (repeat, clamp, mirror), 18 in all, then the shadow sampler. A texture's settings index them directly. *Why:* glTF wraps each axis separately, and TextureSettingsTest mixes wrap modes on every test tile. The bindless set layout is update-after-bind, so its samplers count only against the update-after-bind limits, not `maxPerStageDescriptorSamplers` (whose required minimum is 16).
 - **Tangents:**
   - use glTF `TANGENT` when present;
-  - otherwise generate them with MikkTSpace (vendored `mikktspace.c/.h`), negate `w`, and weld the vertices again.
+  - otherwise the glTF importer generates them with MikkTSpace (vendored `mikktspace.c/.h`), negates `w`, and welds the vertices again, but only for a primitive whose material kept a normal texture;
+  - the shader applies them as `mikktspace.h` prescribes: the bitangent is `w * cross(N, T)` per pixel, from the interpolated normal and tangent as they arrive, and only the final normal is normalized.
 
-  *Why:* glTF requires MikkTSpace tangents. glTF normal maps put +Y toward the top of the image, while UV v points down.
-- **Missing normals:** the glTF importer generates flat normals (one vertex per index) and drops the file's tangents. *Why:* glTF requires both.
-- **Alpha and double-sided:** pipeline variants {opaque, mask, blend} × {cull back, cull none}. Blend draws come after opaque ones, back to front, one draw each. *Why:* opaque draws keep early depth testing, and blending happens in the right order.
+  *Why:* glTF names MikkTSpace for missing tangents, and MikkTSpace bakers write normal maps that invert exactly this transform. glTF normal maps put +Y toward the top of the image, while UV v points down. glTF calculates tangents only for a material with a normal texture, from that texture's UVs, and only the importer sees a primitive's material; until Oct 28, `ResourceManager::createMesh` generated them for every mesh with UVs.
+- **Missing normals:** the glTF importer generates flat normals (one vertex per index), welds back the corners that triangles on one flat face share, and drops the file's tangents. *Why:* glTF requires both, and the weld keeps flat faces from costing three vertices per triangle.
+- **Alpha and double-sided:** one pipeline per alpha mode {opaque, mask, blend}, all built up front by `SceneRenderer`. The cull mode is dynamic state (core since Vulkan 1.3), set per batch: back faces for single-sided materials, none for double-sided ones. Draws sort by alpha mode: opaque, mask, then blend, back to front; then single-sided before double-sided. Blend draws that share a submesh and end up next to each other still merge into one instanced draw. *Why:* opaque draws keep early depth testing, and drawing them first fills the depth buffer before the masked draws, whose `discard` keeps them from writing depth early. Blending happens in the right order: Vulkan draws instances in order, so merged blend draws stay back to front. With the cull mode dynamic, sidedness doesn't double the pipelines, and building them up front means none compiles mid-run. This changes the Oct 26 variants, {opaque, mask, blend} × {cull back, cull none}, which `ResourceManager` created on first use.
 
 ### Later phases
 - **Shadows:** directional cascaded shadow maps (CSM), 4 cascades in one 4096² D32 atlas, stabilized. They come after the per-view refactor. *Why:* an atlas needs no array images, and per-view drawing is shared with Render Views.
@@ -372,82 +373,136 @@ struct Material {
 ---
 
 ## Phase 3: Tangents, Normal Maps & Alpha
-**Status:** not started
+**Status:** done (2026-10-26)
 
 **Goal:**
 - Normal maps shade correctly, with tangents from glTF or MikkTSpace.
 - Alpha mask and alpha blend work.
 - Double-sided materials render both sides.
 
+This is the plan of Oct 15 and 18, checked against the code on Oct 26, after Phase 2. The check builds MikkTSpace as its own C11 library, since its source uses a C11 feature, and replaces the shader's Gram-Schmidt step with the transform `mikktspace.h` prescribes, the exact inverse of what MikkTSpace bakers write. It computes the bitangent before the back-face flip, sorts draws by alpha mode first, and leaves `SceneRenderer::record` as it is: neighboring blend draws of one submesh can share an instanced draw, because instances blend in order. It adds Geometry Normal and Bitangent debug views next to Tangent, names the pipeline variants, adds NormalTangentTest to the checks, and adds tests for the tangent sign, imported tangents, and the pipeline variants. The Khronos viewer generates missing tangents the same way, with MikkTSpace and `w` negated (glTF-Sample-Renderer's `primitive.js`). The implementation that day added `MeshUtils::unweldVertices`, the inverse of `weldVertices`, which tangent generation and the importer's flat normals share. The review of Oct 28 changed these parts; the tasks below still describe Oct 26:
+- Tangent generation moved from `ResourceManager::createMesh` into the glTF importer, for primitives whose material kept a normal texture. The importer also welds flat-normal primitives, and `weldVertices` treats −0 as +0, since cross products of axis-aligned edges give both.
+- The cull mode became dynamic state. `SceneRenderer` builds one pipeline per alpha mode up front (`Scene_Opaque`, `Scene_Mask`, `Scene_Blend`) and sets the cull mode per batch. `getOrCreatePipeline` is gone, and `Material` holds no pipeline. `ResourceManager` no longer takes the scene formats.
+- `Pipeline::Config` lost `cullMode` and the unused `StencilMode`, and its `debugName` became required.
+- `MeshUtils` moved to `src/core/`, so the importer doesn't include a renderer header.
+- Index counts that aren't whole triangles are rejected, by the importer and by `MeshData::validate()`.
+- Enum names come from switches, which `-Wswitch` checks against their enums: `toString()` next to the material enums, and MainUI's names for the debug views.
+- Tests that write files get a `TempDirectory` of their own, deleted when the test ends.
+
+**Data:**
+- `gpu::Vertex` (64 bytes; offsets 0, 12, 24, 32, 48 and a 64-byte stride, checked with slangc on Oct 26). The vertex pool then holds 1M vertices instead of 1.4M.
+```cpp
+struct Vertex {
+  Vec3 pos{0.0f};
+  Vec3 normal{0.0f, 0.0f, 1.0f};
+  Vec2 uv{0.0f};
+  LinearColor color = LinearColor::White;
+  Vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f}; // xyz toward +u; cross(normal, xyz) * w points up the image (toward -v)
+};
+```
+- `SubmeshData` gains `std::vector<Vec4> tangents`: engine axes, `w` = ±1 as glTF defines it.
+- `AlphaMode` gains `Count`, which sizes `ResourceManager`'s pipeline table.
+- `DebugView` becomes `{ Lit, BaseColor, Normal, GeometryNormal, Tangent, Bitangent, Metallic, Roughness, Occlusion, Emissive, Uv, Count }`. Normal now shows the normal-mapped normal.
+
 **Tasks:**
-1. **Vertex format:**
-   - `gpu::Vertex` gains `Vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f}`, making it 64 bytes. Update the `static_assert` and the Slang struct.
-   - `SubmeshData` gains `std::vector<Vec4> tangents`, and `GeometryAllocator::stageMesh` writes it.
-2. **glTF importer:**
-   - Read `TANGENT`; only VEC4 is allowed, so add it to `hasAllowedType`. Convert xyz with `toEngineAxes` and keep w.
-   - A primitive without `NORMAL` gets flat normals:
-     - expand to one vertex per index (positions, UVs, colors);
-     - use the face normals;
-     - set indices to 0..n−1;
-     - drop its tangents.
-3. **Vendor MikkTSpace** in `third_party/mikktspace/`:
-   - `mikktspace.c` and `mikktspace.h` from github.com/mmikk/MikkTSpace (zlib license, in the header);
-   - a `CMakeLists.txt` that records the source and commit and builds it as C, like the other vendored folders;
-   - link it to the engine.
+1. **Vendor MikkTSpace**, first and in its own commit, so the phase's diff holds only engine code:
+   - `mikktspace.c` and `mikktspace.h` into `third_party/mikktspace/`, from github.com/mmikk/MikkTSpace, master at commit 3e895b4 of 2020-03-25 (its latest). Both files carry the zlib license.
+   - A `CMakeLists.txt` that records the source and commit and builds a `STATIC` library in C11 (`project(mikktspace LANGUAGES C)`, `C_STANDARD 11`), with its own flags like glfw. It can't be an INTERFACE library compiled into the engine like cgltf and stb: its `SEdge` union holds an anonymous struct, which C11 allows but C99 and C++ take only as an extension, so the engine's `-Wpedantic` warns.
+   - `add_subdirectory` it next to the others and link it to the engine.
+2. **Vertex format:** `GeometryAllocator::stageMesh` writes `tangents` like the other attributes, and the default when a submesh has none. `scene.slang`'s `Vertex` mirrors the struct.
+3. **glTF importer:**
+   - Read `TANGENT`. glTF allows only VEC4, so `hasAllowedType` checks it. Convert xyz with `toEngineAxes` and keep `w`: the axis change is a rotation, so it keeps handedness.
+   - A primitive without `NORMAL` gets flat normals, and its tangents are dropped, as glTF requires:
+     - expand it to one vertex per index (positions, UVs, colors) with `MeshUtils::unweldVertices`;
+     - give each vertex its triangle's counter-clockwise face normal (a zero-area triangle covers no pixels, so any unit normal does);
+     - set the indices to 0..n−1.
 4. **`MeshUtils`** (`src/renderer/mesh_utils.{h,cpp}`):
    - **`bool generateTangents(SubmeshData& ioSubmesh)`** needs normals and UVs. It:
      1. expands the submesh to one vertex per index;
      2. runs `genTangSpaceDefault`;
-     3. negates each `w`;
+     3. stores each tangent with its `w` negated;
      4. calls `weldVertices`.
 
      It returns false, and logs why, when it can't.
-   - **`void weldVertices(SubmeshData& ioSubmesh)`** merges vertices whose position, normal, UV, color, and tangent are bitwise equal, and rebuilds the indices. Mesh Formats reuses it later.
-5. **`ResourceManager::createMesh`:** after `validate()`, generate tangents on a copy of each submesh that has normals and UVs but no tangents.
-6. **Shader, normal mapping** (when `flags & 1`):
-   - Transform the tangent with the model matrix, not the normal matrix, then Gram-Schmidt it against N.
-   - `B = cross(N, T) * tangent.w`.
-   - `n = texture * 2 - 1`, then `n.xy *= normalScale`.
-   - `N = normalize(T * n.x + B * n.y + N * n.z)`.
-   - On back faces (`SV_IsFrontFace` false), flip N and the tangent frame before shading.
-   - Add a `Tangent` debug view.
+   - **`void unweldVertices(SubmeshData& ioSubmesh)`** gives each index a vertex of its own, in index order, and sets the indices to 0..n−1.
+   - **`void weldVertices(SubmeshData& ioSubmesh)`** merges vertices whose position, normal, UV, color, and tangent are bitwise equal, keeps the order they first appear in, and rebuilds the indices. Mesh Formats reuses it later.
+5. **`ResourceManager::createMesh`:** after `validate()`, generate tangents on a copy of each submesh that has normals and UVs but no tangents. A submesh whose generation fails keeps the default tangent.
+6. **Shader, normal mapping**, the way `mikktspace.h` prescribes:
+   - The vertex shader outputs `float4(normalize(mul((float3x3)modelMatrix, tangent.xyz)), tangent.w)`. It uses the model matrix, not the normal matrix: a tangent lies in the surface, and the normal matrix keeps the normal perpendicular to it under non-uniform scale.
+   - The fragment shader takes the interpolated N and T as they arrive, unnormalized:
+     ```slang
+     float3 N = vertIn.normal;
+     float3 T = vertIn.tangent.xyz;
+     float3 B = vertIn.tangent.w * cross(N, T);
+     if (!isFrontFace) { // Only double-sided materials draw back faces
+       N = -N;
+       T = -T;
+       B = -B;
+     }
+     if ((material.flags & kMaterialHasNormalTexture) != 0) {
+       float3 n = sampleTexture(material.normalTexture, vertIn.uv).xyz * 2.0 - 1.0;
+       n.xy *= material.normalScale;
+       N = n.x * T + n.y * B + n.z * N;
+     }
+     N = normalize(N);
+     ```
+   - The debug views write the final N (Normal), the normalized vertex normal (Geometry Normal), and the normalized T and B (Tangent, Bitangent), all after the back-face flip. They match the Sample Viewer's Shading Normal, Geometry Normal, Geometry Tangent, and Geometry Bitangent channels. `MainUI`'s names follow the enum.
 7. **Pipelines:**
-   - `Pipeline::Config` gains `bool alphaBlend` (src alpha / one-minus-src-alpha) and `std::string fragmentEntry = "fragMain"`.
-   - `ResourceManager::getOrCreatePipeline(alphaMode, doubleSided)` caches by both:
+   - `Pipeline::Config` gains:
+     - `std::string fragmentEntry = "fragMain"`;
+     - `BlendMode blendMode = BlendMode::Disabled`, with `enum class BlendMode : uint8_t { Disabled, Alpha }` next to `DepthMode` and `StencilMode`. Alpha blends color with `SRC_ALPHA` and `ONE_MINUS_SRC_ALPHA`; the write mask stays RGB, so the alpha factors don't matter;
+     - `std::string debugName`, the shader name when empty, so RenderDoc tells the variants apart (`Scene_Mask_DoubleSided`).
+   - `ResourceManager::getOrCreatePipeline(iAlphaMode, iDoubleSided)` keeps a table of `AlphaMode::Count` × 2 pipelines, each created on first use:
 
      | Material | Fragment entry | Other state |
      |---|---|---|
      | Opaque | `fragMain` | — |
-     | Mask | `fragMainMasked` (discards below `alphaCutoff`) | — |
-     | Blend | `fragMain` | `alphaBlend`, `DepthMode::ReadOnly` |
+     | Mask | `fragMainMasked` | — |
+     | Blend | `fragMain` | `BlendMode::Alpha`, `DepthMode::ReadOnly` |
      | Double-sided (any of the above) | — | `VK_CULL_MODE_NONE` |
 
-   - `Material` takes its pipeline from these variants.
+   - `createMaterial` passes the material's alpha mode and sidedness. `Material` doesn't change.
+   - Both entry points share one shading function. `fragMainMasked` first discards when the base color's alpha (factor × texture × vertex color × tint) is below `alphaCutoff`.
 8. **`SceneRenderer`:**
-   - Opaque and mask draws work as today: sorted by pipeline, then submesh, and instanced.
-   - Blend draws come afterwards, sorted back to front by the distance from the camera to the entity's world position.
-   - Each blend draw gets its own indirect command (instance count 1). The multi-draw splits only where the pipeline changes.
+   - `prepare` keeps the primary camera's world position.
+   - `DrawCall` gains `AlphaMode alphaMode` and `float distanceSq`, from the camera to the entity's world position.
+   - Draws sort by alpha mode first: opaque, mask, then blend. Opaque and mask draws then sort by pipeline and submesh, as today; blend draws by `distanceSq`, far to near.
+   - `record` doesn't change. It already starts a new multi-draw where the pipeline changes and merges neighbors that share a submesh into one instanced draw. Merged blend draws still blend back to front, because Vulkan draws instances in order.
 9. **Tests:**
-   - `generateTangents` on `createBoxMeshData`: 24 vertices after welding. Every tangent is unit length and perpendicular to its normal, and every `w` is ±1.
-   - importer: a triangle without `NORMAL` gets 3 flat normals equal to its face normal.
+   - `generateTangents` on `createBoxMeshData`:
+     - 24 vertices after welding;
+     - every tangent is unit length and perpendicular to its normal, and every `w` is ±1;
+     - on every triangle, T points toward +u and `cross(N, T) * w` toward −v, the image's up. This catches a missing `w` negation before any screenshot does.
+   - importer, with `writeTriangleGltf` given accessor 4 (VEC3 normals, all (0, 0, 1)) and accessor 5 (VEC4 tangents, all (1, 0, 0, −1)):
+     - a triangle without `NORMAL` gets three flat normals equal to its face normal, engine +X (glTF +Z);
+     - with `NORMAL`, a `TANGENT` converts to engine axes and keeps `w`: (0, 1, 0, −1);
+     - without `NORMAL`, the `TANGENT` is dropped.
+   - renderer, "Frames Render With Every Pipeline Variant": one cube per alpha mode × sidedness in front of BasicApp's camera, with base alpha 0.5. Run `runForFrames(3)`, then destroy them. In CI this runs discard, blending, and culling off under validation on lavapipe.
 
 **Done when:**
-- The helmet's panel seams and dents are lit from the light's side; the bumps don't look inverted.
-- In glTF-Sample-Assets' NormalTangentMirrorTest, every tile looks the same.
+- In BasicApp only the helmet changes: its panel seams and dents are lit from the light's side, and the bumps don't look inverted.
+- In glTF-Sample-Assets' NormalTangentTest (tangents generated) and NormalTangentMirrorTest (tangents from the file), every hemisphere looks the same.
 - AlphaBlendModeTest's opaque, mask, and blend rows look as they do in the Khronos glTF Sample Viewer.
 - A double-sided plane is visible from behind, and TextureSettingsTest's double-sided tile looks as it does in the Sample Viewer.
 
 **Pitfalls:**
-- Negate MikkTSpace's `w`, or equivalently run it on `1 − v`. If you forget, the bumps look inverted. That's easy to miss on the helmet and obvious on NormalTangentMirrorTest.
+- Negate MikkTSpace's `w`, or equivalently run it on `1 − v`. If you forget, the bumps look inverted. That's easy to miss on the helmet and obvious on NormalTangentTest; the box test catches it first.
 - MikkTSpace's output is one vertex per index. Weld it again, or vertex counts triple.
+- Compute B before the back-face flip. `cross(-N, -T)` equals `cross(N, T)`, so a B computed after the flip doesn't flip, and back faces get a mirrored bump instead of the reverse one.
+- Don't normalize N or T, or Gram-Schmidt T, before building the normal. MikkTSpace bakers invert this formula on the interpolated vectors as they are; normalize once, at the end.
 - Mirrored instances (negative scale determinant) flip the handedness too. That's ignored for now; the importer already warns about mirrored nodes.
-- Blend draws can't be merged into instanced draws. Blended pixels need the opaque depth but must not write depth.
 - Put `discard` only in the masked entry point, so opaque draws keep early depth testing.
+- Blended pixels test against the opaque depth but must not write depth.
+- A double-sided blend mesh draws its back and front faces in index order, so a closed transparent mesh can blend in the wrong order. Fixing that takes a back-faces-first pass, which nothing needs yet.
+- `gpu::DebugView` and the Slang enum list the views in the same order, and nothing checks it. `-Wswitch` flags a view that MainUI doesn't name.
+- The helmet has no `TANGENT`, so MikkTSpace runs on it at load: about 0.1 s in Debug (measured Oct 26), next to the 1.2 s of its textures. Welding brings it back to the file's 14,556 vertices.
 
 ---
 
 ## Phase 4: Lights, Exposure & PBR Shading
 **Status:** not started
+
+**Before starting:** the capture half of Frame Capture & Golden Images (README → Tools), so this phase's before / after screenshots come from the engine.
 
 **Goal:** Physically based shading:
 - the glTF metal-roughness BRDF, lit by light components in physical units;
@@ -591,6 +646,8 @@ float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
 ## Phase 5: Shadows
 **Status:** not started
 
+**Before starting:** Context-Driven Encoder Pattern & RHI Decoupling (README → Engine & Performance), so `recordView` records through the encoder.
+
 **Goal:** The directional light casts stable cascaded shadows. First, the scene's draws are gathered once per frame and recorded per view; Render Views reuses this for sensors.
 
 **Part A: per-view drawing** (no visual change)
@@ -601,7 +658,7 @@ float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
      - builds the batch list.
    - `recordView(iCommandBuffer, ioUploadAllocator, iView)`, once per view, into the pass `Renderer` opened:
      - uploads that view's `GlobalUniforms`;
-     - binds each batch's pipeline;
+     - binds each batch's pipeline and sets its cull mode;
      - issues the multi-draws.
 2. A `View` struct holds the view-projection matrix, camera position, exposure, and pass kind (color or depth-only).
 3. `Renderer` finds the primary camera, calls `prepare` and `upload` once, then `recordView` for the camera.
@@ -620,6 +677,7 @@ float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
      3. Projection: reverse-Z orthographic, 2 × radius wide. Use `CameraComponent`'s orthographic math with aspect 1; near plane 0.01, far plane 2 × radius + casterMargin.
      4. Snap: project the world origin, round it to whole shadow-map texels, and add the difference to the projection's translation.
 4. **Shadow pipelines:** depth-only variants (no color attachment, D32 depth, depth bias enabled).
+   - Like the scene pipelines, `SceneRenderer` builds them up front, one for opaque and one for mask materials, and they take the cull mode as dynamic state.
    - Opaque materials use an empty `fragmentEntry`, which means a vertex-only pipeline.
    - Mask materials use `fragMainMasked`.
    - Blend materials don't cast shadows.
@@ -701,7 +759,7 @@ Download these for manual checks, and don't commit them; `content/` stays small.
   | Model | Checks | Phase |
   |---|---|---|
   | TextureSettingsTest | samplers (per-axis wrap); double-sided | 2, 3 |
-  | NormalTangentMirrorTest, NormalTangentTest | tangents and normal maps | 3 |
+  | NormalTangentTest, NormalTangentMirrorTest | normal maps, with tangents generated and from the file | 3 |
   | AlphaBlendModeTest | alpha modes | 3 |
   | MetalRoughSpheresNoTextures | the BRDF | 4 |
 

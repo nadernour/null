@@ -13,6 +13,7 @@ namespace ne {
 
 Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   NE_ASSERT(mDevice != VK_NULL_HANDLE, "Device must not be VK_NULL_HANDLE");
+  NE_ASSERT(!iConfig.debugName.empty(), "The pipeline for shader '{}' needs a debug name", iConfig.shaderName);
   VkShaderModule shaderModule = createShaderModule(iConfig.shaderName);
 
   VkPipelineShaderStageCreateInfo vertShaderStageCreateInfo{};
@@ -25,7 +26,7 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   fragShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
   fragShaderStageCreateInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
   fragShaderStageCreateInfo.module = shaderModule;
-  fragShaderStageCreateInfo.pName = "fragMain";
+  fragShaderStageCreateInfo.pName = iConfig.fragmentEntry.c_str();
 
   VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageCreateInfo, fragShaderStageCreateInfo};
 
@@ -52,7 +53,8 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   rasterizationStateCreateInfo.depthClampEnable = VK_FALSE; // enabling requires a gpu feature
   rasterizationStateCreateInfo.rasterizerDiscardEnable = VK_FALSE;
   rasterizationStateCreateInfo.polygonMode = VK_POLYGON_MODE_FILL; // changing requires a gpu feature
-  rasterizationStateCreateInfo.cullMode = iConfig.cullMode;
+  // Ignored: the cull mode is dynamic state, see below
+  rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_NONE;
   rasterizationStateCreateInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // Right-handed (glTF) winding
   rasterizationStateCreateInfo.depthBiasEnable = VK_FALSE;
   rasterizationStateCreateInfo.depthBiasConstantFactor = 0.0f;
@@ -76,14 +78,16 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   depthStencilStateCreateInfo.depthBoundsTestEnable = VK_FALSE;
   depthStencilStateCreateInfo.minDepthBounds = 0.0f;
   depthStencilStateCreateInfo.maxDepthBounds = 1.0f;
-  depthStencilStateCreateInfo.stencilTestEnable = iConfig.stencilMode != StencilMode::Disabled ? VK_TRUE : VK_FALSE;
+  depthStencilStateCreateInfo.stencilTestEnable = VK_FALSE;
   depthStencilStateCreateInfo.depthCompareOp =
       iConfig.depthMode != DepthMode::Disabled ? VK_COMPARE_OP_GREATER_OR_EQUAL : VK_COMPARE_OP_ALWAYS;
 
+  // The write mask leaves alpha out, so only the color factors matter
+  const bool alphaBlend = iConfig.blendMode == BlendMode::Alpha;
   VkPipelineColorBlendAttachmentState colorBendAttachmentState{};
-  colorBendAttachmentState.blendEnable = false;
-  colorBendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-  colorBendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+  colorBendAttachmentState.blendEnable = alphaBlend ? VK_TRUE : VK_FALSE;
+  colorBendAttachmentState.srcColorBlendFactor = alphaBlend ? VK_BLEND_FACTOR_SRC_ALPHA : VK_BLEND_FACTOR_ZERO;
+  colorBendAttachmentState.dstColorBlendFactor = alphaBlend ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : VK_BLEND_FACTOR_ZERO;
   colorBendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;
   colorBendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
   colorBendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
@@ -100,7 +104,8 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   NE_ASSERT(iConfig.layout != VK_NULL_HANDLE, "Pipeline layout must not be VK_NULL_HANDLE");
   mPipelineLayout = iConfig.layout;
 
-  std::vector<VkDynamicState> dynamicState = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+  // Cull mode has been core dynamic state since Vulkan 1.3, so one pipeline draws single- and double-sided surfaces
+  std::vector<VkDynamicState> dynamicState = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_CULL_MODE};
   VkPipelineDynamicStateCreateInfo dynamicStateCreateInfo{};
   dynamicStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
   dynamicStateCreateInfo.dynamicStateCount = static_cast<uint32_t>(dynamicState.size());
@@ -136,10 +141,10 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   graphicsPipelineCreateInfo.basePipelineIndex = 0;
 
   VK_CHECK(vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &graphicsPipelineCreateInfo, nullptr, &mGraphicsPipeline));
-  vk_utils::setDebugObjectName(mDevice, mGraphicsPipeline, std::format("{}_GraphicsPipeline", iConfig.shaderName).c_str());
+  vk_utils::setDebugObjectName(mDevice, mGraphicsPipeline, std::format("{}_GraphicsPipeline", iConfig.debugName).c_str());
 
   vkDestroyShaderModule(mDevice, shaderModule, nullptr);
-  NE_VERBOSE("Created Graphics Pipeline for shader: '{}' (Pipeline: {}, Layout: {})", iConfig.shaderName,
+  NE_VERBOSE("Created Graphics Pipeline '{}' for shader: '{}' (Pipeline: {}, Layout: {})", iConfig.debugName, iConfig.shaderName,
              (void*)mGraphicsPipeline, (void*)mPipelineLayout);
 }
 

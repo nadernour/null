@@ -11,10 +11,10 @@ Tonemapper::Tonemapper(Device* iDevice, VkPipelineLayout iPipelineLayout, VkForm
 
   Pipeline::Config pipelineConfig{
       .shaderName = "tonemap",
+      .debugName = "Tonemap",
       .layout = iPipelineLayout,
       .colorAttachmentFormat = iColorFormat,
       .depthMode = Pipeline::DepthMode::Disabled,
-      .cullMode = VK_CULL_MODE_NONE, // The fullscreen triangle winds clockwise
   };
   mPipeline = std::make_unique<Pipeline>(iDevice->getDevice(), pipelineConfig);
 }
@@ -23,6 +23,7 @@ Tonemapper::~Tonemapper() = default;
 
 void Tonemapper::record(VkCommandBuffer iCommandBuffer, uint32_t iHdrTextureIndex, bool iEncodeSrgb, bool iApplyCurve) {
   mPipeline->bind(iCommandBuffer);
+  vkCmdSetCullMode(iCommandBuffer, VK_CULL_MODE_NONE); // The fullscreen triangle winds clockwise
 
   gpu::TonemapPushConstants constants{
       .hdrTexture = iHdrTextureIndex, .encodeSrgb = iEncodeSrgb ? 1u : 0u, .applyCurve = iApplyCurve ? 1u : 0u};

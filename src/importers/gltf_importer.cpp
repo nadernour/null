@@ -1,6 +1,7 @@
 #include "importers/gltf_importer.h"
 #include "core/filesystem.h"
 #include "core/logger.h"
+#include "core/mesh_utils.h"
 #include "importers/image_importer.h"
 
 #include <cgltf.h>
@@ -19,6 +20,8 @@ namespace {
 // rotation, so winding and tangent handedness are preserved and vectors, quaternion axes, and scales convert alike.
 Vec3 toEngineAxes(const Vec3& iGltf) { return Vec3(iGltf.z, iGltf.x, iGltf.y); }
 Quat toEngineAxes(const Quat& iGltf) { return Quat(iGltf.z, iGltf.x, iGltf.y, iGltf.w); }
+// A tangent's w, the bitangent's sign, stays as it is
+Vec4 toEngineAxes(const Vec4& iGltf) { return Vec4(iGltf.z, iGltf.x, iGltf.y, iGltf.w); }
 
 const char* resultToString(cgltf_result iResult) {
   switch (iResult) {
@@ -62,12 +65,14 @@ bool isSupportedRequiredExtension(const char* iName) {
   return false;
 }
 
-// glTF allows POSITION and NORMAL only as VEC3, TEXCOORD as VEC2, and COLOR as VEC3 or VEC4
+// glTF allows POSITION and NORMAL only as VEC3, TANGENT as VEC4, TEXCOORD as VEC2, and COLOR as VEC3 or VEC4
 bool hasAllowedType(const cgltf_attribute& iAttribute) {
   switch (iAttribute.type) {
     case cgltf_attribute_type_position:
     case cgltf_attribute_type_normal:
       return iAttribute.data->type == cgltf_type_vec3;
+    case cgltf_attribute_type_tangent:
+      return iAttribute.data->type == cgltf_type_vec4;
     case cgltf_attribute_type_texcoord:
       return iAttribute.data->type == cgltf_type_vec2;
     case cgltf_attribute_type_color:
@@ -77,9 +82,28 @@ bool hasAllowedType(const cgltf_attribute& iAttribute) {
   }
 }
 
+// glTF requires flat normals for a primitive without NORMAL: each triangle gets three vertices of its own, which take
+// its counter-clockwise face normal. Welding then merges the corners that triangles on one flat face still share.
+void generateFlatNormals(SubmeshData& ioSubmesh) {
+  MeshUtils::unweldVertices(ioSubmesh);
+  ioSubmesh.normals.resize(ioSubmesh.positions.size());
+  for (size_t i = 0; i < ioSubmesh.positions.size(); i += 3) {
+    const Vec3& p0 = ioSubmesh.positions[i];
+    // Any length but zero normalizes, so tiny triangles keep theirs; a zero-area one covers no pixels, so Up does
+    const Vec3 faceNormal =
+        (ioSubmesh.positions[i + 1] - p0).cross(ioSubmesh.positions[i + 2] - p0).getSafeNormal(0.0f, Vec3::Up);
+    ioSubmesh.normals[i] = faceNormal;
+    ioSubmesh.normals[i + 1] = faceNormal;
+    ioSubmesh.normals[i + 2] = faceNormal;
+  }
+  MeshUtils::weldVertices(ioSubmesh);
+}
+
 // Null, with the reason logged, when the primitive can't be drawn. An optional attribute glTF doesn't allow is dropped
-// instead, so the primitive still draws.
-std::optional<SubmeshData> importPrimitive(const cgltf_primitive& iPrimitive, const char* iMeshName, cgltf_size iPrimitiveIndex) {
+// instead, so the primitive still draws. iHasNormalTexture says whether its material kept a normal texture, which needs
+// tangents.
+std::optional<SubmeshData> importPrimitive(const cgltf_primitive& iPrimitive, const char* iMeshName, cgltf_size iPrimitiveIndex,
+                                           bool iHasNormalTexture) {
   if (iPrimitive.type != cgltf_primitive_type_triangles) {
     NE_WARN("GltfImporter: Skipped primitive {} of mesh '{}': only triangles are supported", iPrimitiveIndex, iMeshName);
     return std::nullopt;
@@ -87,6 +111,7 @@ std::optional<SubmeshData> importPrimitive(const cgltf_primitive& iPrimitive, co
 
   const cgltf_accessor* positionAccessor = nullptr;
   const cgltf_accessor* normalAccessor = nullptr;
+  const cgltf_accessor* tangentAccessor = nullptr;
   const cgltf_accessor* texCoordAccessor = nullptr;
   const cgltf_accessor* colorAccessor = nullptr;
   for (cgltf_size k = 0; k < iPrimitive.attributes_count; ++k) {
@@ -103,6 +128,8 @@ std::optional<SubmeshData> importPrimitive(const cgltf_primitive& iPrimitive, co
       positionAccessor = attribute.data;
     } else if (attribute.type == cgltf_attribute_type_normal) {
       normalAccessor = attribute.data;
+    } else if (attribute.type == cgltf_attribute_type_tangent) {
+      tangentAccessor = attribute.data;
     } else if (attribute.type == cgltf_attribute_type_texcoord) {
       texCoordAccessor = attribute.data;
     } else if (attribute.type == cgltf_attribute_type_color) {
@@ -114,12 +141,19 @@ std::optional<SubmeshData> importPrimitive(const cgltf_primitive& iPrimitive, co
     NE_WARN("GltfImporter: Skipped primitive {} of mesh '{}': it has no usable POSITION", iPrimitiveIndex, iMeshName);
     return std::nullopt;
   }
+  // glTF ignores the tangents of a primitive without normals, which gets flat normals instead
+  if (!normalAccessor) {
+    tangentAccessor = nullptr;
+  }
 
   const cgltf_size vertexCount = positionAccessor->count;
   SubmeshData submesh;
   submesh.positions.resize(vertexCount);
   if (normalAccessor) {
     submesh.normals.resize(vertexCount);
+  }
+  if (tangentAccessor) {
+    submesh.tangents.resize(vertexCount);
   }
   if (texCoordAccessor) {
     submesh.texCoords.resize(vertexCount);
@@ -137,6 +171,11 @@ std::optional<SubmeshData> importPrimitive(const cgltf_primitive& iPrimitive, co
     if (normalAccessor) {
       isRead = isRead && cgltf_accessor_read_float(normalAccessor, v, &submesh.normals[v].x, 3);
       submesh.normals[v] = toEngineAxes(submesh.normals[v]);
+    }
+
+    if (tangentAccessor) {
+      isRead = isRead && cgltf_accessor_read_float(tangentAccessor, v, &submesh.tangents[v].x, 4);
+      submesh.tangents[v] = toEngineAxes(submesh.tangents[v]);
     }
 
     if (texCoordAccessor) {
@@ -167,10 +206,21 @@ std::optional<SubmeshData> importPrimitive(const cgltf_primitive& iPrimitive, co
     }
   }
 
-  if (submesh.positions.size() < 3 || submesh.indices.size() < 3) {
-    NE_WARN("GltfImporter: Skipped primitive {} of mesh '{}': a triangle needs 3 vertices and 3 indices, it has {} and {}",
+  // glTF allows only whole triangles, which the flat normals and MikkTSpace below count on
+  if (submesh.positions.size() < 3 || submesh.indices.size() < 3 || submesh.indices.size() % 3 != 0) {
+    NE_WARN("GltfImporter: Skipped primitive {} of mesh '{}': triangles need 3 or more vertices and a multiple of 3 indices, "
+            "it has {} and {}",
             iPrimitiveIndex, iMeshName, submesh.positions.size(), submesh.indices.size());
     return std::nullopt;
+  }
+
+  if (!normalAccessor) {
+    generateFlatNormals(submesh);
+  }
+  // glTF calculates missing tangents only for a material with a normal texture, from that texture's UVs. The importer
+  // keeps a normal texture only on TEXCOORD_0, the set texCoords holds.
+  if (iHasNormalTexture && submesh.tangents.empty()) {
+    MeshUtils::generateTangents(submesh);
   }
   return submesh;
 }
@@ -196,8 +246,8 @@ Transform importNodeTransform(const cgltf_node& iNode) {
 }
 
 // Appends iNode and its subtree depth-first, so parents always precede their children
-void importNode(const cgltf_data& iData, const cgltf_node& iNode, int32_t iParentIndex,
-                const std::vector<int32_t>& iMeshIndices, ModelData& ioModel) {
+void importNode(const cgltf_data& iData, const cgltf_node& iNode, int32_t iParentIndex, const std::vector<int32_t>& iMeshIndices,
+                ModelData& ioModel) {
   ModelNode node;
   node.name = iNode.name ? iNode.name : "";
   node.localTransform = importNodeTransform(iNode);
@@ -306,8 +356,8 @@ TextureRef importTexture(ModelImages& ioImages, const cgltf_texture_view& iView,
     return texture;
   }
   if (iView.texcoord != 0) {
-    NE_WARN("GltfImporter: Dropped the {} texture of material '{}': it uses TEXCOORD_{}, and only TEXCOORD_0 is imported",
-            iSlot, iMaterialName, iView.texcoord);
+    NE_WARN("GltfImporter: Dropped the {} texture of material '{}': it uses TEXCOORD_{}, and only TEXCOORD_0 is imported", iSlot,
+            iMaterialName, iView.texcoord);
     return texture;
   }
   if (iView.has_transform) {
@@ -336,8 +386,8 @@ MaterialData importMaterial(ModelImages& ioImages, const cgltf_material& iMateri
   const char* name = material.name.c_str();
 
   // cgltf starts from glTF's defaults, also when pbrMetallicRoughness is missing
-  material.baseColor = LinearColor{pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2],
-                                   pbr.base_color_factor[3]};
+  material.baseColor =
+      LinearColor{pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2], pbr.base_color_factor[3]};
   material.metallic = pbr.metallic_factor;
   material.roughness = pbr.roughness_factor;
   const float emissiveStrength = iMaterial.has_emissive_strength ? iMaterial.emissive_strength.emissive_strength : 1.0f;
@@ -359,8 +409,7 @@ MaterialData importMaterial(ModelImages& ioImages, const cgltf_material& iMateri
   }
 
   material.baseColorTexture = importTexture(ioImages, pbr.base_color_texture, true, "base color", name);
-  material.metallicRoughnessTexture =
-      importTexture(ioImages, pbr.metallic_roughness_texture, false, "metallic-roughness", name);
+  material.metallicRoughnessTexture = importTexture(ioImages, pbr.metallic_roughness_texture, false, "metallic-roughness", name);
   material.normalTexture = importTexture(ioImages, iMaterial.normal_texture, false, "normal", name);
   material.occlusionTexture = importTexture(ioImages, iMaterial.occlusion_texture, false, "occlusion", name);
   material.emissiveTexture = importTexture(ioImages, iMaterial.emissive_texture, true, "emissive", name);
@@ -429,7 +478,10 @@ ModelData importModel(const std::string& iPath) {
     MeshData mesh;
     for (cgltf_size j = 0; j < data->meshes[i].primitives_count; ++j) {
       const cgltf_primitive& primitive = data->meshes[i].primitives[j];
-      std::optional<SubmeshData> submesh = importPrimitive(primitive, meshName, j);
+      // The materials are already imported, so a normal texture the importer dropped asks for no tangents
+      const bool hasNormalTexture =
+          primitive.material && model.materials[cgltf_material_index(data, primitive.material)].normalTexture.image >= 0;
+      std::optional<SubmeshData> submesh = importPrimitive(primitive, meshName, j, hasNormalTexture);
       if (!submesh) {
         continue;
       }

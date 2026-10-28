@@ -256,10 +256,13 @@ NE_TEST_CASE("scene", "Malformed Meshes Are Rejected") {
   triangle.indices = {0, 1, 2};
   SubmeshData outOfRange = triangle;
   outOfRange.indices = {0, 1, 3};
+  SubmeshData partial = triangle;
+  partial.indices = {0, 1, 2, 0};
 
   NE_TEST_ASSERT(resources.createMesh(MeshData{.submeshes = {triangle}}), "A well-formed mesh is created.");
   NE_TEST_ASSERT(!resources.createMesh(MeshData{.submeshes = {triangle, outOfRange}}),
                  "An index past its submesh's vertices rejects the whole mesh.");
+  NE_TEST_ASSERT(!resources.createMesh(MeshData{.submeshes = {partial}}), "Indices that aren't whole triangles are rejected.");
   NE_TEST_ASSERT(!resources.createMesh(MeshData{.submeshes = {SubmeshData{}}}), "An empty submesh is rejected.");
   NE_TEST_ASSERT(!resources.createMesh(MeshData{}), "A mesh without submeshes is rejected.");
 

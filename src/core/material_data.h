@@ -6,9 +6,50 @@
 
 namespace ne {
 
-enum class AlphaMode : uint8_t { Opaque, Mask, Blend };
+enum class AlphaMode : uint8_t { Opaque, Mask, Blend, Count };
 enum class TextureWrap : uint8_t { Repeat, Clamp, Mirror, Count };
 enum class TextureFilter : uint8_t { Linear, Nearest, Count };
+
+// Names for logs and debug names. The switches have no default, so -Wswitch flags an enumerator without a name.
+constexpr const char* toString(AlphaMode iAlphaMode) {
+  switch (iAlphaMode) {
+    case AlphaMode::Opaque:
+      return "Opaque";
+    case AlphaMode::Mask:
+      return "Mask";
+    case AlphaMode::Blend:
+      return "Blend";
+    case AlphaMode::Count:
+      break;
+  }
+  return "Unknown";
+}
+
+constexpr const char* toString(TextureWrap iWrap) {
+  switch (iWrap) {
+    case TextureWrap::Repeat:
+      return "Repeat";
+    case TextureWrap::Clamp:
+      return "Clamp";
+    case TextureWrap::Mirror:
+      return "Mirror";
+    case TextureWrap::Count:
+      break;
+  }
+  return "Unknown";
+}
+
+constexpr const char* toString(TextureFilter iFilter) {
+  switch (iFilter) {
+    case TextureFilter::Linear:
+      return "Linear";
+    case TextureFilter::Nearest:
+      return "Nearest";
+    case TextureFilter::Count:
+      break;
+  }
+  return "Unknown";
+}
 
 // A material's texture and its sampler settings; image indexes ModelData::images, -1 for none
 struct TextureRef {

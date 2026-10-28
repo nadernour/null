@@ -4,6 +4,7 @@
 
 #include "core/logger.h"
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -50,6 +51,23 @@ struct TestRegistrar {
 };
 
 int runAllTests(Application& ioApp);
+
+// A new, empty directory in the system's temp directory for one test. It's deleted with everything in it when it goes
+// out of scope, so also when a failed NE_TEST_ASSERT ends the test early. Its name is random, so test runs that overlap
+// never share one.
+class TempDirectory {
+public:
+  TempDirectory();
+  ~TempDirectory();
+
+  TempDirectory(const TempDirectory&) = delete;
+  TempDirectory& operator=(const TempDirectory&) = delete;
+
+  const std::filesystem::path& getPath() const { return mPath; }
+
+private:
+  std::filesystem::path mPath;
+};
 
 } // namespace ne::test
 

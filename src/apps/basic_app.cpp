@@ -7,12 +7,12 @@
 #include "core/logger.h"
 #include "core/material_data.h"
 #include "core/math/math.h"
+#include "core/mesh_utils.h"
 #include "core/time.h"
 #include "importers/gltf_importer.h"
 #include "importers/image_importer.h"
 #include "renderer/material.h"
 #include "renderer/mesh.h"
-#include "renderer/mesh_utils.h"
 #include "renderer/resource_manager.h"
 #include "scene/prefab.h"
 #include <array>

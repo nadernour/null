@@ -8,8 +8,10 @@
 #include <cgltf.h>
 
 // std
+#include <algorithm>
 #include <array>
 #include <filesystem>
+#include <format>
 #include <fstream>
 
 namespace ne::test {
@@ -90,49 +92,75 @@ bool matchesGltfWorldPositions(const ModelData& iModel, const std::vector<Vec3>&
   return true;
 }
 
-// Writes a one-triangle glTF and its .bin buffer to the temp directory and returns the .gltf path. Accessor 0 holds the
-// positions (VEC3), 1 the indices, and 2 and 3 two UV sets (VEC2, all zeros and all ones). iAttributes is the primitive's
-// attribute list, iTopLevel is inserted after "asset" with its trailing comma, and iPrimitive after the primitive's
-// indices with its leading comma.
-std::filesystem::path writeTriangleGltf(const std::string& iName, const std::array<uint16_t, 3>& iIndices,
+// Writes a one-triangle glTF and its .bin buffer to iDirectory and returns the .gltf path. Accessor 0 holds the
+// positions (VEC3), 1 the indices, 2 and 3 two UV sets (VEC2: equal to the positions' x and y, and all ones), 4 normals
+// (VEC3, all (0, 0, 1)), and 5 tangents (VEC4, all (1, 0, 0, -1)). iAttributes is the primitive's attribute list,
+// iTopLevel is inserted after "asset" with its trailing comma, and iPrimitive after the primitive's indices with its
+// leading comma.
+std::filesystem::path writeTriangleGltf(const std::filesystem::path& iDirectory, const std::string& iName,
+                                        const std::array<uint16_t, 3>& iIndices,
                                         const std::string& iAttributes = R"("POSITION": 0)", const std::string& iTopLevel = "",
                                         const std::string& iPrimitive = "") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path();
   const std::array<float, 9> positions = {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f};
   const std::array<uint8_t, 2> padding = {0, 0}; // Keeps the UV views 4-byte aligned
-  const std::array<float, 6> uvSet0 = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+  const std::array<float, 6> uvSet0 = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f};
   const std::array<float, 6> uvSet1 = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
-  std::ofstream bin(dir / (iName + ".bin"), std::ios::binary);
+  const std::array<float, 9> normals = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f};
+  const std::array<float, 12> tangents = {1.0f, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, -1.0f};
+  std::ofstream bin(iDirectory / (iName + ".bin"), std::ios::binary);
   bin.write(reinterpret_cast<const char*>(positions.data()), sizeof(positions));
   bin.write(reinterpret_cast<const char*>(iIndices.data()), sizeof(iIndices));
   bin.write(reinterpret_cast<const char*>(padding.data()), sizeof(padding));
   bin.write(reinterpret_cast<const char*>(uvSet0.data()), sizeof(uvSet0));
   bin.write(reinterpret_cast<const char*>(uvSet1.data()), sizeof(uvSet1));
+  bin.write(reinterpret_cast<const char*>(normals.data()), sizeof(normals));
+  bin.write(reinterpret_cast<const char*>(tangents.data()), sizeof(tangents));
   bin.close();
 
-  std::ofstream(dir / (iName + ".gltf")) << R"({
+  std::ofstream(iDirectory / (iName + ".gltf")) << R"({
   "asset": {"version": "2.0"},
   )" + iTopLevel + R"(
   "scene": 0,
   "scenes": [{"nodes": [0]}],
   "nodes": [{"mesh": 0}],
-  "meshes": [{"primitives": [{"attributes": {)" +
-                                                iAttributes + R"(}, "indices": 1)" + iPrimitive + R"(}]}],
-  "buffers": [{"uri": ")" + iName + R"(.bin", "byteLength": 92}],
+  "meshes": [{"primitives": [{"attributes": {)" + iAttributes +
+                                                       R"(}, "indices": 1)" + iPrimitive + R"(}]}],
+  "buffers": [{"uri": ")" + iName + R"(.bin", "byteLength": 176}],
   "bufferViews": [
     {"buffer": 0, "byteOffset": 0, "byteLength": 36},
     {"buffer": 0, "byteOffset": 36, "byteLength": 6},
     {"buffer": 0, "byteOffset": 44, "byteLength": 24},
-    {"buffer": 0, "byteOffset": 68, "byteLength": 24}
+    {"buffer": 0, "byteOffset": 68, "byteLength": 24},
+    {"buffer": 0, "byteOffset": 92, "byteLength": 36},
+    {"buffer": 0, "byteOffset": 128, "byteLength": 48}
   ],
   "accessors": [
     {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0, 0, 0], "max": [1, 1, 0]},
     {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"},
     {"bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC2"},
-    {"bufferView": 3, "componentType": 5126, "count": 3, "type": "VEC2"}
+    {"bufferView": 3, "componentType": 5126, "count": 3, "type": "VEC2"},
+    {"bufferView": 4, "componentType": 5126, "count": 3, "type": "VEC3"},
+    {"bufferView": 5, "componentType": 5126, "count": 3, "type": "VEC4"}
   ]
 })";
-  return dir / (iName + ".gltf");
+  return iDirectory / (iName + ".gltf");
+}
+
+// Writes a glTF whose one primitive has only POSITION (in glTF axes) and no indices, so every three positions make a
+// triangle, and returns its path
+std::filesystem::path writeUnindexedGltf(const std::filesystem::path& iDirectory, const std::vector<Vec3>& iPositions) {
+  const size_t byteLength = iPositions.size() * sizeof(Vec3);
+  std::ofstream(iDirectory / "unindexed.bin", std::ios::binary)
+      .write(reinterpret_cast<const char*>(iPositions.data()), static_cast<std::streamsize>(byteLength));
+
+  const std::string buffer = std::format(R"("buffers": [{{"uri": "unindexed.bin", "byteLength": {}}}],)", byteLength);
+  const std::string bufferView = std::format(R"("bufferViews": [{{"buffer": 0, "byteLength": {}}}],)", byteLength);
+  const std::string accessor =
+      std::format(R"("accessors": [{{"bufferView": 0, "componentType": 5126, "count": {}, "type": "VEC3"}}])", iPositions.size());
+  std::ofstream(iDirectory / "unindexed.gltf")
+      << R"({"asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0}],)"
+      << R"("meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}],)" << buffer << bufferView << accessor << "}";
+  return iDirectory / "unindexed.gltf";
 }
 
 } // namespace
@@ -213,22 +241,24 @@ NE_TEST_CASE("importer", "glTF DamagedHelmet: Material & Color Space Per Use") {
                  "Metallic-roughness, normal, and occlusion images hold data, so they're linear.");
   NE_TEST_ASSERT(material.metallic == 1.0f && material.roughness == 1.0f, "Unset metallic and roughness factors are glTF's 1.");
   NE_TEST_ASSERT(material.emissive.equals(Vec3(1.0f)), "The emissive factor is (1, 1, 1).");
-  NE_TEST_ASSERT(model.meshes[0].submeshes[0].materialIndex == 0, "The helmet uses material 0.");
+  const SubmeshData& helmet = model.meshes[0].submeshes[0];
+  NE_TEST_ASSERT(helmet.materialIndex == 0, "The helmet uses material 0.");
+  NE_TEST_ASSERT(helmet.tangents.size() == helmet.positions.size(),
+                 "The helmet has a normal texture but no TANGENT, so it gets MikkTSpace's, one per vertex.");
 }
 
 // The base color texture's sampler is nearest, clamp S, and mirror T. The metallic-roughness texture uses the same
 // image without a sampler, and the normal texture reads TEXCOORD_1.
 NE_TEST_CASE("importer", "glTF Textures: Wrap Per Axis, Color Space Per Use, And Dropped UV Sets") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path();
-  std::filesystem::copy_file(fs::resolveContentPath("textures/uv_checker.png"), dir / "null_importer_test_texture.png",
-                             std::filesystem::copy_options::overwrite_existing);
+  const TempDirectory directory;
+  std::filesystem::copy_file(fs::resolveContentPath("textures/uv_checker.png"), directory.getPath() / "texture.png");
   const std::filesystem::path path = writeTriangleGltf(
-      "null_importer_test_texture", {0, 1, 2}, R"("POSITION": 0, "TEXCOORD_0": 2, "TEXCOORD_1": 3)",
+      directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0, "TEXCOORD_0": 2, "TEXCOORD_1": 3)",
       R"("materials": [{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicRoughnessTexture": {"index": 1}},)"
       R"( "normalTexture": {"index": 0, "texCoord": 1}}],)"
       R"("textures": [{"source": 0, "sampler": 0}, {"source": 0}],)"
       R"("samplers": [{"magFilter": 9728, "wrapS": 33071, "wrapT": 33648}],)"
-      R"("images": [{"uri": "null_importer_test_texture.png"}],)",
+      R"("images": [{"uri": "texture.png"}],)",
       R"(, "material": 0)");
   ModelData model = GltfImporter::importModel(path.string());
 
@@ -247,79 +277,149 @@ NE_TEST_CASE("importer", "glTF Textures: Wrap Per Axis, Color Space Per Use, And
   NE_TEST_ASSERT(model.materials[0].normalTexture.image < 0, "A texture on TEXCOORD_1 is dropped.");
   NE_TEST_ASSERT(model.meshes[0].submeshes[0].materialIndex == 0, "The triangle uses its material.");
 
-  writeTriangleGltf("null_importer_test_texture", {0, 1, 2});
+  writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2});
   ModelData untextured = GltfImporter::importModel(path.string());
   NE_TEST_ASSERT(untextured.materials.size() == 1 && untextured.materials[0].metallic == 1.0f &&
                      untextured.materials[0].roughness == 1.0f && untextured.meshes[0].submeshes[0].materialIndex == 0,
                  "A primitive without a material gets glTF's default one, fully metallic and fully rough.");
+}
 
-  std::filesystem::remove(path);
-  std::filesystem::remove(std::filesystem::path(path).replace_extension(".bin"));
-  std::filesystem::remove(dir / "null_importer_test_texture.png");
+// glTF's triangle (0, 0, 0), (1, 0, 0), (0, 1, 0) winds counter-clockwise around glTF +Z, which is engine +X
+NE_TEST_CASE("importer", "glTF Normals & Tangents: Flat Normals When Missing, Tangents In Engine Axes") {
+  const TempDirectory directory;
+  const std::filesystem::path path = writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2});
+  ModelData flat = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(flat.meshes.size() == 1, "The triangle imports.");
+  const std::vector<Vec3>& flatNormals = flat.meshes[0].submeshes[0].normals;
+  NE_TEST_ASSERT(flatNormals.size() == 3 && std::all_of(flatNormals.begin(), flatNormals.end(),
+                                                        [](const Vec3& iNormal) { return iNormal.equals(Vec3::Forward); }),
+                 "A triangle without NORMAL gets its face normal, engine +X, at each of its vertices.");
+
+  writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0, "NORMAL": 4, "TANGENT": 5)");
+  ModelData withNormals = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(withNormals.meshes.size() == 1, "The triangle imports.");
+  const std::vector<Vec4>& tangents = withNormals.meshes[0].submeshes[0].tangents;
+  NE_TEST_ASSERT(tangents.size() == 3 &&
+                     std::all_of(tangents.begin(), tangents.end(),
+                                 [](const Vec4& iTangent) { return iTangent.equals(Vec4(0.0f, 1.0f, 0.0f, -1.0f)); }),
+                 "glTF's tangent (1, 0, 0) becomes engine +Y, and its w keeps its sign.");
+
+  writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0, "TANGENT": 5)");
+  ModelData withoutNormals = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(withoutNormals.meshes.size() == 1, "The triangle imports.");
+  NE_TEST_ASSERT(withoutNormals.meshes[0].submeshes[0].tangents.empty() &&
+                     withoutNormals.meshes[0].submeshes[0].normals.size() == 3,
+                 "Without NORMAL, the TANGENT is ignored and flat normals take its place, as glTF requires.");
+}
+
+// The triangle's UVs equal its glTF x and y, so u grows along glTF +X (engine +Y) and v along glTF +Y (engine +Z)
+NE_TEST_CASE("importer", "glTF Tangents: Generated Only For A Material With A Normal Texture") {
+  const TempDirectory directory;
+  std::filesystem::copy_file(fs::resolveContentPath("textures/uv_checker.png"), directory.getPath() / "normal.png");
+  const std::string attributes = R"("POSITION": 0, "NORMAL": 4, "TEXCOORD_0": 2)";
+  const std::filesystem::path path = writeTriangleGltf(
+      directory.getPath(), "triangle", {0, 1, 2}, attributes,
+      R"("materials": [{"normalTexture": {"index": 0}}], "textures": [{"source": 0}], "images": [{"uri": "normal.png"}],)",
+      R"(, "material": 0)");
+  ModelData normalMapped = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(normalMapped.meshes.size() == 1, "The triangle imports.");
+  const std::vector<Vec4>& tangents = normalMapped.meshes[0].submeshes[0].tangents;
+  NE_TEST_ASSERT(tangents.size() == 3 &&
+                     std::all_of(tangents.begin(), tangents.end(),
+                                 [](const Vec4& iTangent) { return iTangent.equals(Vec4(0.0f, 1.0f, 0.0f, -1.0f)); }),
+                 "MikkTSpace's tangent points toward +u, engine +Y, and its w puts the bitangent toward -v, the same "
+                 "tangent the file states in accessor 5.");
+
+  writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, attributes, R"("materials": [{}],)", R"(, "material": 0)");
+  ModelData plain = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(plain.meshes.size() == 1 && plain.meshes[0].submeshes[0].tangents.empty(),
+                 "A material without a normal texture needs no tangents, so none are generated.");
+}
+
+// Two triangles that make the unit square in glTF's z = 0 plane; the corners (1, 0, 0) and (0, 1, 0) are listed twice
+NE_TEST_CASE("importer", "glTF Flat Normals: Corners On One Flat Face Weld Back Together") {
+  const TempDirectory directory;
+  const std::filesystem::path path =
+      writeUnindexedGltf(directory.getPath(), {Vec3(0.0f, 0.0f, 0.0f), Vec3(1.0f, 0.0f, 0.0f), Vec3(0.0f, 1.0f, 0.0f),
+                                               Vec3(0.0f, 1.0f, 0.0f), Vec3(1.0f, 0.0f, 0.0f), Vec3(1.0f, 1.0f, 0.0f)});
+  ModelData square = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(square.meshes.size() == 1, "The square imports.");
+  const SubmeshData& submesh = square.meshes[0].submeshes[0];
+  NE_TEST_ASSERT(submesh.positions.size() == 4 && submesh.indices.size() == 6,
+                 "Both triangles get the same face normal, so their shared corners weld: 4 vertices, got {}.",
+                 submesh.positions.size());
+  NE_TEST_ASSERT(std::all_of(submesh.normals.begin(), submesh.normals.end(),
+                             [](const Vec3& iNormal) { return iNormal.equals(Vec3::Forward); }),
+                 "Every vertex keeps the face normal, engine +X.");
 }
 
 NE_TEST_CASE("importer", "glTF With An Out-Of-Range Index Fails Validation") {
-  const std::filesystem::path path = writeTriangleGltf("null_importer_test_triangle", {0, 1, 2});
+  const TempDirectory directory;
+  const std::filesystem::path path = writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2});
   ModelData valid = GltfImporter::importModel(path.string());
   NE_TEST_ASSERT(valid.meshes.size() == 1 && valid.nodes.size() == 1, "A well-formed triangle imports.");
 
-  writeTriangleGltf("null_importer_test_triangle", {0, 1, 3});
+  writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 3});
   ModelData invalid = GltfImporter::importModel(path.string());
   NE_TEST_ASSERT(invalid.meshes.empty() && invalid.nodes.empty(),
                  "Index 3 into 3 vertices fails validation and imports nothing.");
+}
 
-  std::filesystem::remove(path);
-  std::filesystem::remove(std::filesystem::path(path).replace_extension(".bin"));
+NE_TEST_CASE("importer", "glTF Primitives That Aren't Whole Triangles Are Skipped") {
+  const TempDirectory directory;
+  const std::filesystem::path path = writeUnindexedGltf(
+      directory.getPath(), {Vec3(0.0f, 0.0f, 0.0f), Vec3(1.0f, 0.0f, 0.0f), Vec3(0.0f, 1.0f, 0.0f), Vec3(1.0f, 1.0f, 0.0f)});
+  ModelData partial = GltfImporter::importModel(path.string());
+  NE_TEST_ASSERT(partial.meshes.empty() && partial.nodes.size() == 1,
+                 "Four vertices aren't whole triangles, which glTF requires, so the primitive is skipped and its node "
+                 "kept.");
 }
 
 NE_TEST_CASE("importer", "glTF Requiring An Unsupported Extension Imports Nothing") {
-  const std::filesystem::path path = writeTriangleGltf("null_importer_test_required", {0, 1, 2}, R"("POSITION": 0)",
+  const TempDirectory directory;
+  const std::filesystem::path path = writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0)",
                                                        R"("extensionsUsed": ["KHR_draco_mesh_compression"],)"
                                                        R"("extensionsRequired": ["KHR_draco_mesh_compression"],)");
   ModelData draco = GltfImporter::importModel(path.string());
   NE_TEST_ASSERT(draco.meshes.empty() && draco.nodes.empty(), "A file that requires Draco is rejected whole.");
 
   // Materials are imported, but texture transforms aren't honored
-  writeTriangleGltf("null_importer_test_required", {0, 1, 2}, R"("POSITION": 0)",
+  writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0)",
                     R"("extensionsUsed": ["KHR_texture_transform"], "extensionsRequired": ["KHR_texture_transform"],)");
   ModelData textureTransform = GltfImporter::importModel(path.string());
   NE_TEST_ASSERT(textureTransform.meshes.empty() && textureTransform.nodes.empty(),
                  "A file that requires an unsupported material extension is rejected whole.");
 
-  writeTriangleGltf("null_importer_test_required", {0, 1, 2}, R"("POSITION": 0)",
+  writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0)",
                     R"("extensionsUsed": ["KHR_mesh_quantization"], "extensionsRequired": ["KHR_mesh_quantization"],)");
   ModelData quantized = GltfImporter::importModel(path.string());
   NE_TEST_ASSERT(quantized.meshes.size() == 1, "A file that requires KHR_mesh_quantization imports.");
 
-  writeTriangleGltf("null_importer_test_required", {0, 1, 2}, R"("POSITION": 0)",
+  writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0)",
                     R"("extensionsUsed": ["KHR_materials_emissive_strength"],)"
                     R"("extensionsRequired": ["KHR_materials_emissive_strength"],)");
   ModelData emissiveStrength = GltfImporter::importModel(path.string());
   NE_TEST_ASSERT(emissiveStrength.meshes.size() == 1, "A file that requires KHR_materials_emissive_strength imports.");
-
-  std::filesystem::remove(path);
-  std::filesystem::remove(std::filesystem::path(path).replace_extension(".bin"));
 }
 
 NE_TEST_CASE("importer", "glTF Attributes: Mistyped Ones Are Dropped, Only Set 0 Is Read") {
   // Accessor 0 is VEC3, which glTF doesn't allow for TEXCOORD
+  const TempDirectory directory;
   const std::filesystem::path path =
-      writeTriangleGltf("null_importer_test_attributes", {0, 1, 2}, R"("POSITION": 0, "TEXCOORD_0": 0)");
+      writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0, "TEXCOORD_0": 0)");
   ModelData mistyped = GltfImporter::importModel(path.string());
   NE_TEST_ASSERT(mistyped.meshes.size() == 1 && mistyped.meshes[0].submeshes[0].texCoords.empty(),
                  "A VEC3 TEXCOORD_0 is dropped and the triangle still imports.");
 
-  // TEXCOORD_1 (all ones) comes last, so reading whichever set comes last would replace TEXCOORD_0 (all zeros)
-  writeTriangleGltf("null_importer_test_attributes", {0, 1, 2}, R"("POSITION": 0, "TEXCOORD_0": 2, "TEXCOORD_1": 3)");
+  // TEXCOORD_1 (all ones) comes last, so reading whichever set comes last would replace TEXCOORD_0
+  writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0, "TEXCOORD_0": 2, "TEXCOORD_1": 3)");
   ModelData twoSets = GltfImporter::importModel(path.string());
+  const std::array uvSet0{Vec2(0.0f, 0.0f), Vec2(1.0f, 0.0f), Vec2(0.0f, 1.0f)};
   bool readsSet0 = twoSets.meshes.size() == 1 && twoSets.meshes[0].submeshes[0].texCoords.size() == 3;
   for (size_t i = 0; readsSet0 && i < 3; ++i) {
-    readsSet0 = twoSets.meshes[0].submeshes[0].texCoords[i].equals(Vec2(0.0f));
+    readsSet0 = twoSets.meshes[0].submeshes[0].texCoords[i].equals(uvSet0[i]);
   }
   NE_TEST_ASSERT(readsSet0, "UVs come from TEXCOORD_0, not TEXCOORD_1.");
-
-  std::filesystem::remove(path);
-  std::filesystem::remove(std::filesystem::path(path).replace_extension(".bin"));
 }
 
 } // namespace ne::test

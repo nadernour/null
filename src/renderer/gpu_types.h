@@ -4,6 +4,7 @@
 #include "core/math/mat4.h"
 #include "core/math/vec2.h"
 #include "core/math/vec3.h"
+#include "core/math/vec4.h"
 #include <cstdint>
 #include <type_traits>
 #include <volk/volk.h>
@@ -16,16 +17,31 @@ namespace ne::gpu {
 constexpr uint32_t kPushConstantsSize = 128;
 constexpr VkShaderStageFlags kPushConstantStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
-// What the scene shader writes: the lit color, or one channel. A channel that holds data (normals, metallic, roughness,
-// occlusion, UVs) reaches the screen as stored, and one that holds a color (base color, emissive) as that color.
-// shaders/scene.slang mirrors it, so a new view goes in both.
-enum class DebugView : uint32_t { Lit, BaseColor, Normal, Metallic, Roughness, Occlusion, Emissive, Uv, Count };
+// What the scene shader writes: the lit color, or one channel. A channel that holds data (normals, tangents, metallic,
+// roughness, occlusion, UVs) reaches the screen as stored, and one that holds a color (base color, emissive) as that
+// color. Normal is the normal-mapped normal, Geometry Normal the vertex normal. shaders/scene.slang mirrors it, so a new
+// view goes in both, and MainUI names it.
+enum class DebugView : uint32_t {
+  Lit,
+  BaseColor,
+  Normal,
+  GeometryNormal,
+  Tangent,
+  Bitangent,
+  Metallic,
+  Roughness,
+  Occlusion,
+  Emissive,
+  Uv,
+  Count
+};
 
 struct Vertex {
   Vec3 pos{0.0f};
   Vec3 normal{0.0f, 0.0f, 1.0f};
   Vec2 uv{0.0f};
   LinearColor color = LinearColor::White;
+  Vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f}; // xyz toward +u; cross(normal, xyz) * w points up the image (toward -v)
 };
 
 struct GlobalUniforms {
@@ -85,7 +101,7 @@ static_assert(sizeof(ScenePushConstants) <= kPushConstantsSize, "ScenePushConsta
 static_assert(sizeof(TonemapPushConstants) <= kPushConstantsSize, "TonemapPushConstants exceeds the shared push constant range!");
 static_assert(sizeof(ScenePushConstants) == 32, "ScenePushConstants size mismatch!");
 static_assert(sizeof(TonemapPushConstants) == 12, "TonemapPushConstants size mismatch with Slang layout!");
-static_assert(sizeof(Vertex) == 48, "Vertex size mismatch with Slang layout!");
+static_assert(sizeof(Vertex) == 64, "Vertex size mismatch with Slang layout!");
 static_assert(sizeof(DrawInfo) == 16, "DrawInfo size mismatch with Slang layout!");
 static_assert(sizeof(GlobalUniforms) == 68, "GlobalUniforms size mismatch!");
 static_assert(sizeof(InstanceData) == 148, "InstanceData size mismatch with Slang layout!");

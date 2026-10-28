@@ -18,6 +18,10 @@ bool MeshData::validate() const {
       NE_ERROR("MeshData: Invalid mesh: submesh {} has no indices", i);
       return false;
     }
+    if (submesh.indices.size() % 3 != 0) {
+      NE_ERROR("MeshData: Invalid mesh: submesh {} has {} indices, which aren't whole triangles", i, submesh.indices.size());
+      return false;
+    }
     for (uint32_t index : submesh.indices) {
       if (index >= submesh.positions.size()) {
         NE_ERROR("MeshData: Invalid mesh: submesh {} indexes vertex {} but has only {} vertices", i, index,

@@ -1,5 +1,7 @@
 #include "tests/test_runner.h"
+#include <format>
 #include <map>
+#include <random>
 
 #ifndef NE_BUILD_SHIPPING
 
@@ -55,6 +57,22 @@ int TestRegistry::runAll(Application& ioApp) {
 }
 
 int runAllTests(Application& ioApp) { return TestRegistry::get().runAll(ioApp); }
+
+TempDirectory::TempDirectory() {
+  std::random_device random;
+  // create_directory is false when another directory already has the name, so the loop draws another
+  do {
+    mPath = std::filesystem::temp_directory_path() / std::format("null_test_{:08x}", random());
+  } while (!std::filesystem::create_directory(mPath));
+}
+
+TempDirectory::~TempDirectory() {
+  std::error_code error;
+  std::filesystem::remove_all(mPath, error);
+  if (error) {
+    NE_WARN("TempDirectory: Couldn't delete {}: {}", mPath.string(), error.message());
+  }
+}
 
 } // namespace ne::test
 

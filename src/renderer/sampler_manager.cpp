@@ -43,20 +43,6 @@ VkSamplerAddressMode toAddressMode(TextureWrap iWrap) {
   return VK_SAMPLER_ADDRESS_MODE_REPEAT;
 }
 
-const char* toString(TextureWrap iWrap) {
-  switch (iWrap) {
-    case TextureWrap::Repeat:
-      return "Repeat";
-    case TextureWrap::Clamp:
-      return "Clamp";
-    case TextureWrap::Mirror:
-      return "Mirror";
-    case TextureWrap::Count:
-      break;
-  }
-  return "Unknown";
-}
-
 // Linear samplers filter trilinearly with anisotropy; nearest ones pick the nearest texel and mip level
 SamplerConfig makeTextureSamplerConfig(TextureFilter iFilter, TextureWrap iWrapU, TextureWrap iWrapV) {
   const bool isLinear = iFilter == TextureFilter::Linear;
@@ -66,7 +52,7 @@ SamplerConfig makeTextureSamplerConfig(TextureFilter iFilter, TextureWrap iWrapU
       .addressModeU = toAddressMode(iWrapU),
       .addressModeV = toAddressMode(iWrapV),
       .anisotropic = isLinear,
-      .debugName = std::format("Sampler_{}_{}_{}", isLinear ? "Linear" : "Nearest", toString(iWrapU), toString(iWrapV)),
+      .debugName = std::format("Sampler_{}_{}_{}", toString(iFilter), toString(iWrapU), toString(iWrapV)),
   };
 }
 

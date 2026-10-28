@@ -12,15 +12,40 @@
 
 #include <imgui.h>
 
-#include <array>
-
 namespace ne {
 
 namespace {
 
-// Indexed by gpu::DebugView
-constexpr std::array kDebugViewNames{"Lit", "Base Color", "Normal", "Metallic", "Roughness", "Occlusion", "Emissive", "UV"};
-static_assert(kDebugViewNames.size() == static_cast<size_t>(gpu::DebugView::Count), "Every debug view needs a name");
+// The Debug View menu's names. The switch has no default, so -Wswitch flags a view without a name.
+const char* debugViewName(gpu::DebugView iDebugView) {
+  switch (iDebugView) {
+    case gpu::DebugView::Lit:
+      return "Lit";
+    case gpu::DebugView::BaseColor:
+      return "Base Color";
+    case gpu::DebugView::Normal:
+      return "Normal";
+    case gpu::DebugView::GeometryNormal:
+      return "Geometry Normal";
+    case gpu::DebugView::Tangent:
+      return "Tangent";
+    case gpu::DebugView::Bitangent:
+      return "Bitangent";
+    case gpu::DebugView::Metallic:
+      return "Metallic";
+    case gpu::DebugView::Roughness:
+      return "Roughness";
+    case gpu::DebugView::Occlusion:
+      return "Occlusion";
+    case gpu::DebugView::Emissive:
+      return "Emissive";
+    case gpu::DebugView::Uv:
+      return "UV";
+    case gpu::DebugView::Count:
+      break;
+  }
+  return "Unknown";
+}
 
 } // namespace
 
@@ -149,7 +174,8 @@ void MainUI::drawDiagnostics(BasicApp& iApp) {
     ImGui::Separator();
     Renderer& renderer = *iApp.getRenderer();
     int debugView = static_cast<int>(renderer.getDebugView());
-    if (ImGui::Combo("Debug View", &debugView, kDebugViewNames.data(), static_cast<int>(kDebugViewNames.size()))) {
+    const auto nameOf = [](void*, int iIndex) { return debugViewName(static_cast<gpu::DebugView>(iIndex)); };
+    if (ImGui::Combo("Debug View", &debugView, nameOf, nullptr, static_cast<int>(gpu::DebugView::Count))) {
       renderer.setDebugView(static_cast<gpu::DebugView>(debugView));
     }
   }

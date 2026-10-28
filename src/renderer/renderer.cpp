@@ -50,14 +50,13 @@ Renderer::Renderer(Window* iWindow, const std::string& iAppName) : mWindow(iWind
 
   mFrameManager = std::make_unique<FrameManager>(mDevice.get(), mWindow);
 
-  // The pipelines ResourceManager creates draw into the scene targets, so they share these formats
-  mDepthFormat = mDevice->findDepthFormat();
-  mResourceManager = std::make_unique<ResourceManager>(mDevice.get(), kSceneColorFormat, mDepthFormat);
+  mResourceManager = std::make_unique<ResourceManager>(mDevice.get());
 
   mImGuiManager = std::make_unique<ImGuiManager>(mWindow, mInstance.get(), mDevice.get(), mFrameManager.get());
 
-  mSceneRenderer = std::make_unique<SceneRenderer>(mResourceManager->getGeometryAllocator(),
-                                                   mResourceManager->getMaterialBufferAddress());
+  // SceneRenderer's pipelines draw into the scene targets, so they share these formats
+  mDepthFormat = mDevice->findDepthFormat();
+  mSceneRenderer = std::make_unique<SceneRenderer>(mDevice.get(), mResourceManager.get(), kSceneColorFormat, mDepthFormat);
 
   const VkFormat swapchainFormat = mFrameManager->getColorFormat();
   mTonemapper = std::make_unique<Tonemapper>(mDevice.get(), mResourceManager->getPipelineLayout(), swapchainFormat);
