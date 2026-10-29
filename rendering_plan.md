@@ -502,8 +502,6 @@ struct Vertex {
 ## Phase 4: Lights, Exposure & PBR Shading
 **Status:** not started
 
-**Before starting:** the capture half of Frame Capture & Golden Images (README → Tools), so this phase's before / after screenshots come from the engine.
-
 **Goal:** Physically based shading:
 - the glTF metal-roughness BRDF, lit by light components in physical units;
 - a hemisphere ambient with a specular term;

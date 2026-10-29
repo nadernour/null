@@ -79,7 +79,6 @@ The steps are in order, each building on the one before; they bring physically b
 - [ ] **Picking & Gizmos**: Select entities and move them in the viewport.
 - [ ] **Scene Editor**: Place robots, objects, and sensors in the viewport and save the scene.
 - [ ] **In-App Log Panel**: Recent log lines in an ImGui window, filtered by level at runtime, for runs without a terminal.
-- [ ] **Frame Capture & Golden Images**: The engine saves a rendered frame as a PNG from the command line (output path, frame count, model, camera, and debug view), replacing outside window grabs. The scene renders offscreen at a fixed size and advances a fixed time step per frame, so the same command gives the same image whatever the window manager does; the offscreen target and the GPU → CPU readback come here first, and Render Views & Offscreen Targets reuses them. Lands before Lights, Exposure & PBR Shading, so that step's before / after shots come from the engine. Then golden-image tests: fixed scenes compared with saved images within a tolerance, with one image set per driver (drivers filter textures differently), run in CI on lavapipe.
 
 ### Engine & Performance
 - [ ] **Windows Tests in CI**: Run the tests on Windows too, on Mesa's Windows build of lavapipe.
