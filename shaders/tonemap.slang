@@ -34,8 +34,8 @@ float3 pbrNeutral(float3 color) {
   return lerp(color, float3(newPeak, newPeak, newPeak), g);
 }
 
-float linearToSrgb(float value) {
-  return value <= 0.0031308 ? 12.92 * value : 1.055 * pow(value, 1.0 / 2.4) - 0.055;
+float3 linearToSrgb(float3 value) {
+  return select(value <= 0.0031308, 12.92 * value, 1.055 * pow(value, 1.0 / 2.4) - 0.055);
 }
 
 // One triangle covering the screen: (-1, -1), (3, -1), (-1, 3)
@@ -53,7 +53,7 @@ float4 fragMain(float4 position : SV_Position) : SV_TARGET {
     color = pbrNeutral(color);
   }
   if (pc.encodeSrgb != 0) {
-    color = float3(linearToSrgb(color.r), linearToSrgb(color.g), linearToSrgb(color.b));
+    color = linearToSrgb(color);
   }
   return float4(color, 1.0);
 }
