@@ -3,6 +3,15 @@
 [vk::binding(0, 0)]
 SamplerState gSamplers[];
 
+// The same samplers as gSamplers, for the one that compares depths: in SPIR-V both are plain samplers, and Vulkan allows
+// two declarations of one binding. Slang warns about the overlap (39001), so the warning is off for this declaration
+// only; any other overlap still warns.
+#pragma warning(push)
+#pragma warning(disable : 39001)
+[vk::binding(0, 0)]
+SamplerComparisonState gShadowSamplers[];
+#pragma warning(pop)
+
 [vk::binding(1, 0)]
 Texture2D gTextures[];
 
@@ -25,16 +34,33 @@ struct Light {
   float spotOffset;
 };
 
+// The cascades of the directional light that casts shadows; cascade i is drawn into tile i of the atlas
+struct ShadowData {
+  float4x4 cascades[4]; // World position -> (atlas u, atlas v, depth)
+  float4 tileBounds[4]; // Each cascade's tile as (min u, min v, max u, max v), half a texel in from its edges
+  float4 depthPlane;    // The camera's view depth of a world point p: dot(depthPlane.xyz, p) + depthPlane.w
+  float4 splitDepths;   // The view depth where each cascade ends
+  float4 normalOffsets; // How far each cascade's lookups move along the normal, in meters
+  uint atlasTexture;    // Bindless index (low 16 bits) and sampler index (high 16 bits)
+  float texelSize;      // One atlas texel, in atlas UV
+};
+
 struct GlobalUniforms {
   float4x4 viewProj;
   Light* lights;
+  ShadowData* shadows; // Read only when shadowLight names a light
   float4 eye; // Perspective camera: (position, 1). Orthographic: (backward direction, 0)
   float3 skyRadiance;
   float exposure;
   float3 groundRadiance;
   uint lightCount;
   uint debugView;
+  uint shadowLight; // The light whose shadows were drawn, or kNoShadowLight
 };
+
+// Mirrors gpu::kNoShadowLight. The shader never compares the shadows pointer with null: that turns the address into a
+// 64-bit integer, which needs the shaderInt64 feature.
+static const uint kNoShadowLight = 0xFFFFFFFF;
 
 struct DrawInfo {
   Vertex* vertices;
@@ -83,6 +109,7 @@ struct ScenePushConstants {
 // Mirrors gpu::DebugView
 enum DebugView : uint {
   Lit,
+  Cascades,
   BaseColor,
   Normal,
   GeometryNormal,
@@ -152,6 +179,41 @@ float4 baseColor(Material material, VSOutput vertIn) {
   return material.baseColor * sampleTexture(material.baseColorTexture, vertIn.uv) * vertIn.color;
 }
 
+// The cascade that covers a world point: the number of cascades that end before its view depth, so 4 is past them all
+uint cascadeIndex(ShadowData* shadows, float3 worldPos) {
+  float depth = dot(shadows->depthPlane.xyz, worldPos) + shadows->depthPlane.w;
+  return uint(dot(select(depth > shadows->splitDepths, float4(1.0), float4(0.0)), float4(1.0)));
+}
+
+// How much of the shadowed light reaches a surface point: 1 in light, 0 in shadow, from nine depth comparisons around
+// it. N is the geometry normal: the lookup moves along it, off the surface, so the surface's own depth in the shadow map
+// can't shadow it.
+float shadowFactor(ShadowData* shadows, float3 worldPos, float3 N) {
+  uint cascade = cascadeIndex(shadows, worldPos);
+  if (cascade >= 4) {
+    return 1.0; // Past the shadow distance
+  }
+  float3 position = worldPos + N * shadows->normalOffsets[cascade];
+  float3 coord = mul(shadows->cascades[cascade], float4(position, 1.0)).xyz;
+  float4 bounds = shadows->tileBounds[cascade];
+  uint textureIndex = shadows->atlasTexture & 0xFFFF;
+  uint samplerIndex = shadows->atlasTexture >> 16;
+  // Each tap compares bilinearly, against the four texels around it; clamped to the tile, none reads another cascade
+  float lit = 0.0;
+  for (int y = -1; y <= 1; ++y) {
+    for (int x = -1; x <= 1; ++x) {
+      float2 uv = clamp(coord.xy + float2(x, y) * shadows->texelSize, bounds.xy, bounds.zw);
+      lit += gTextures[textureIndex].SampleCmpLevelZero(gShadowSamplers[samplerIndex], uv, coord.z);
+    }
+  }
+  return lit / 9.0;
+}
+
+// The Cascades view's tints: red, green, blue, and yellow for cascades 0 to 3, then none past them
+static const float3 kCascadeTints[5] = {
+  float3(1.0, 0.3, 0.3), float3(0.3, 1.0, 0.3), float3(0.4, 0.4, 1.0), float3(1.0, 1.0, 0.3), float3(1.0, 1.0, 1.0)
+};
+
 // Karis, "Physically Based Shading on Mobile" (2014): a fit of how much of an even environment a surface reflects, as
 // a scale and an offset of F0, so no lookup texture is needed
 float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
@@ -171,9 +233,9 @@ float3 hemisphere(float3 dir) {
 
 // The glTF metal-roughness BRDF (GGX distribution, height-correlated Smith visibility, Schlick Fresnel) under every
 // light, then the hemisphere ambient, which occlusion darkens, and the emission: what leaves the surface toward the
-// camera, in nits
+// camera, in nits. N is the shading normal and geometryNormal the vertex normal, which shadow lookups move along.
 float3 litRadiance(float3 base, float metallic, float perceptualRoughness, float ao, float3 emissive, float3 N,
-                   float3 worldPos) {
+                   float3 geometryNormal, float3 worldPos) {
   GlobalUniforms* globals = pc.globalUniforms;
   // Toward the camera; an orthographic camera's eye has w = 0, which gives every pixel its backward direction
   float3 V = normalize(globals->eye.xyz - worldPos * globals->eye.w);
@@ -202,6 +264,10 @@ float3 litRadiance(float3 base, float metallic, float perceptualRoughness, float
     float r = d2 * light.invRangeSq; // (distance / range)^2
     float cone = saturate(dot(light.direction, -L) * light.spotScale + light.spotOffset);
     float3 E = light.intensity * (saturate(1.0 - r * r) * cone * cone / d2);
+    // Only the light that casts shadows has a shadow map; the loop knows it by its index
+    if (i == globals->shadowLight) {
+      E *= shadowFactor(globals->shadows, worldPos, geometryNormal);
+    }
 
     float3 H = normalize(V + L);
     float NdotH = saturate(dot(N, H));
@@ -271,9 +337,13 @@ float4 shade(Material material, float4 base, VSOutput vertIn, bool isFrontFace) 
       break;
   }
 
+  float3 radiance = litRadiance(base.rgb, metallic, roughness, ao, emissive, N, geometryNormal, vertIn.worldPos);
+  GlobalUniforms* globals = pc.globalUniforms;
+  if ((DebugView)globals->debugView == DebugView.Cascades && globals->shadowLight != kNoShadowLight) {
+    radiance *= kCascadeTints[cascadeIndex(globals->shadows, vertIn.worldPos)];
+  }
   // Exposed here, so the HDR target's fp16 holds it; the clamp catches the rest, such as a mirror under a bright light
-  float3 radiance = litRadiance(base.rgb, metallic, roughness, ao, emissive, N, vertIn.worldPos);
-  return float4(min(radiance * pc.globalUniforms->exposure, float3(64000.0)), base.a);
+  return float4(min(radiance * globals->exposure, float3(64000.0)), base.a);
 }
 
 // Opaque and blend materials; the alpha it returns matters only to blending
@@ -293,4 +363,14 @@ float4 fragMainMasked(VSOutput vertIn, bool isFrontFace : SV_IsFrontFace) : SV_T
     discard;
   }
   return shade(material, base, vertIn, isFrontFace);
+}
+
+// Masked casters in the shadow pass, which has no color to shade: only the alpha test. Opaque casters draw there without
+// a fragment shader.
+[shader("fragment")]
+void fragShadowMasked(VSOutput vertIn) {
+  Material material = pc.materials[vertIn.materialIndex];
+  if (baseColor(material, vertIn).a < material.alphaCutoff) {
+    discard;
+  }
 }

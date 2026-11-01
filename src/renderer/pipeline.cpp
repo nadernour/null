@@ -28,7 +28,8 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   fragShaderStageCreateInfo.module = shaderModule;
   fragShaderStageCreateInfo.pName = iConfig.fragmentEntry.c_str();
 
-  VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageCreateInfo, fragShaderStageCreateInfo};
+  const VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageCreateInfo, fragShaderStageCreateInfo};
+  const uint32_t stageCount = iConfig.fragmentEntry.empty() ? 1 : 2;
 
   VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo{};
   vertexInputStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -56,10 +57,11 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   // Ignored: the cull mode is dynamic state, see below
   rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_NONE;
   rasterizationStateCreateInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // Right-handed (glTF) winding
-  rasterizationStateCreateInfo.depthBiasEnable = VK_FALSE;
-  rasterizationStateCreateInfo.depthBiasConstantFactor = 0.0f;
-  rasterizationStateCreateInfo.depthBiasClamp = 0.0f;
-  rasterizationStateCreateInfo.depthBiasSlopeFactor = 0.0f;
+  const bool depthBias = iConfig.depthBiasConstant != 0.0f || iConfig.depthBiasSlope != 0.0f;
+  rasterizationStateCreateInfo.depthBiasEnable = depthBias ? VK_TRUE : VK_FALSE;
+  rasterizationStateCreateInfo.depthBiasConstantFactor = iConfig.depthBiasConstant;
+  rasterizationStateCreateInfo.depthBiasClamp = 0.0f; // Any other value requires the depthBiasClamp feature
+  rasterizationStateCreateInfo.depthBiasSlopeFactor = iConfig.depthBiasSlope;
   rasterizationStateCreateInfo.lineWidth = 1.0f; // Any value other than 1.0 requires "widelines" Gpu feature
 
   VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo{};
@@ -94,12 +96,14 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   colorBendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
   colorBendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_G_BIT;
 
+  // One blend state per color attachment: Vulkan requires the count to match the pass, so a depth-only pass has none
+  const bool hasColor = iConfig.colorAttachmentFormat != VK_FORMAT_UNDEFINED;
   VkPipelineColorBlendStateCreateInfo colorBlendStateCreateInfo{};
   colorBlendStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
   colorBlendStateCreateInfo.logicOpEnable = VK_FALSE;
   colorBlendStateCreateInfo.logicOp = VK_LOGIC_OP_COPY;
-  colorBlendStateCreateInfo.attachmentCount = 1;
-  colorBlendStateCreateInfo.pAttachments = &colorBendAttachmentState;
+  colorBlendStateCreateInfo.attachmentCount = hasColor ? 1 : 0;
+  colorBlendStateCreateInfo.pAttachments = hasColor ? &colorBendAttachmentState : nullptr;
 
   NE_ASSERT(iConfig.layout != VK_NULL_HANDLE, "Pipeline layout must not be VK_NULL_HANDLE");
   mPipelineLayout = iConfig.layout;
@@ -112,9 +116,8 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   dynamicStateCreateInfo.pDynamicStates = dynamicState.data();
   VkPipelineRenderingCreateInfo renderingCreateInfo{};
   renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-  renderingCreateInfo.colorAttachmentCount = (iConfig.colorAttachmentFormat != VK_FORMAT_UNDEFINED) ? 1 : 0;
-  renderingCreateInfo.pColorAttachmentFormats =
-      (iConfig.colorAttachmentFormat != VK_FORMAT_UNDEFINED) ? &iConfig.colorAttachmentFormat : nullptr;
+  renderingCreateInfo.colorAttachmentCount = hasColor ? 1 : 0;
+  renderingCreateInfo.pColorAttachmentFormats = hasColor ? &iConfig.colorAttachmentFormat : nullptr;
   renderingCreateInfo.depthAttachmentFormat = iConfig.depthAttachmentFormat;
   renderingCreateInfo.stencilAttachmentFormat =
       (vk_utils::deduceAspectFlags(iConfig.depthAttachmentFormat) & VK_IMAGE_ASPECT_STENCIL_BIT) ? iConfig.depthAttachmentFormat
@@ -123,7 +126,7 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   VkGraphicsPipelineCreateInfo graphicsPipelineCreateInfo{};
   graphicsPipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
   graphicsPipelineCreateInfo.pNext = &renderingCreateInfo;
-  graphicsPipelineCreateInfo.stageCount = 2;
+  graphicsPipelineCreateInfo.stageCount = stageCount;
   graphicsPipelineCreateInfo.pStages = shaderStages;
   graphicsPipelineCreateInfo.pVertexInputState = &vertexInputStateCreateInfo;
   graphicsPipelineCreateInfo.pInputAssemblyState = &inputAssemplyStateCreateInfo;

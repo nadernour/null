@@ -22,13 +22,17 @@ public:
   // The cull mode isn't part of it: it's dynamic state, which whoever records a draw sets with vkCmdSetCullMode
   struct Config {
     std::string shaderName;
-    std::string fragmentEntry = "fragMain";
-    std::string debugName; // Required; with no default, GCC warns about a Config that leaves it out
+    std::string fragmentEntry = "fragMain"; // Empty for a vertex-only pipeline, which writes only depth
+    std::string debugName;                  // Required; with no default, GCC warns about a Config that leaves it out
     VkPipelineLayout layout = VK_NULL_HANDLE;
-    VkFormat colorAttachmentFormat = VK_FORMAT_UNDEFINED;
+    VkFormat colorAttachmentFormat = VK_FORMAT_UNDEFINED; // Undefined for a depth-only pass
     VkFormat depthAttachmentFormat = VK_FORMAT_UNDEFINED;
     DepthMode depthMode = DepthMode::ReadWrite;
     BlendMode blendMode = BlendMode::Disabled;
+    // Added to each fragment's depth, in Vulkan's units: steps of the depth format, and depth per pixel of slope. Both 0
+    // leave it off.
+    float depthBiasConstant = 0.0f;
+    float depthBiasSlope = 0.0f;
   };
 
   static VkPipelineLayout createPipelineLayout(VkDevice iDevice, const std::vector<VkDescriptorSetLayout>& iDescriptorSetLayouts,

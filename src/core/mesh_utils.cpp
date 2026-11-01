@@ -137,6 +137,20 @@ MeshData createBoxMeshData(const Vec3& iSize) {
   return MeshData{.submeshes = {std::move(meshData)}};
 }
 
+MeshData createPlaneMeshData(const Vec2& iSize) {
+  const float hx = iSize.x * 0.5f;
+  const float hy = iSize.y * 0.5f;
+
+  // The box's top face: counter-clockwise seen from above, starting where UV is (0, 1)
+  SubmeshData submesh;
+  submesh.positions = {Vec3(-hx, -hy, 0.0f), Vec3(+hx, -hy, 0.0f), Vec3(+hx, +hy, 0.0f), Vec3(-hx, +hy, 0.0f)};
+  submesh.normals.assign(4, Vec3::Up);
+  submesh.texCoords = {Vec2(0.0f, 1.0f), Vec2(1.0f, 1.0f), Vec2(1.0f, 0.0f), Vec2(0.0f, 0.0f)};
+  submesh.colors.assign(4, LinearColor::White);
+  submesh.indices = {0, 1, 2, 0, 2, 3};
+  return MeshData{.submeshes = {std::move(submesh)}};
+}
+
 void unweldVertices(SubmeshData& ioSubmesh) {
   const size_t vertexCount = ioSubmesh.positions.size();
   ioSubmesh.positions = unweldAttribute(ioSubmesh.positions, ioSubmesh.indices, vertexCount);

@@ -46,6 +46,32 @@ NE_TEST_CASE("mesh", "Box Tangents Point Toward +u, Their Bitangents Up The Imag
                              "normal maps expect.");
 }
 
+// The plane is the box's top face on its own: both triangles wind counter-clockwise seen from +Z, where its normals
+// point, and u runs along +X and v along -Y
+NE_TEST_CASE("mesh", "A Plane Faces +Z With The Box's Top-Face UVs") {
+  const MeshData plane = MeshUtils::createPlaneMeshData(Vec2(2.0f, 1.0f));
+  NE_TEST_ASSERT(plane.validate(), "The plane is a valid mesh.");
+  const SubmeshData& submesh = plane.submeshes[0];
+  NE_TEST_ASSERT(submesh.positions.size() == 4 && submesh.indices.size() == 6, "One quad: 4 vertices and 2 triangles.");
+
+  bool facesUp = true;
+  for (size_t i = 0; i + 2 < submesh.indices.size(); i += 3) {
+    const Vec3 e1 = submesh.positions[submesh.indices[i + 1]] - submesh.positions[submesh.indices[i]];
+    const Vec3 e2 = submesh.positions[submesh.indices[i + 2]] - submesh.positions[submesh.indices[i]];
+    facesUp &= e1.cross(e2).getSafeNormal().equals(Vec3::Up);
+  }
+  bool followsAxes = true;
+  for (size_t v = 0; v < submesh.positions.size(); ++v) {
+    const Vec3& position = submesh.positions[v];
+    const Vec2& uv = submesh.texCoords[v];
+    facesUp &= submesh.normals[v].equals(Vec3::Up);
+    followsAxes &= math::equals(math::abs(position.x), 1.0f) && math::equals(math::abs(position.y), 0.5f) && position.z == 0.0f &&
+                   (position.x > 0.0f) == (uv.x == 1.0f) && (position.y < 0.0f) == (uv.y == 1.0f);
+  }
+  NE_TEST_ASSERT(facesUp, "Both triangles wind counter-clockwise seen from +Z, and every normal is +Z.");
+  NE_TEST_ASSERT(followsAxes, "The plane spans 2 x 1 m around the origin, with u along +X and v along -Y.");
+}
+
 } // namespace ne::test
 
 #endif

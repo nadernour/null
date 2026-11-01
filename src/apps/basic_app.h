@@ -38,6 +38,8 @@ private:
   Entity mCubeEntity1;
   Entity mCubeEntity2;
   Entity mHelmetEntity;
+  Entity mPanelEntity;
+  Entity mGlassEntity;
 
   CameraController mCameraController;
 
@@ -45,6 +47,8 @@ private:
   std::shared_ptr<Material> mCube1Material;
   std::shared_ptr<Material> mCube2Material;
   std::shared_ptr<Material> mGroundMaterial;
+  std::shared_ptr<Material> mPanelMaterial; // Masked and double-sided
+  std::shared_ptr<Material> mGlassMaterial; // Blended
   float mCurrentRotationAngle{0.0f};
 
   MainUI mMainUI;

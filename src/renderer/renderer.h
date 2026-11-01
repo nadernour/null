@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <volk/volk.h>
 
@@ -46,10 +47,18 @@ public:
   void setDebugView(gpu::DebugView iDebugView) { mDebugView = iDebugView; }
   gpu::DebugView getDebugView() const { return mDebugView; }
 
+  // The view depth where shadows end: the farthest cascade reaches it
+  void setShadowDistance(float iDistance) { mShadowDistance = iDistance; }
+  float getShadowDistance() const { return mShadowDistance; }
+
 private:
   static constexpr VkFormat kSceneColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+  static constexpr uint32_t kShadowAtlasSize = 4096;
+  static constexpr uint32_t kShadowTileSize = kShadowAtlasSize / 2; // One cascade in each of four tiles
 
   void createTargets(VkExtent2D iExtent);
+  // Draws each cascade of the light that casts shadows into its tile of the shadow atlas
+  void recordShadowPass(VkCommandBuffer iCommandBuffer, std::span<const SceneView> iCascadeViews);
   // Clears the HDR target and depth, then draws the scene from iCameraView, unless it is null
   void recordScenePass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent, const SceneView* iCameraView);
   void recordSwapchainPass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent);
@@ -66,11 +75,16 @@ private:
   VkFormat mDepthFormat = VK_FORMAT_UNDEFINED;
   bool mEncodeSrgb = true; // False when the swapchain format encodes sRGB itself
   gpu::DebugView mDebugView{}; // Lit
+  float mShadowDistance = 60.0f;
 
   // Swapchain-sized; both frames in flight share them
   std::unique_ptr<Image> mSceneColor;
   std::unique_ptr<Image> mSceneDepth;
   uint32_t mSceneColorTextureIndex = 0; // Bindless slot, registered once and kept across resizes
+
+  // The directional light's cascades, one per tile; both frames in flight share it
+  std::unique_ptr<Image> mShadowAtlas;
+  uint32_t mShadowAtlasTextureIndex = 0; // Bindless slot, registered once
 };
 
 } // namespace ne

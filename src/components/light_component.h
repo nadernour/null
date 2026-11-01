@@ -15,6 +15,7 @@ struct LightComponent {
   float range = 0.0f;                      // Point and spot: where the light fades out; 0 for inverse-square only
   float innerConeAngle = 0.0f;             // Spot, radians: full intensity inside it
   float outerConeAngle = math::kPi / 4.0f; // Spot, radians: no light outside it; above the inner angle, at most pi / 2
+  bool castShadows = false;                // Directional: the first one that casts shadows gets cascaded shadow maps
 };
 
 } // namespace ne
