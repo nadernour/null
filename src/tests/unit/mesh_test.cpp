@@ -37,7 +37,7 @@ NE_TEST_CASE("mesh", "Box Tangents Point Toward +u, Their Bitangents Up The Imag
     const Vec3 dPdv = (e2 * d1.x - e1 * d2.x) / det;
     for (uint32_t corner : {i0, i1, i2}) {
       const Vec4& t = box.tangents[corner];
-      const Vec3 tangent(t.x, t.y, t.z);
+      const Vec3 tangent = t.xyz();
       const Vec3 bitangent = box.normals[corner].cross(tangent) * t.w;
       followsUvs &= tangent.dot(dPdu) > 0.0f && bitangent.dot(dPdv) < 0.0f;
     }

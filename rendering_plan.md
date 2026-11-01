@@ -23,6 +23,7 @@ Physically based rendering for Null, split into seven phases; Phase 6, the envir
 ### Frame and render targets
 - **Ownership:** `Application` holds the `Window`, the `Renderer`, and the `Registry`, and runs the loop and the UI hooks. `Renderer` owns everything on the GPU side: the instance, the device, `FrameManager`, `ResourceManager`, `ImGuiManager`, the classes that draw, and the render targets. *Why:* the app holds rendering API objects, not their implementation, so it never has to keep two of them in agreement (such as the formats `SceneRenderer`'s pipelines and the targets share), and apps built on the core library don't repeat the setup.
 - **No render graph.** `Renderer` is the only place that orders passes; a pass is one `vkCmdBeginRendering` scope, as in Vulkan. It records every barrier, opens every pass (attachments, load ops, clear values, viewport), and hands the classes that draw into a pass their per-frame resources (the command buffer, the frame's upload allocator); those classes only draw. `Image` builds its own barriers from the layout, access, and stage it already tracks, and back-to-back barriers go out together in one `vk_utils::pipelineBarrier`. *Why:* the frame is a fixed sequence, and later a loop over views. One pass can hold several draws (the tonemap and the UI; later the shadow cascades in one atlas), so a pass can't belong to what draws into it. Revisit only if the frame becomes data-driven (user-defined sensor pipelines), many short-lived post passes pile up, or profiling calls for async compute.
+- **No command encoder.** The classes that draw record into the command buffer themselves, with two helpers: `gpu::pushConstants`, which always writes the shared range with its stages, and `Renderer`'s `setViewportAndScissor`, which takes a rectangle so each shadow cascade gets its tile. *Why:* multi-draw indirect keeps a view to a handful of binds, so an encoder that skips repeated binds saves nothing, and its record of what's bound goes stale whenever ImGui's backend binds its own pipeline, index buffer, and set 0. Nothing on the roadmap needs a second graphics API to hide Vulkan behind. Revisit if recording moves onto several threads (Parallel Environments) or compute and utility passes start repeating the same bind, push, and draw steps. Decided Nov 1; it replaces the README's Context-Driven Encoder Pattern & RHI Decoupling item, which Phase 5 was to wait for. GPU Profiling's timestamps and RenderDoc labels go where `Renderer` opens and closes each pass.
 - **Per-frame uploads:** each frame in flight has an `UploadAllocator` in `FrameManager`: 16 MB host-visible blocks filled in order, the next block taking over when one is full (an upload larger than a block gets a block of its own size), all reused once that frame's fence has signaled. *Why:* nothing predicts a frame's upload size, so adding a per-frame upload is one call. A prediction that came out short would overflow the buffer in Shipping, where asserts are compiled out.
 - **Scene color format:** `VK_FORMAT_R16G16B16A16_SFLOAT`. *Why:* color attachment, blending, and sampling are mandatory for it.
 - **Depth format:** `VK_FORMAT_D32_SFLOAT` from `Device::findDepthFormat()`, which falls back only to other depth-only formats; looked up once in `Renderer`. *Why:* nothing uses stencil, and a depth-only image can be sampled through its one view (the Hi-Z pyramid later).
@@ -706,52 +707,142 @@ struct GlobalUniforms {
 ## Phase 5: Shadows
 **Status:** not started
 
-**Before starting:** Context-Driven Encoder Pattern & RHI Decoupling (README → Engine & Performance), so `recordView` records through the encoder.
-
 **Goal:** The directional light casts stable cascaded shadows. First, the scene's draws are gathered once per frame and recorded per view; Render Views reuses this for sensors.
 
-**Part A: per-view drawing** (no visual change)
-1. Split `SceneRenderer::record` per view:
-   - `prepare(ioRegistry)` (from Phase 1), once per frame before `beginFrame`: gathers and sorts draws and lights. The camera lookup moves to `Renderer`.
-   - `upload(ioUploadAllocator)`, once per frame:
-     - uploads instance data, draw infos, and indirect commands;
-     - builds the batch list.
-   - `recordView(iCommandBuffer, ioUploadAllocator, iView)`, once per view, into the pass `Renderer` opened:
-     - uploads that view's `GlobalUniforms`;
-     - binds each batch's pipeline and sets its cull mode;
-     - issues the multi-draws.
-2. A `View` struct holds the view-projection matrix, the eye (Phase 4), the exposure, and the pass kind (color or depth-only).
-3. `Renderer` finds the primary camera, calls `prepare` and `upload` once, then `recordView` for the camera.
+This is the plan of Oct 15 and 18, checked against the code on Nov 1, after Phase 4. The check made these changes:
+- **No encoder first.** The README's Context-Driven Encoder Pattern & RHI Decoupling no longer comes before this phase (see **No command encoder** in **Decisions**). Part A adds the two helpers that per-view recording uses instead: `gpu::pushConstants`, and a `setViewportAndScissor` that takes a rectangle, for the atlas tiles.
+- **`prepare` takes the camera's `SceneView`.** The camera lookup moves to `Renderer`, but blended draws still sort far to near from the camera, now by its eye: the distance from a perspective camera, the depth along the view for an orthographic one. Until now an orthographic camera measured from its position too, so a draw off to the side could count as farther than a deeper one straight ahead.
+- **A view also carries its debug view and its shadows,** next to its view-projection, eye, and exposure: those differ per view (sensor views later), while the lights, the environment, and the draws belong to the frame.
+- **One upload per frame** for every batch's draw infos, instances, and indirect commands, instead of three per batch. Each batch keeps its offsets, and every view draws from the same data.
+- **`Pipeline` learns depth-only pipelines.** Until now every pipeline had a fragment shader and one color attachment. An empty fragment entry now builds a vertex-only pipeline, the blend state declares as many attachments as the pass has color formats (Vulkan requires the counts to match, so none for a depth-only pass), and `Config` gains the depth bias.
+- **Masked casters use `fragShadowMasked`,** which only tests alpha. `fragMainMasked` would run the whole shading function, light loop included, just to decide whether to discard.
+- **The bounding sphere comes from a formula** of the slice's depths, the field of view, and the aspect ratio, instead of from the slice's corners in world space. It doesn't depend on where the camera is or where it looks, so it's the same every frame without rounding its radius, and it's the smallest sphere around the slice. Orthographic cameras get cascades too: their slices are boxes.
+- **The atlas uses the scene's depth format** (`D32_SFLOAT` wherever it's supported), so the shadow pipelines and both depth images share one lookup.
+- **`gpu::ShadowData` is spelled out** (see **Data**). `GlobalUniforms` grows to 136 bytes, and Phase 6's note follows.
+- **The Cascades debug view tints the lit image,** so unlike the channel views it keeps PBR Neutral.
+- **Tests,** which this phase had none of.
+
+**The frame:**
+```
+Renderer::render
+├─ ResourceManager::flushUploads
+├─ swapchain extent changed? → Device::waitIdle, recreate HDR + depth, updateSampledImage
+├─ find the primary camera → its SceneView
+├─ SceneRenderer::prepare(registry, camera SceneView)  lights, environment, draws gathered + sorted
+├─ a directional light casts shadows? → ShadowCascades::compute → 4 depth SceneViews
+├─ FrameManager::beginFrame
+├─ bind bindless set 0
+├─ SceneRenderer::upload                               the lights and every draw's data, once
+├─ [shadows] upload gpu::ShadowData → the camera SceneView's shadows
+├─ [shadows] atlas → depth attachment
+├─ [shadows] shadow pass                               clear; per cascade: viewport + scissor = its tile, recordView
+├─ [shadows] atlas → SHADER_READ_ONLY,                 one barrier batch
+│  HDR color, depth → attachments
+├─ scene pass                                          SceneRenderer::recordView(camera SceneView)
+└─ the swapchain pass and the rest as in Phase 1
+```
+
+**Part A: per-view drawing** (no visual change, except the blend order under orthographic cameras)
+1. `gpu::pushConstants(iCommandBuffer, iLayout, iConstants)` in `gpu_types.h`, next to the range it writes: it passes the range's stages, which Vulkan requires, and `static_assert`s that the struct fits in 128 bytes and is trivially copyable, since Vulkan copies its bytes. `SceneRenderer` and `Tonemapper` push through it.
+2. `setViewportAndScissor` in `renderer.cpp` takes a `VkRect2D`.
+3. `SceneView`, next to `SceneRenderer` in `scene_renderer.h`. It's a struct of its own, not nested in `SceneRenderer`, so `renderer.h` can declare it ahead without including the header. Part B adds `kind` and `shadows`:
+   ```cpp
+   // One rendering of the scene: from the camera into the HDR target, or from a light into a shadow map tile
+   struct SceneView {
+     enum class Kind : uint8_t {
+       Color, // Lit, through the scene pipelines
+       Depth  // Depth only, through the shadow pipelines; blended draws cast no shadows
+     };
+     Kind kind = Kind::Color;
+     Mat4 viewProj;
+     Vec4 eye{0.0f, 0.0f, 0.0f, 1.0f}; // As in gpu::GlobalUniforms
+     float exposure = 1.0f;
+     gpu::DebugView debugView{};       // Lit
+     VkDeviceAddress shadows = 0;      // The gpu::ShadowData a color view shades with; 0 for none
+   };
+   ```
+4. Split `SceneRenderer::record`:
+   - `prepare(ioRegistry, iCameraView)`, once per frame before `beginFrame`: gathers the lights, the environment, and the draws, and sorts the draws as before, except that the blended ones go far to near by `iCameraView`'s eye: by distance from a perspective camera, by depth along the view for an orthographic one.
+   - `upload(ioUploadAllocator)`, once per frame: uploads the lights, then every draw's data in one go (draw infos, instance data, indirect commands, in that order), and builds the batch list. A batch holds its alpha mode, its sidedness, its first draw, and its draw count, which index the frame's draw infos and indirect commands.
+   - `recordView(iCommandBuffer, ioUploadAllocator, iView)`, once per view, into the pass `Renderer` opened: uploads the view's `GlobalUniforms` (the frame's lights and environment with the view's matrix, eye, exposure, debug view, and shadows), binds the index buffer, then per batch binds its pipeline and sets its cull mode where they change, pushes the constants, and issues its multi-draw.
+5. `Renderer` finds the primary camera (asserting there's at most one), builds its `SceneView` with the eye as Phase 4 defines it, and calls `prepare`, `upload`, and `recordView`. Without a primary camera the scene pass only clears, as before.
 
 **Part B: cascaded shadow maps**
-1. `LightComponent` gains `bool castShadows = false`. The first directional light that casts shadows gets cascades.
-2. **Shadow atlas:**
-   - one `Image`: 4096×4096 `VK_FORMAT_D32_SFLOAT`, `DEPTH_STENCIL_ATTACHMENT | SAMPLED`;
+1. `LightComponent` gains `bool castShadows = false`. The first directional light that casts shadows gets cascades: `SceneRenderer::prepare` notes its index in the light buffer and its world matrix, and `getShadowLight()` returns them.
+2. **Shadow atlas,** in `Renderer`:
+   - one `Image`: `kShadowAtlasSize` (4096) square, the scene's depth format, `DEPTH_STENCIL_ATTACHMENT | SAMPLED`;
    - registered once in the bindless table; its size never changes, so it needs no slot updates;
-   - four 2048² tiles.
-3. **Cascades:**
-   - Splits run from the camera's near plane to `shadowDistance` (60 m, a renderer setting), using the practical split scheme (λ = 0.8, blending log and uniform splits).
-   - Per cascade:
-     1. Take the bounding sphere of the frustum slice. Round its radius up so it doesn't change from frame to frame.
-     2. Light view: the light's world rotation, placed at `center - forward * (radius + casterMargin)`.
-     3. Projection: reverse-Z orthographic, 2 × radius wide. Use `CameraComponent`'s orthographic math with aspect 1; near plane 0.01, far plane 2 × radius + casterMargin.
-     4. Snap: project the world origin, round it to whole shadow-map texels, and add the difference to the projection's translation.
-4. **Shadow pipelines:** depth-only variants (no color attachment, D32 depth, depth bias enabled).
-   - Like the scene pipelines, `SceneRenderer` builds them up front, one for opaque and one for mask materials, and they take the cull mode as dynamic state.
-   - Opaque materials use an empty `fragmentEntry`, which means a vertex-only pipeline.
-   - Mask materials use `fragMainMasked`.
-   - Blend materials don't cast shadows.
-5. `Renderer` opens one depth-only pass on the atlas, cleared once, and renders each cascade with `recordView`, the viewport and scissor set to its tile.
+   - four 2048² tiles, cascade i in tile (i mod 2, i / 2).
+3. **Cascades** (`src/renderer/shadow_cascades.{h,cpp}`, CPU math):
+   ```cpp
+   // Cascaded shadow maps for one directional light: the camera's view up to a distance, cut into slices by depth, each
+   // seen from the light through an orthographic view of its own
+   struct ShadowCascades {
+     static constexpr uint32_t kCount = 4;
+
+     struct Config {
+       float distance = 60.0f;      // View depth where shadows end
+       float splitLambda = 0.8f;    // 0 spaces the splits evenly, 1 logarithmically
+       float casterMargin = 100.0f; // How far toward the light from a slice casters still cast into it
+       uint32_t resolution = 2048;  // Texels along a cascade's side
+     };
+
+     std::array<Mat4, kCount> viewProj{};     // World → each cascade's clip space, snapped to whole texels
+     std::array<float, kCount> splitDepths{}; // The view depth where each cascade ends
+     std::array<float, kCount> texelSizes{};  // The world size of each cascade's texels
+
+     // iLightWorld is the light's world matrix; the light shines along its +X. Empty when nothing is left to shadow: the
+     // far plane or the distance is at the near plane.
+     static std::optional<ShadowCascades> compute(const CameraComponent& iCamera, const Mat4& iCameraWorld,
+                                                  float iAspectRatio, const Mat4& iLightWorld, const Config& iConfig);
+   };
+   ```
+   Per cascade:
+   1. **Splits** run from the camera's near plane n to f, the shadow distance or the far plane, whichever is nearer. Split i of 4 is λ · n · (f / n)^(i / 4) + (1 − λ) · (n + (f − n) · i / 4), with λ = 0.8 (the practical split scheme). In words: perspective shrinks things with distance, which logarithmic splits match, while the even share keeps the first cascade from shrinking to a sliver in front of the camera.
+   2. **Bounding sphere** of the slice between depths d₀ and d₁. Every corner of a perspective slice at depth d lies d · k from the view axis, with k² = tan²(fov / 2) · (1 + aspect²). The center sits on the axis at z = min((d₀ + d₁)(1 + k²) / 2, d₁): there both rings of corners are equally far, or, when that point lies past the far ring, the far ring's own center, whose sphere already holds the near ring. The radius is the distance to a far corner, √((d₁ − z)² + d₁² k²). An orthographic slice is a box: its center is at (d₀ + d₁) / 2 and its radius √(w² + h² + ((d₁ − d₀) / 2)²), for its half width w and half height h.
+   3. **Light view:** the light's world rotation, placed at center − forward · (radius + casterMargin), forward being the light's +X. It's built from the light's rotation, not the camera's, so the shadow map's texel grid doesn't turn with the camera.
+   4. **Projection:** `CameraComponent`'s reverse-Z orthographic math with aspect 1, 2 × radius tall; near plane 0.01, far plane 2 × radius + casterMargin.
+   5. **Snap:** project the world origin, round where it lands to whole texels of the cascade (resolution / 2 per unit of clip space), and add the difference to the view-projection's translation. With the radius fixed, every world point then lands on the same spot within its texel however the camera moves, so shadow edges don't crawl.
+
+   For BasicApp's camera (45° vertical field of view, near plane 0.1 m, aspect 1.2) and the 60 m distance: k² = tan²(22.5°) · (1 + 1.44) = 0.419, and the splits fall at 3.4, 8.0, 18.7, and 60 m. Cascade 0 runs from 0.1 to 3.4 m: its center is at z = 3.51 · 1.419 / 2 = 2.49 m, and its radius √(0.92² + 3.41² · 0.419) = 2.39 m, so its 2048 texels span 4.78 m, 2.3 mm each. Cascades 1 and 2 center on their far rings (radii 5.2 and 12.1 m, texels of 5 and 12 mm), and cascade 3 has a 39 m radius and 38 mm texels.
+4. **Pipelines:**
+   - `Pipeline::Config` gains `float depthBiasConstant = 0.0f` and `float depthBiasSlope = 0.0f`, in Vulkan's units; both 0 leave depth bias off. An empty `fragmentEntry` builds a vertex-only pipeline, and the blend state declares one attachment with a color format and none without.
+   - `SceneRenderer` builds the shadow pipelines up front, next to the scene ones: `Shadow_Opaque` (vertex only) and `Shadow_Mask` (`fragShadowMasked`), with no color format, the depth format, `DepthMode::ReadWrite`, and a depth bias of constant 0 and slope −1.5 (see the pitfalls). They take the cull mode as dynamic state, like the scene pipelines. Blend materials don't cast shadows.
+5. **Shadow pass:** `Renderer` opens one depth-only pass on the atlas, cleared to 0 (reverse-Z's far), and draws each cascade with `recordView` and its depth `SceneView`, the viewport and scissor set to its tile.
 6. **Shading:**
-   - Upload a `gpu::ShadowData` per frame (the shadowed light's index, 4 view-projection matrices, split depths, atlas texture index, texel size) and put its address in `GlobalUniforms`.
-   - Pick the cascade from view depth.
-   - Offset the world position along N by about 1–2 texels.
-   - 3×3 PCF with `SampleCmpLevelZero`, through the shadow sampler (`SamplerManager::kShadowSamplerIndex`). Declare `SamplerComparisonState gShadowSamplers[]` on binding 0, next to `gSamplers`.
-   - Clamp the taps inside the tile.
-   - Only that light's direct term is shadowed. Since Phase 4 the light loop doesn't know light types, so it finds the light by its index.
-7. **`BasicApp`:**
-   - the sun casts shadows onto the ground plane from Phase 4;
-   - a `Cascades` debug view tints each cascade.
+   - `gpu::ShadowData` is uploaded per frame when a light casts shadows, and its address reaches `GlobalUniforms::shadows` through the camera's `SceneView`.
+   - The light loop shadows only that light's direct term, which it finds by its index.
+   - The cascade is the number of cascades that end before the pixel's view depth; four means past the shadow distance, which is lit.
+   - The lookup moves along the geometry normal (the vertex normal, not the normal-mapped one, which varies per pixel) by 1.5 of the cascade's texels.
+   - 3×3 PCF with `SampleCmpLevelZero` through the shadow sampler (`SamplerManager::kShadowSamplerIndex`). Each tap is clamped to its tile, half a texel in, so none reads a neighboring cascade. `SamplerComparisonState gShadowSamplers[]` is declared on binding 0 next to `gSamplers`: in SPIR-V both are plain samplers, and Vulkan allows two declarations of one binding.
+7. **`DebugView::Cascades`:** the lit image tinted by cascade: red, green, blue, yellow, and untinted past the shadow distance. It's the lit image, so the tonemapper keeps PBR Neutral for it.
+8. **`Renderer`:** `setShadowDistance` and `getShadowDistance`.
+9. **`BasicApp`:** the sun casts shadows. The Lighting window gains the sun's Casts Shadows and the shadow distance, and the Debug View menu names Cascades.
+
+**Data:**
+```cpp
+// The cascades of the light that casts shadows, which color views shade with
+struct ShadowData {
+  Mat4 cascades[4];      // World → (atlas u, atlas v, depth) for each cascade
+  Vec4 tileBounds[4];    // Each cascade's tile as (min u, min v, max u, max v), half a texel in from its edges
+  Vec4 depthPlane;       // The camera's view depth of a world point p: dot(depthPlane.xyz, p) + depthPlane.w
+  Vec4 splitDepths;      // The view depth where each cascade ends
+  Vec4 normalOffsets;    // How far each cascade's lookups move along the normal, in meters
+  uint32_t lightIndex;   // The shadowed light in GlobalUniforms::lights
+  uint32_t atlasTexture; // Packed like a material's textures: bindless index (low 16 bits), sampler index (high 16 bits)
+  float texelSize;       // One atlas texel, in atlas UV
+};
+```
+`GlobalUniforms` gains `VkDeviceAddress shadows` after `lights` (0 when no light casts shadows): 136 bytes, 132 of fields and 4 of padding.
+
+**Tests:**
+- shadows (CPU), on BasicApp's camera and sun:
+  - the splits rise and the last one ends at the shadow distance, or at the far plane when that's nearer;
+  - every corner of every slice lands inside its cascade's clip volume (x and y in [−1, 1], depth in [0, 1]), for a perspective and an orthographic camera;
+  - moving the camera by fractions of a texel keeps a world point at the same spot within its texel, and turning the camera keeps every cascade's texel size;
+  - a point farther along the light's +X gets a smaller depth: reverse-Z, so farther from the light.
+- renderer, "Frames Render Every Alpha Mode, Single- And Double-Sided": BasicApp's sun now casts shadows, so its cubes also draw through both shadow pipelines with both cull modes; its comment says so.
+- renderer, "Frames Render Every Debug View": one frame in each, under validation.
 
 **Done when:**
 - The helmet and cubes cast shadows on the ground.
@@ -761,8 +852,12 @@ struct GlobalUniforms {
 
 **Pitfalls:**
 - Reverse-Z flips the depth-bias signs: the bias must push depth toward 0, so the constant and slope factors are negative.
-- A sampled depth view must have only the depth aspect. D32_SFLOAT has no stencil, so the atlas avoids the problem.
+- A float depth format's constant bias is counted in steps of the depth value itself, and those shrink toward 0, which in reverse-Z is the far side of each cascade. It can't stand in for a distance in meters: the normal offset does that job, and the slope bias covers sloped surfaces.
+- A sampled depth view must have only the depth aspect. The atlas has no stencil, so it avoids the problem.
 - The `Shadow` sampler compares GREATER_OR_EQUAL. A fragment is lit when its light-space depth is at least the stored occluder depth (in reverse-Z, larger means closer to the light).
+- Snap in the cascade's own texels (2048 to a tile), not the atlas's, and after building the whole view-projection.
+- Without depth clamp, a caster farther toward the light than casterMargin from a slice is clipped and casts nothing into it. 100 m covers scenes of BasicApp's size and indoor robot scenes; depth clamp, an optional feature, would lift the limit.
+- The shadow pipelines keep `vertMain`, which also computes normals and tangents the depth pass doesn't use. That's small next to rasterizing four tiles; a lean vertex entry point can come with GPU profiling.
 - Cascades depend on the camera, so every sensor view needs its own. Render Views decides whether to share or reduce them.
 - Spot and point light shadows come after this phase: atlas tiles, six of them for a point light.
 
@@ -791,7 +886,7 @@ For a metal, the fit gives 1 − 0.55 × roughness at every angle, so mid-rough 
    - one function integrates one (NdotV, roughness) pair: GGX importance sampling over Hammersley points, with the light loop's height-correlated Smith visibility, returning A and B;
    - 64 × 64 texels, NdotV along x and perceptual roughness along y, each computed at its texel's center ((i + 0.5) / 64), with 256 samples.
 4. **`ResourceManager`** builds the table once at startup and registers it, with the linear, clamp-to-edge sampler. A scratch version measured on Nov 1 took 24 ms in an optimized build and 45 ms in Debug.
-5. **`GlobalUniforms`** gains `uint32_t envBrdfTexture`, the table's packed texture and sampler index (as in `gpu::Material`), in the 4 bytes of padding after `debugView`: the struct stays 128 bytes, now without padding. `SceneRenderer` keeps the index from construction, like the material buffer's address.
+5. **`GlobalUniforms`** gains `uint32_t envBrdfTexture`, the table's packed texture and sampler index (as in `gpu::Material`), in the 4 bytes of padding after `debugView`: the struct stays 136 bytes (Phase 5's size), now without padding. `SceneRenderer` keeps the index from construction, like the material buffer's address.
 6. **Shader:** `envBrdf(F0, roughness, NdotV)` reads the table and returns `F0 * AB.x + AB.y`, as `envBrdfApprox` did; `envBrdfApprox` goes away.
 7. **Tests**, on the integration function:
    - roughness 1 seen head-on: A + B is 1 − ln 2 ≈ 0.307, within 0.005. At roughness 1, GGX spreads evenly and the integral has a closed form;

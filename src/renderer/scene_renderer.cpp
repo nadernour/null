@@ -1,5 +1,4 @@
 #include "renderer/scene_renderer.h"
-#include "components/camera_component.h"
 #include "components/environment_component.h"
 #include "components/light_component.h"
 #include "components/mesh_component.h"
@@ -30,10 +29,10 @@ namespace {
 // What the shader needs of a light. gpu::Light's defaults leave out the cone, which only spot lights have.
 gpu::Light toGpuLight(const LightComponent& iLight, const Mat4& iWorld) {
   gpu::Light light{
-      .position = Vec4(iWorld[3].x, iWorld[3].y, iWorld[3].z, 1.0f),
+      .position = Vec4(iWorld[3].xyz(), 1.0f),
       .intensity = iLight.color.toVec3() * iLight.intensity,
       .invRangeSq = iLight.range > 0.0f ? 1.0f / (iLight.range * iLight.range) : 0.0f,
-      .direction = Vec3(iWorld[0].x, iWorld[0].y, iWorld[0].z).getSafeNormal(),
+      .direction = iWorld[0].xyz().getSafeNormal(),
   };
   switch (iLight.type) {
     case LightComponent::Type::Directional:
@@ -82,55 +81,40 @@ SceneRenderer::SceneRenderer(Device* iDevice, ResourceManager* iResourceManager,
 
 SceneRenderer::~SceneRenderer() = default;
 
-void SceneRenderer::prepare(Registry& ioRegistry, float iAspectRatio) {
-  mGlobalUniforms.reset();
+void SceneRenderer::prepare(Registry& ioRegistry, const SceneView& iCameraView) {
+  mFrameUniforms = gpu::GlobalUniforms{};
   mLights.clear();
   mDrawCalls.clear();
-
-  Vec3 cameraPosition;
-  ioRegistry.view<TransformComponent, CameraComponent>().each(
-      [&](const TransformComponent& iTransform, const CameraComponent& iCamera) {
-        if (iCamera.primary) {
-          NE_ASSERT(!mGlobalUniforms, "At most one camera may be primary");
-          const Mat4& world = iTransform.getWorldMatrix();
-          cameraPosition = Vec3(world[3].x, world[3].y, world[3].z);
-          // An orthographic camera's rays are parallel, as if its eye were infinitely far behind it: the point at w = 0
-          // in its backward direction. Every pixel then gets the same view direction.
-          const Vec3 forward = Vec3(world[0].x, world[0].y, world[0].z).getSafeNormal();
-          const bool isOrthographic = iCamera.projectionType == CameraComponent::ProjectionType::Orthographic;
-          mGlobalUniforms = gpu::GlobalUniforms{
-              .viewProj = iCamera.getViewProjectionMatrix(world, iAspectRatio),
-              .eye = isOrthographic ? Vec4(-forward, 0.0f) : Vec4(cameraPosition, 1.0f),
-              .exposure = iCamera.getExposure(),
-          };
-        }
-      });
-  if (!mGlobalUniforms) {
-    return;
-  }
 
   // Without an environment, the sky and the ground stay black
   bool hasEnvironment = false;
   ioRegistry.view<EnvironmentComponent>().each([&](const EnvironmentComponent& iEnvironment) {
     NE_ASSERT(!hasEnvironment, "A scene may have at most one environment");
     hasEnvironment = true;
-    mGlobalUniforms->skyRadiance = iEnvironment.skyColor.toVec3() * iEnvironment.skyIntensity;
-    mGlobalUniforms->groundRadiance = iEnvironment.groundColor.toVec3() * iEnvironment.groundIntensity;
+    mFrameUniforms.skyRadiance = iEnvironment.skyColor.toVec3() * iEnvironment.skyIntensity;
+    mFrameUniforms.groundRadiance = iEnvironment.groundColor.toVec3() * iEnvironment.groundIntensity;
   });
 
   ioRegistry.view<TransformComponent, LightComponent>().each(
       [&](const TransformComponent& iTransform, const LightComponent& iLight) {
         mLights.push_back(toGpuLight(iLight, iTransform.getWorldMatrix()));
       });
-  mGlobalUniforms->lightCount = static_cast<uint32_t>(mLights.size());
+  mFrameUniforms.lightCount = static_cast<uint32_t>(mLights.size());
 
+  // Blended draws go far to near. A perspective camera's eye is its position, and a draw's distance is the straight
+  // line from it. An orthographic camera's eye is its backward direction (w = 0), so there the distance is the depth
+  // along the view, counted from the world origin instead of the camera: that adds the same amount to every draw,
+  // which keeps the order.
+  const Vec3 eye = iCameraView.eye.xyz();
+  const bool isOrthographic = iCameraView.eye.w == 0.0f;
   ioRegistry.view<TransformComponent, MeshComponent>().each(
       [&](Entity, const TransformComponent& iTransform, const MeshComponent& iMesh) {
         if (!iMesh.mesh) {
           return;
         }
         const Mat4& world = iTransform.getWorldMatrix();
-        const float distanceSq = (Vec3(world[3].x, world[3].y, world[3].z) - cameraPosition).lengthSquared();
+        const Vec3 position = world[3].xyz();
+        const float distance = isOrthographic ? position.dot(-eye) : (position - eye).length();
         const std::vector<Mesh::Submesh>& submeshes = iMesh.mesh->getSubmeshes();
         const size_t drawnCount = math::min(submeshes.size(), iMesh.materials.size());
         for (size_t i = 0; i < drawnCount; ++i) {
@@ -142,7 +126,7 @@ void SceneRenderer::prepare(Registry& ioRegistry, float iAspectRatio) {
                                           .materialIndex = material->getMaterialIndex(),
                                           .alphaMode = material->getAlphaMode(),
                                           .doubleSided = material->isDoubleSided(),
-                                          .distanceSq = distanceSq});
+                                          .distance = distance});
           }
         }
       });
@@ -156,8 +140,8 @@ void SceneRenderer::prepare(Registry& ioRegistry, float iAspectRatio) {
     if (iA.alphaMode != iB.alphaMode) {
       return iA.alphaMode < iB.alphaMode;
     }
-    if (iA.alphaMode == AlphaMode::Blend && iA.distanceSq != iB.distanceSq) {
-      return iA.distanceSq > iB.distanceSq;
+    if (iA.alphaMode == AlphaMode::Blend && iA.distance != iB.distance) {
+      return iA.distance > iB.distance;
     }
     if (iA.doubleSided != iB.doubleSided) {
       return iA.doubleSided < iB.doubleSided;
@@ -166,8 +150,67 @@ void SceneRenderer::prepare(Registry& ioRegistry, float iAspectRatio) {
   });
 }
 
-void SceneRenderer::record(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUploadAllocator, gpu::DebugView iDebugView) const {
-  if (!mGlobalUniforms || mDrawCalls.empty()) {
+void SceneRenderer::upload(UploadAllocator& ioUploadAllocator) {
+  mBatches.clear();
+
+  // Without lights the address is 0, and the shader's light loop never reads it: an empty vector's data() may be null,
+  // which memcpy mustn't get, even for 0 bytes
+  mFrameUniforms.lights =
+      mLights.empty() ? 0 : ioUploadAllocator.upload(mLights.data(), mLights.size() * sizeof(gpu::Light)).address;
+  if (mDrawCalls.empty()) {
+    return;
+  }
+
+  // A batch holds the draws of one alpha mode and one sidedness. Within it, adjacent draws of the same submesh become one
+  // instanced indirect draw, with a draw info that points at its vertices and its first instance.
+  std::vector<gpu::DrawInfo> drawInfos;
+  std::vector<gpu::InstanceData> instanceData;
+  std::vector<VkDrawIndexedIndirectCommand> indirectCommands;
+  size_t i = 0;
+  while (i < mDrawCalls.size()) {
+    const AlphaMode alphaMode = mDrawCalls[i].alphaMode;
+    const bool doubleSided = mDrawCalls[i].doubleSided;
+    const auto isInBatch = [&](const DrawCall& iDrawCall) {
+      return iDrawCall.alphaMode == alphaMode && iDrawCall.doubleSided == doubleSided;
+    };
+    const uint32_t firstDraw = static_cast<uint32_t>(drawInfos.size());
+
+    while (i < mDrawCalls.size() && isInBatch(mDrawCalls[i])) {
+      const Mesh::Submesh* submesh = mDrawCalls[i].submesh;
+      const uint32_t firstInstance = static_cast<uint32_t>(instanceData.size());
+      while (i < mDrawCalls.size() && isInBatch(mDrawCalls[i]) && mDrawCalls[i].submesh == submesh) {
+        const DrawCall& drawCall = mDrawCalls[i];
+        instanceData.push_back(gpu::InstanceData{.modelMatrix = drawCall.transform,
+                                                 .normalMatrix = drawCall.transform.inversed().transposed(),
+                                                 .color = drawCall.color,
+                                                 .materialIndex = drawCall.materialIndex});
+        ++i;
+      }
+
+      drawInfos.push_back(gpu::DrawInfo{.vertices = submesh->vertexAddress, .instanceBaseOffset = firstInstance});
+      indirectCommands.push_back(VkDrawIndexedIndirectCommand{
+          .indexCount = submesh->indexCount,
+          .instanceCount = static_cast<uint32_t>(instanceData.size()) - firstInstance,
+          .firstIndex = submesh->firstIndex,
+          .vertexOffset = 0,
+          .firstInstance = 0,
+      });
+    }
+
+    mBatches.push_back(Batch{.alphaMode = alphaMode,
+                             .doubleSided = doubleSided,
+                             .firstDraw = firstDraw,
+                             .drawCount = static_cast<uint32_t>(drawInfos.size()) - firstDraw});
+  }
+
+  mDrawInfos = ioUploadAllocator.upload(drawInfos.data(), drawInfos.size() * sizeof(gpu::DrawInfo)).address;
+  mInstances = ioUploadAllocator.upload(instanceData.data(), instanceData.size() * sizeof(gpu::InstanceData)).address;
+  mIndirectCommands =
+      ioUploadAllocator.upload(indirectCommands.data(), indirectCommands.size() * sizeof(VkDrawIndexedIndirectCommand));
+}
+
+void SceneRenderer::recordView(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUploadAllocator, const SceneView& iView) const {
+  if (mBatches.empty()) {
     return;
   }
 
@@ -175,88 +218,39 @@ void SceneRenderer::record(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUp
 
   mGeometryAllocator->bindIndexBuffer(iCommandBuffer);
 
-  // Without lights the address stays 0, and the shader's light loop never reads it: an empty vector's data() may be
-  // null, which memcpy mustn't get, even for 0 bytes
-  gpu::GlobalUniforms globalUniforms = *mGlobalUniforms;
-  if (!mLights.empty()) {
-    globalUniforms.lights = ioUploadAllocator.upload(mLights.data(), mLights.size() * sizeof(gpu::Light)).address;
-  }
-  globalUniforms.debugView = static_cast<uint32_t>(iDebugView);
-  VkDeviceAddress globalUniformsAddr = ioUploadAllocator.upload(&globalUniforms, sizeof(gpu::GlobalUniforms)).address;
+  gpu::GlobalUniforms globalUniforms = mFrameUniforms;
+  globalUniforms.viewProj = iView.viewProj;
+  globalUniforms.eye = iView.eye;
+  globalUniforms.exposure = iView.exposure;
+  globalUniforms.debugView = static_cast<uint32_t>(iView.debugView);
+  const VkDeviceAddress globalUniformsAddress = ioUploadAllocator.upload(&globalUniforms, sizeof(gpu::GlobalUniforms)).address;
 
-  // Each multi-draw holds the draws of one alpha mode and one sidedness. The alpha mode picks the pipeline, and the
-  // sidedness the cull mode, which every scene pipeline takes as dynamic state.
-  size_t i = 0;
+  // The alpha mode picks the pipeline, and the sidedness the cull mode, which every scene pipeline takes as dynamic state
   const Pipeline* boundPipeline = nullptr;
-  std::optional<VkCullModeFlags> boundCullMode; // A new command buffer has none until the first batch sets it
-  while (i < mDrawCalls.size()) {
-    const AlphaMode alphaMode = mDrawCalls[i].alphaMode;
-    const bool doubleSided = mDrawCalls[i].doubleSided;
-    Pipeline& pipeline = *mPipelines[static_cast<size_t>(alphaMode)];
+  std::optional<VkCullModeFlags> boundCullMode; // Unknown at the start of a view, so its first batch sets it
+  for (const Batch& batch : mBatches) {
+    Pipeline& pipeline = *mPipelines[static_cast<size_t>(batch.alphaMode)];
     if (boundPipeline != &pipeline) {
       boundPipeline = &pipeline;
       pipeline.bind(iCommandBuffer);
     }
-    const VkCullModeFlags cullMode = doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+    const VkCullModeFlags cullMode = batch.doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
     if (boundCullMode != cullMode) {
       boundCullMode = cullMode;
       vkCmdSetCullMode(iCommandBuffer, cullMode);
     }
-    const auto isInBatch = [&](const DrawCall& iDrawCall) {
-      return iDrawCall.alphaMode == alphaMode && iDrawCall.doubleSided == doubleSided;
+
+    // SV_DrawIndex counts from 0 in each multi-draw, so the draw infos start at the batch's first
+    const gpu::ScenePushConstants constants{
+        .drawInfos = mDrawInfos + batch.firstDraw * sizeof(gpu::DrawInfo),
+        .globalUniforms = globalUniformsAddress,
+        .instances = mInstances,
+        .materials = mMaterialBufferAddress,
     };
+    gpu::pushConstants(iCommandBuffer, pipeline.getPipelineLayout(), constants);
 
-    std::vector<gpu::DrawInfo> drawInfos;
-    std::vector<gpu::InstanceData> instanceData;
-    std::vector<VkDrawIndexedIndirectCommand> indirectCommands;
-
-    while (i < mDrawCalls.size() && isInBatch(mDrawCalls[i])) {
-      const Mesh::Submesh* currentSubmesh = mDrawCalls[i].submesh;
-      uint32_t startInstanceOffset = static_cast<uint32_t>(instanceData.size());
-
-      uint32_t instanceCount = 0;
-      while (i < mDrawCalls.size() && isInBatch(mDrawCalls[i]) && mDrawCalls[i].submesh == currentSubmesh) {
-        Mat4 normalMatrix = mDrawCalls[i].transform.inversed().transposed();
-        instanceData.push_back(gpu::InstanceData{.modelMatrix = mDrawCalls[i].transform,
-                                                 .normalMatrix = normalMatrix,
-                                                 .color = mDrawCalls[i].color,
-                                                 .materialIndex = mDrawCalls[i].materialIndex});
-        instanceCount++;
-        i++;
-      }
-
-      gpu::DrawInfo drawInfo{};
-      drawInfo.vertices = currentSubmesh->vertexAddress;
-      drawInfo.instanceBaseOffset = startInstanceOffset;
-      drawInfos.push_back(drawInfo);
-
-      VkDrawIndexedIndirectCommand indirectCmd{};
-      indirectCmd.indexCount = currentSubmesh->indexCount;
-      indirectCmd.instanceCount = instanceCount;
-      indirectCmd.firstIndex = currentSubmesh->firstIndex;
-      indirectCmd.vertexOffset = 0;
-      indirectCmd.firstInstance = 0;
-      indirectCommands.push_back(indirectCmd);
-    }
-
-    uint32_t numUniqueSubmeshes = static_cast<uint32_t>(drawInfos.size());
-
-    VkDeviceAddress drawInfosAddr = ioUploadAllocator.upload(drawInfos.data(), drawInfos.size() * sizeof(gpu::DrawInfo)).address;
-    VkDeviceAddress instancesAddr =
-        ioUploadAllocator.upload(instanceData.data(), instanceData.size() * sizeof(gpu::InstanceData)).address;
-    UploadAllocator::Allocation indirectAllocation =
-        ioUploadAllocator.upload(indirectCommands.data(), indirectCommands.size() * sizeof(VkDrawIndexedIndirectCommand));
-
-    gpu::ScenePushConstants pc{};
-    pc.drawInfos = drawInfosAddr;
-    pc.globalUniforms = globalUniformsAddr;
-    pc.instances = instancesAddr;
-    pc.materials = mMaterialBufferAddress;
-
-    vkCmdPushConstants(iCommandBuffer, pipeline.getPipelineLayout(), gpu::kPushConstantStages, 0, sizeof(gpu::ScenePushConstants),
-                       &pc);
-
-    vkCmdDrawIndexedIndirect(iCommandBuffer, indirectAllocation.buffer, indirectAllocation.offset, numUniqueSubmeshes,
+    vkCmdDrawIndexedIndirect(iCommandBuffer, mIndirectCommands.buffer,
+                             mIndirectCommands.offset + batch.firstDraw * sizeof(VkDrawIndexedIndirectCommand), batch.drawCount,
                              sizeof(VkDrawIndexedIndirectCommand));
   }
 }

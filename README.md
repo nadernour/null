@@ -89,9 +89,8 @@ The steps are in order, each building on the one before; they bring physically b
 - [ ] **Core Library**: The engine as a library, with separate apps on top (viewer, headless runner, tests).
 - [ ] **Compute Frustum & Occlusion Culling**: Cull on the GPU and build draw commands in compute shaders (Hi-Z depth pyramid from a compute downsampler, with per-mip views and barriers).
 - [ ] **Texture Streaming**: Compressed (KTX) textures loaded in the background (staging ring buffer, reusable bindless slots).
-- [ ] **GPU Profiling**: GPU timings per render pass.
+- [ ] **GPU Profiling**: GPU timings per render pass, recorded where `Renderer` opens and closes each pass, which also get their RenderDoc labels there.
 - [ ] **Push Descriptors for Utility Passes**: Simple post-processing and compute passes without descriptor pools.
-- [ ] **Context-Driven Encoder Pattern & RHI Decoupling**: A clean boundary between the low-level Vulkan layer and the render passes. An encoder wraps the command buffer and records into it: it binds pipelines, the bindless set, and the index buffer (which today bind themselves), sets dynamic state such as the cull mode, and skips redundant binds. Lands before Shadows, whose per-view recording would otherwise be written twice.
 
 ---
 

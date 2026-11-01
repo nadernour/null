@@ -15,6 +15,7 @@ class Instance;
 class Registry;
 class ResourceManager;
 class SceneRenderer;
+struct SceneView;
 class Tonemapper;
 class Window;
 
@@ -49,7 +50,8 @@ private:
   static constexpr VkFormat kSceneColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 
   void createTargets(VkExtent2D iExtent);
-  void recordScenePass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent);
+  // Clears the HDR target and depth, then draws the scene from iCameraView, unless it is null
+  void recordScenePass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent, const SceneView* iCameraView);
   void recordSwapchainPass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent);
 
   Window* mWindow = nullptr;

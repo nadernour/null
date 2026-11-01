@@ -39,7 +39,7 @@ TransformComponent& transformOf(Registry& ioRegistry, Entity iEntity) {
 
 Vec3 worldPosition(Registry& ioRegistry, Entity iEntity) {
   const Mat4& world = transformOf(ioRegistry, iEntity).getWorldMatrix();
-  return Vec3(world[3].x, world[3].y, world[3].z);
+  return world[3].xyz();
 }
 
 bool hasChild(Registry& ioRegistry, Entity iParent, Entity iChild) {

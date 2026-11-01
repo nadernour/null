@@ -1,5 +1,8 @@
 #include "renderer/renderer.h"
+#include "components/camera_component.h"
+#include "components/transform_component.h"
 #include "core/assert.h"
+#include "core/ecs.h"
 #include "core/logger.h"
 #include "platform/window.h"
 #include "renderer/bindless_manager.h"
@@ -17,17 +20,56 @@
 #include <vulkan/utility/vk_format_utils.h>
 
 #include <array>
+#include <optional>
 
 namespace ne {
 
 namespace {
 
-void setViewportAndScissor(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent) {
-  VkViewport viewport = {
-      .x = 0.0f, .y = 0.0f, .width = (float)iExtent.width, .height = (float)iExtent.height, .minDepth = 0.0f, .maxDepth = 1.0f};
-  VkRect2D scissor = {.offset = {0, 0}, .extent = iExtent};
+// Draws land in iRect of the attachments: all of them, or one tile of the shadow atlas
+void setViewportAndScissor(VkCommandBuffer iCommandBuffer, const VkRect2D& iRect) {
+  const VkViewport viewport{
+      .x = static_cast<float>(iRect.offset.x),
+      .y = static_cast<float>(iRect.offset.y),
+      .width = static_cast<float>(iRect.extent.width),
+      .height = static_cast<float>(iRect.extent.height),
+      .minDepth = 0.0f,
+      .maxDepth = 1.0f,
+  };
   vkCmdSetViewport(iCommandBuffer, 0, 1, &viewport);
-  vkCmdSetScissor(iCommandBuffer, 0, 1, &scissor);
+  vkCmdSetScissor(iCommandBuffer, 0, 1, &iRect);
+}
+
+// The primary camera, copied out of the registry
+struct PrimaryCamera {
+  CameraComponent camera;
+  Mat4 world;
+};
+
+std::optional<PrimaryCamera> findPrimaryCamera(Registry& ioRegistry) {
+  std::optional<PrimaryCamera> primary;
+  ioRegistry.view<TransformComponent, CameraComponent>().each(
+      [&](const TransformComponent& iTransform, const CameraComponent& iCamera) {
+        if (iCamera.primary) {
+          NE_ASSERT(!primary, "At most one camera may be primary");
+          primary = PrimaryCamera{.camera = iCamera, .world = iTransform.getWorldMatrix()};
+        }
+      });
+  return primary;
+}
+
+SceneView makeCameraView(const PrimaryCamera& iPrimary, float iAspectRatio, gpu::DebugView iDebugView) {
+  const Mat4& world = iPrimary.world;
+  // An orthographic camera's rays are parallel, as if its eye were infinitely far behind it: the point at w = 0 in its
+  // backward direction. Every pixel then gets the same view direction.
+  const Vec3 forward = world[0].xyz().getSafeNormal();
+  const bool isOrthographic = iPrimary.camera.projectionType == CameraComponent::ProjectionType::Orthographic;
+  return SceneView{
+      .viewProj = iPrimary.camera.getViewProjectionMatrix(world, iAspectRatio),
+      .eye = isOrthographic ? Vec4(-forward, 0.0f) : Vec4(world[3].xyz(), 1.0f),
+      .exposure = iPrimary.camera.getExposure(),
+      .debugView = iDebugView,
+  };
 }
 
 } // namespace
@@ -95,9 +137,14 @@ void Renderer::render(Registry& ioRegistry) {
     NE_VERBOSE("Renderer: Scene targets resized to {}x{}", extent.width, extent.height);
   }
 
-  // CPU only, so it runs before beginFrame waits for the frame's fence
-  const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
-  mSceneRenderer->prepare(ioRegistry, aspectRatio);
+  // CPU only, so it runs before beginFrame waits for the frame's fence. Without a primary camera the scene pass only
+  // clears.
+  std::optional<SceneView> cameraView;
+  if (const std::optional<PrimaryCamera> primary = findPrimaryCamera(ioRegistry)) {
+    const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+    cameraView = makeCameraView(*primary, aspectRatio, mDebugView);
+    mSceneRenderer->prepare(ioRegistry, *cameraView);
+  }
 
   VkCommandBuffer commandBuffer = mFrameManager->beginFrame();
   if (commandBuffer == VK_NULL_HANDLE) {
@@ -107,7 +154,11 @@ void Renderer::render(Registry& ioRegistry) {
   // One layout for every graphics pipeline, so the set stays bound across passes
   mResourceManager->getBindlessManager()->bind(commandBuffer, mResourceManager->getPipelineLayout());
 
-  recordScenePass(commandBuffer, extent);
+  if (cameraView) {
+    mSceneRenderer->upload(*mFrameManager->getUploadAllocator());
+  }
+
+  recordScenePass(commandBuffer, extent, cameraView ? &*cameraView : nullptr);
   recordSwapchainPass(commandBuffer, extent);
 
   mFrameManager->endFrame();
@@ -115,7 +166,7 @@ void Renderer::render(Registry& ioRegistry) {
 
 void Renderer::waitIdle() const { mDevice->waitIdle(); }
 
-void Renderer::recordScenePass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent) {
+void Renderer::recordScenePass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent, const SceneView* iCameraView) {
   const std::array barriers{
       mSceneColor->transitionBarrier(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                      VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
@@ -152,8 +203,10 @@ void Renderer::recordScenePass(VkCommandBuffer iCommandBuffer, VkExtent2D iExten
   renderingInfo.pDepthAttachment = &depthAttachmentInfo;
 
   vkCmdBeginRendering(iCommandBuffer, &renderingInfo);
-  setViewportAndScissor(iCommandBuffer, iExtent);
-  mSceneRenderer->record(iCommandBuffer, *mFrameManager->getUploadAllocator(), mDebugView);
+  if (iCameraView) {
+    setViewportAndScissor(iCommandBuffer, renderingInfo.renderArea);
+    mSceneRenderer->recordView(iCommandBuffer, *mFrameManager->getUploadAllocator(), *iCameraView);
+  }
   vkCmdEndRendering(iCommandBuffer);
 }
 
@@ -193,7 +246,7 @@ void Renderer::recordSwapchainPass(VkCommandBuffer iCommandBuffer, VkExtent2D iE
   renderingInfo.pColorAttachments = &colorAttachmentInfo;
 
   vkCmdBeginRendering(iCommandBuffer, &renderingInfo);
-  setViewportAndScissor(iCommandBuffer, iExtent);
+  setViewportAndScissor(iCommandBuffer, renderingInfo.renderArea);
   mTonemapper->record(iCommandBuffer, mSceneColorTextureIndex, mEncodeSrgb, mDebugView == gpu::DebugView::Lit);
   mImGuiManager->draw(iCommandBuffer);
   vkCmdEndRendering(iCommandBuffer);

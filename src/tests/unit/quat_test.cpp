@@ -91,9 +91,9 @@ NE_TEST_CASE("quat", "Quat toMatrix & Vector Rotation Equivalence") {
 
   Vec3 testVec(2.0f, -3.0f, 5.0f);
   Vec3 vecViaQuat = q * testVec;
-  Vec4 vecViaMat = matFromQuat * Vec4(testVec.x, testVec.y, testVec.z, 0.0f);
+  Vec4 vecViaMat = matFromQuat * Vec4(testVec, 0.0f);
 
-  NE_TEST_ASSERT(Vec3(vecViaMat.x, vecViaMat.y, vecViaMat.z).equals(vecViaQuat, 1e-4f),
+  NE_TEST_ASSERT(vecViaMat.xyz().equals(vecViaQuat, 1e-4f),
                  "Quat::toMatrix must yield exact same rotation as Quat::operator* on 3D vectors.");
 }
 

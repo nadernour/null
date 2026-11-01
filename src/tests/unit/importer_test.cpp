@@ -44,7 +44,7 @@ std::vector<Vec3> rawGltfWorldPositions(const std::string& iPath) {
           Vec3 p;
           cgltf_accessor_read_float(attribute.data, v, &p.x, 3);
           Vec4 w = world * Vec4(p, 1.0f);
-          positions.push_back(Vec3(w.x, w.y, w.z));
+          positions.push_back(w.xyz());
         }
       }
     }
@@ -85,7 +85,7 @@ bool matchesGltfWorldPositions(const ModelData& iModel, const std::vector<Vec3>&
   for (size_t v = 0; v < iGltfWorld.size(); ++v) {
     Vec4 engine = world * Vec4(submesh.positions[v], 1.0f);
     Vec3 expected(iGltfWorld[v].z, iGltfWorld[v].x, iGltfWorld[v].y);
-    if (!Vec3(engine.x, engine.y, engine.z).equals(expected, 1e-3f)) {
+    if (!engine.xyz().equals(expected, 1e-3f)) {
       return false;
     }
   }

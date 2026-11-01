@@ -29,10 +29,10 @@ struct Transform {
   // Decomposes an affine matrix without shear. A mirroring matrix yields a negative X scale;
   // a zero-scale axis yields Identity rotation.
   static Transform fromMatrix(const Mat4& iMatrix) {
-    const Vec3 axisX(iMatrix[0].x, iMatrix[0].y, iMatrix[0].z);
-    const Vec3 axisY(iMatrix[1].x, iMatrix[1].y, iMatrix[1].z);
-    const Vec3 axisZ(iMatrix[2].x, iMatrix[2].y, iMatrix[2].z);
-    const Vec3 position(iMatrix[3].x, iMatrix[3].y, iMatrix[3].z);
+    const Vec3 axisX = iMatrix[0].xyz();
+    const Vec3 axisY = iMatrix[1].xyz();
+    const Vec3 axisZ = iMatrix[2].xyz();
+    const Vec3 position = iMatrix[3].xyz();
 
     Vec3 scale(axisX.length(), axisY.length(), axisZ.length());
     if (scale.x < math::kSmallNumber || scale.y < math::kSmallNumber || scale.z < math::kSmallNumber) {

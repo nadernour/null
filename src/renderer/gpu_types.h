@@ -12,10 +12,18 @@
 // Structs read by the shaders in shaders/; the static_asserts below keep the layouts in sync
 namespace ne::gpu {
 
-// The one push-constant range every graphics pipeline shares; Vulkan guarantees 128 bytes. vkCmdPushConstants passes
-// exactly these stages, since it must name every stage of the range it writes into.
+// The one push-constant range every graphics pipeline shares; Vulkan guarantees 128 bytes
 constexpr uint32_t kPushConstantsSize = 128;
 constexpr VkShaderStageFlags kPushConstantStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+// Every push goes through here: it writes the start of the shared range and names all of the range's stages, which
+// vkCmdPushConstants requires
+template <typename T>
+void pushConstants(VkCommandBuffer iCommandBuffer, VkPipelineLayout iLayout, const T& iConstants) {
+  static_assert(sizeof(T) <= kPushConstantsSize, "Push constants must fit in the shared range");
+  static_assert(std::is_trivially_copyable_v<T>, "Push constants must be trivially copyable, since Vulkan copies their bytes");
+  vkCmdPushConstants(iCommandBuffer, iLayout, kPushConstantStages, 0, sizeof(T), &iConstants);
+}
 
 // What the scene shader writes: the lit color, or one channel. A channel that holds data (normals, tangents, metallic,
 // roughness, occlusion, UVs) reaches the screen as stored, and one that holds a color (base color, emissive) as that
@@ -117,8 +125,6 @@ struct TonemapPushConstants {
   uint32_t applyCurve = 0; // 0 in debug views, so their values reach the screen unchanged
 };
 
-static_assert(sizeof(ScenePushConstants) <= kPushConstantsSize, "ScenePushConstants exceeds the shared push constant range!");
-static_assert(sizeof(TonemapPushConstants) <= kPushConstantsSize, "TonemapPushConstants exceeds the shared push constant range!");
 static_assert(sizeof(ScenePushConstants) == 32, "ScenePushConstants size mismatch!");
 static_assert(sizeof(TonemapPushConstants) == 12, "TonemapPushConstants size mismatch with Slang layout!");
 static_assert(sizeof(Vertex) == 64, "Vertex size mismatch with Slang layout!");

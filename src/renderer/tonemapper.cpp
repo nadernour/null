@@ -25,10 +25,9 @@ void Tonemapper::record(VkCommandBuffer iCommandBuffer, uint32_t iHdrTextureInde
   mPipeline->bind(iCommandBuffer);
   vkCmdSetCullMode(iCommandBuffer, VK_CULL_MODE_NONE); // The fullscreen triangle winds clockwise
 
-  gpu::TonemapPushConstants constants{
+  const gpu::TonemapPushConstants constants{
       .hdrTexture = iHdrTextureIndex, .encodeSrgb = iEncodeSrgb ? 1u : 0u, .applyCurve = iApplyCurve ? 1u : 0u};
-  vkCmdPushConstants(iCommandBuffer, mPipeline->getPipelineLayout(), gpu::kPushConstantStages, 0,
-                     sizeof(gpu::TonemapPushConstants), &constants);
+  gpu::pushConstants(iCommandBuffer, mPipeline->getPipelineLayout(), constants);
 
   vkCmdDraw(iCommandBuffer, 3, 1, 0, 0);
 }

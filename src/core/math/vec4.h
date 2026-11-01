@@ -25,6 +25,9 @@ struct Vec4 {
 
   constexpr float* data() { return &x; }
 
+  // x, y, and z, without dividing by w
+  constexpr Vec3 xyz() const { return Vec3(x, y, z); }
+
   static const Vec4 Zero;
   static const Vec4 One;
 

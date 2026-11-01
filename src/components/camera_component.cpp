@@ -42,10 +42,10 @@ Mat4 CameraComponent::getProjectionMatrix(float iAspectRatio) const {
 }
 
 Mat4 CameraComponent::getViewMatrix(const Mat4& iWorldMatrix) const {
-  const Vec3 eye(iWorldMatrix[3].x, iWorldMatrix[3].y, iWorldMatrix[3].z);
-  const Vec3 forward = Vec3(iWorldMatrix[0].x, iWorldMatrix[0].y, iWorldMatrix[0].z).getSafeNormal();
-  const Vec3 right = -Vec3(iWorldMatrix[1].x, iWorldMatrix[1].y, iWorldMatrix[1].z).getSafeNormal();
-  const Vec3 down = -Vec3(iWorldMatrix[2].x, iWorldMatrix[2].y, iWorldMatrix[2].z).getSafeNormal();
+  const Vec3 eye = iWorldMatrix[3].xyz();
+  const Vec3 forward = iWorldMatrix[0].xyz().getSafeNormal();
+  const Vec3 right = -iWorldMatrix[1].xyz().getSafeNormal();
+  const Vec3 down = -iWorldMatrix[2].xyz().getSafeNormal();
 
   Mat4 view{1.0f};
   view[0][0] = right.x;   view[1][0] = right.y;   view[2][0] = right.z;   view[3][0] = -right.dot(eye);

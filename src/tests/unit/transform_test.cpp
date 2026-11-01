@@ -125,10 +125,9 @@ NE_TEST_CASE("transform", "Transform Rigid Inverse (inverseNoScale)") {
   NE_TEST_ASSERT(identity2.equals(Mat4::Identity, 1e-4f), "M^-1 * M must equal Identity.");
 
   Vec3 pt(5.0f, -2.0f, 8.0f);
-  Vec4 transformed = forwardMat * Vec4(pt.x, pt.y, pt.z, 1.0f);
+  Vec4 transformed = forwardMat * Vec4(pt, 1.0f);
   Vec4 restored = invMat * transformed;
-  NE_TEST_ASSERT(Vec3(restored.x, restored.y, restored.z).equals(pt, 1e-4f),
-                 "Transforming point through forward then inverse restores original.");
+  NE_TEST_ASSERT(restored.xyz().equals(pt, 1e-4f), "Transforming point through forward then inverse restores original.");
 }
 
 NE_TEST_CASE("transform", "Transform Memory Layout & POD Properties") {
