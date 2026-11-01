@@ -385,9 +385,10 @@ MaterialData ModelBuilder::importMaterial(const cgltf_material& iMaterial) {
       LinearColor{pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2], pbr.base_color_factor[3]};
   material.metallic = pbr.metallic_factor;
   material.roughness = pbr.roughness_factor;
+  // glTF's emissive has no unit; kUnitlessEmissiveNits gives it one
   const float emissiveStrength = iMaterial.has_emissive_strength ? iMaterial.emissive_strength.emissive_strength : 1.0f;
-  material.emissive =
-      Vec3(iMaterial.emissive_factor[0], iMaterial.emissive_factor[1], iMaterial.emissive_factor[2]) * emissiveStrength;
+  material.emissive = Vec3(iMaterial.emissive_factor[0], iMaterial.emissive_factor[1], iMaterial.emissive_factor[2]) *
+                      (emissiveStrength * kUnitlessEmissiveNits);
   material.alphaCutoff = iMaterial.alpha_cutoff;
   if (iMaterial.alpha_mode == cgltf_alpha_mode_mask) {
     material.alphaMode = AlphaMode::Mask;

@@ -25,11 +25,16 @@ public:
   virtual void renderUI() override;
 
   Entity getCameraEntity() const { return mCameraEntity; }
+  Entity getSunEntity() const { return mSunEntity; }
+  Entity getEnvironmentEntity() const { return mEnvironmentEntity; }
   CameraController& getCameraController() { return mCameraController; }
   MainUI& getMainUI() { return mMainUI; }
 
 private:
   Entity mCameraEntity;
+  Entity mSunEntity;
+  Entity mEnvironmentEntity;
+  Entity mGroundEntity;
   Entity mCubeEntity1;
   Entity mCubeEntity2;
   Entity mHelmetEntity;
@@ -39,6 +44,7 @@ private:
   std::vector<std::shared_ptr<Mesh>> mLoadedMeshes;
   std::shared_ptr<Material> mCube1Material;
   std::shared_ptr<Material> mCube2Material;
+  std::shared_ptr<Material> mGroundMaterial;
   float mCurrentRotationAngle{0.0f};
 
   MainUI mMainUI;

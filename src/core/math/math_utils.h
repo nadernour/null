@@ -71,6 +71,16 @@ T pow(T iBase, T iExp) {
   return std::pow(iBase, iExp);
 }
 
+template <std::floating_point T>
+T log2(T iVal) {
+  return std::log2(iVal);
+}
+
+template <std::floating_point T>
+T exp2(T iVal) {
+  return std::exp2(iVal);
+}
+
 // Nearest integer, halves away from zero
 template <std::floating_point T>
 int64_t roundToInt64(T iVal) {

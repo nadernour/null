@@ -122,6 +122,22 @@ NE_TEST_CASE("camera", "CameraComponent Screen Orientation Is Not Mirrored") {
   NE_TEST_ASSERT(upClip.y / upClip.w < 0.0f, "Ortho: World +Z (Up) must project to NDC -Y (screen top).");
 }
 
+// f/16, 1/100 s, ISO 100: N^2 / t = 25600 and 100 / S = 1, so EV100 = log2(25600) and the sensor fills at 1.2 x 25600 nits
+NE_TEST_CASE("camera", "CameraComponent Exposure Follows Aperture, Shutter Speed, And ISO") {
+  CameraComponent camera{.aperture = 16.0f, .shutterSpeed = 1.0f / 100.0f, .iso = 100.0f};
+  NE_TEST_ASSERT(math::equals(camera.getEv100(), 14.644f, 1e-3f), "EV100 is log2(25600), about 14.64, got {}.",
+                 camera.getEv100());
+  const float exposure = camera.getExposure();
+  NE_TEST_ASSERT(math::equals(exposure, 1.0f / 30720.0f, 1e-9f), "The exposure is 1 / (1.2 x 25600), about 3.26e-5, got {}.",
+                 exposure);
+
+  camera.shutterSpeed *= 2.0f;
+  NE_TEST_ASSERT(math::equals(camera.getExposure() / exposure, 2.0f, 1e-4f), "Doubling the shutter time doubles the exposure.");
+  camera.shutterSpeed /= 2.0f;
+  camera.iso *= 2.0f;
+  NE_TEST_ASSERT(math::equals(camera.getExposure() / exposure, 2.0f, 1e-4f), "Doubling the ISO doubles the exposure.");
+}
+
 } // namespace ne::test
 
 #endif

@@ -2,6 +2,8 @@
 
 #include "tests/test_runner.h"
 #include "apps/application.h"
+#include "components/environment_component.h"
+#include "components/light_component.h"
 #include "components/mesh_component.h"
 #include "components/transform_component.h"
 #include "core/ecs.h"
@@ -14,6 +16,9 @@
 #include "renderer/utils.h"
 
 #include <GLFW/glfw3.h>
+
+#include <array>
+#include <utility>
 
 namespace ne::test {
 
@@ -92,6 +97,61 @@ NE_TEST_CASE("renderer", "Frames Render Every Alpha Mode, Single- And Double-Sid
   ioContext.app->runForFrames(3);
   for (Entity entity : entities) {
     registry.destroyEntity(entity);
+  }
+
+  NE_TEST_ASSERT(!ioContext.app->getWindow()->shouldClose(), "The window stayed open, so all three frames ran.");
+}
+
+// A directional light, a point light with and one without a range, and a spot light, between the camera and the cubes
+// and aimed at them. In CI this runs the scene shader's light loop on lavapipe under validation.
+NE_TEST_CASE("renderer", "Frames Render Every Light Type") {
+  Registry& registry = *ioContext.app->getRegistry();
+  const std::array lights{
+      LightComponent{.type = LightComponent::Type::Directional, .intensity = 500.0f},
+      LightComponent{.type = LightComponent::Type::Point, .intensity = 50.0f},
+      LightComponent{.type = LightComponent::Type::Point, .intensity = 50.0f, .range = 3.0f},
+      LightComponent{.type = LightComponent::Type::Spot, .intensity = 500.0f, .innerConeAngle = 0.2f, .outerConeAngle = 0.4f},
+  };
+
+  std::vector<Entity> entities;
+  for (const LightComponent& light : lights) {
+    Entity entity = registry.createEntity();
+    registry.addComponent<TransformComponent>(entity, Transform(Vec3(-2.0f, 0.0f, 0.5f)));
+    registry.addComponent<LightComponent>(entity, light);
+    entities.push_back(entity);
+  }
+
+  ioContext.app->runForFrames(3);
+  for (Entity entity : entities) {
+    registry.destroyEntity(entity);
+  }
+
+  NE_TEST_ASSERT(!ioContext.app->getWindow()->shouldClose(), "The window stayed open, so all three frames ran.");
+}
+
+// BasicApp always has a sun and a sky, so only this test renders frames without a light buffer: its address stays 0, and
+// the shader's light loop never reads it
+NE_TEST_CASE("renderer", "Frames Render Without Lights Or An Environment") {
+  Registry& registry = *ioContext.app->getRegistry();
+  std::vector<std::pair<Entity, LightComponent>> lights;
+  registry.view<LightComponent>().each([&](Entity iEntity, const LightComponent& iLight) { lights.emplace_back(iEntity, iLight); });
+  std::vector<std::pair<Entity, EnvironmentComponent>> environments;
+  registry.view<EnvironmentComponent>().each(
+      [&](Entity iEntity, const EnvironmentComponent& iEnvironment) { environments.emplace_back(iEntity, iEnvironment); });
+  NE_TEST_ASSERT(!lights.empty() && !environments.empty(), "BasicApp has a sun and an environment to remove.");
+
+  for (const auto& [entity, light] : lights) {
+    registry.removeComponent<LightComponent>(entity);
+  }
+  for (const auto& [entity, environment] : environments) {
+    registry.removeComponent<EnvironmentComponent>(entity);
+  }
+  ioContext.app->runForFrames(3);
+  for (const auto& [entity, light] : lights) {
+    registry.addComponent<LightComponent>(entity, light);
+  }
+  for (const auto& [entity, environment] : environments) {
+    registry.addComponent<EnvironmentComponent>(entity, environment);
   }
 
   NE_TEST_ASSERT(!ioContext.app->getWindow()->shouldClose(), "The window stayed open, so all three frames ran.");

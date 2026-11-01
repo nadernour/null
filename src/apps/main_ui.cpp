@@ -1,6 +1,8 @@
 #include "apps/main_ui.h"
 #include "apps/basic_app.h"
 #include "components/camera_component.h"
+#include "components/environment_component.h"
+#include "components/light_component.h"
 #include "components/transform_component.h"
 #include "core/ecs.h"
 #include "core/logger.h"
@@ -70,6 +72,10 @@ void MainUI::draw(BasicApp& iApp) {
       drawCameraSettings(iApp);
     }
 
+    if (mShowLighting) {
+      drawLighting(iApp);
+    }
+
     if (mShowAboutModal) {
       drawAboutModal();
     }
@@ -94,6 +100,7 @@ void MainUI::drawMainMenuBar(BasicApp& iApp) {
     if (ImGui::BeginMenu("View")) {
       ImGui::MenuItem("Diagnostics / Stats", nullptr, &mShowDiagnostics);
       ImGui::MenuItem("Camera Controls", nullptr, &mShowCameraSettings);
+      ImGui::MenuItem("Lighting", nullptr, &mShowLighting);
       ImGui::Separator();
       if (ImGui::MenuItem("Hide UI Overlay", "H")) {
         mVisible = false;
@@ -183,7 +190,7 @@ void MainUI::drawDiagnostics(BasicApp& iApp) {
 }
 
 void MainUI::drawCameraSettings(BasicApp& iApp) {
-  ImGui::SetNextWindowSize(ImVec2(360, 340), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(360, 440), ImGuiCond_FirstUseEver);
   if (ImGui::Begin("Camera Settings", &mShowCameraSettings)) {
     auto* reg = iApp.getRegistry();
     Entity camEntity = iApp.getCameraEntity();
@@ -213,6 +220,17 @@ void MainUI::drawCameraSettings(BasicApp& iApp) {
       ImGui::DragFloat("Far Clip (m)", &camera.farClip, 1.0f, 1.0f, 1000.0f, "%.1f");
 
       ImGui::Spacing();
+      ImGui::Text("Exposure (EV100 %.1f)", camera.getEv100());
+      ImGui::Separator();
+      ImGui::SliderFloat("Aperture", &camera.aperture, 1.4f, 22.0f, "f/%.1f", ImGuiSliderFlags_Logarithmic);
+      // As cameras show it: 1/N s
+      float shutterDenominator = 1.0f / camera.shutterSpeed;
+      if (ImGui::SliderFloat("Shutter Speed", &shutterDenominator, 1.0f, 8000.0f, "1/%.0f s", ImGuiSliderFlags_Logarithmic)) {
+        camera.shutterSpeed = 1.0f / shutterDenominator;
+      }
+      ImGui::SliderFloat("ISO", &camera.iso, 50.0f, 6400.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+
+      ImGui::Spacing();
       ImGui::Text("Controller Parameters");
       ImGui::Separator();
       float speed = iApp.getCameraController().getMoveSpeed();
@@ -229,6 +247,47 @@ void MainUI::drawCameraSettings(BasicApp& iApp) {
       if (ImGui::Button("Reset Camera Transform")) {
         resetCamera(iApp);
       }
+    }
+  }
+  ImGui::End();
+}
+
+void MainUI::drawLighting(BasicApp& iApp) {
+  ImGui::SetNextWindowSize(ImVec2(360, 300), ImGuiCond_FirstUseEver);
+  if (ImGui::Begin("Lighting", &mShowLighting)) {
+    auto* reg = iApp.getRegistry();
+
+    // Checked each frame, as a test may remove the components
+    Entity sunEntity = iApp.getSunEntity();
+    if (reg && reg->isValid(sunEntity) && reg->hasComponent<TransformComponent>(sunEntity) &&
+        reg->hasComponent<LightComponent>(sunEntity)) {
+      auto& transform = reg->getComponent<TransformComponent>(sunEntity);
+      auto& sun = reg->getComponent<LightComponent>(sunEntity);
+
+      ImGui::Text("Sun (shines along its +X)");
+      ImGui::Separator();
+      ImGui::SliderFloat("Illuminance (lux)", &sun.intensity, 0.0f, 150000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+      ImGui::ColorEdit3("Sun Color", &sun.color.r);
+      // Positive pitch tilts it down, positive yaw turns it left
+      Vec3 eulerDegrees = math::degrees(transform.getLocal().getEulerAngles());
+      const bool pitched = ImGui::SliderFloat("Pitch (deg)", &eulerDegrees.y, -89.0f, 89.0f, "%.1f");
+      const bool turned = ImGui::SliderFloat("Yaw (deg)", &eulerDegrees.z, -180.0f, 180.0f, "%.1f");
+      if (pitched || turned) {
+        transform.setLocalRotation(Quat::fromEuler(math::radians(eulerDegrees)));
+      }
+    }
+
+    Entity environmentEntity = iApp.getEnvironmentEntity();
+    if (reg && reg->isValid(environmentEntity) && reg->hasComponent<EnvironmentComponent>(environmentEntity)) {
+      auto& environment = reg->getComponent<EnvironmentComponent>(environmentEntity);
+
+      ImGui::Spacing();
+      ImGui::Text("Sky and Ground");
+      ImGui::Separator();
+      ImGui::ColorEdit3("Sky Color", &environment.skyColor.r);
+      ImGui::SliderFloat("Sky (nits)", &environment.skyIntensity, 0.0f, 20000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+      ImGui::ColorEdit3("Ground Color", &environment.groundColor.r);
+      ImGui::SliderFloat("Ground (nits)", &environment.groundIntensity, 0.0f, 20000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
     }
   }
   ImGui::End();

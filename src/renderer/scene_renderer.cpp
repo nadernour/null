@@ -1,5 +1,7 @@
 #include "renderer/scene_renderer.h"
 #include "components/camera_component.h"
+#include "components/environment_component.h"
+#include "components/light_component.h"
 #include "components/mesh_component.h"
 #include "components/transform_component.h"
 #include "core/assert.h"
@@ -22,6 +24,37 @@
 #include <optional>
 
 namespace ne {
+
+namespace {
+
+// What the shader needs of a light. gpu::Light's defaults leave out the cone, which only spot lights have.
+gpu::Light toGpuLight(const LightComponent& iLight, const Mat4& iWorld) {
+  gpu::Light light{
+      .position = Vec4(iWorld[3].x, iWorld[3].y, iWorld[3].z, 1.0f),
+      .intensity = iLight.color.toVec3() * iLight.intensity,
+      .invRangeSq = iLight.range > 0.0f ? 1.0f / (iLight.range * iLight.range) : 0.0f,
+      .direction = Vec3(iWorld[0].x, iWorld[0].y, iWorld[0].z).getSafeNormal(),
+  };
+  switch (iLight.type) {
+    case LightComponent::Type::Directional:
+      // A point infinitely far away, the other way from where the light travels; it has no range
+      light.position = Vec4(-light.direction, 0.0f);
+      light.invRangeSq = 0.0f;
+      break;
+    case LightComponent::Type::Point:
+      break;
+    case LightComponent::Type::Spot: {
+      // KHR_lights_punctual's cone: full intensity inside the inner angle, none outside the outer one
+      const float cosOuter = math::cos(iLight.outerConeAngle);
+      light.spotScale = 1.0f / math::max(math::cos(iLight.innerConeAngle) - cosOuter, 0.001f);
+      light.spotOffset = -cosOuter * light.spotScale;
+      break;
+    }
+  }
+  return light;
+}
+
+} // namespace
 
 SceneRenderer::SceneRenderer(Device* iDevice, ResourceManager* iResourceManager, VkFormat iColorFormat, VkFormat iDepthFormat) {
   NE_ASSERT(iDevice && iResourceManager);
@@ -50,22 +83,46 @@ SceneRenderer::SceneRenderer(Device* iDevice, ResourceManager* iResourceManager,
 SceneRenderer::~SceneRenderer() = default;
 
 void SceneRenderer::prepare(Registry& ioRegistry, float iAspectRatio) {
-  mViewProj.reset();
+  mGlobalUniforms.reset();
+  mLights.clear();
   mDrawCalls.clear();
 
   Vec3 cameraPosition;
   ioRegistry.view<TransformComponent, CameraComponent>().each(
       [&](const TransformComponent& iTransform, const CameraComponent& iCamera) {
         if (iCamera.primary) {
-          NE_ASSERT(!mViewProj, "At most one camera may be primary");
+          NE_ASSERT(!mGlobalUniforms, "At most one camera may be primary");
           const Mat4& world = iTransform.getWorldMatrix();
-          mViewProj = iCamera.getViewProjectionMatrix(world, iAspectRatio);
           cameraPosition = Vec3(world[3].x, world[3].y, world[3].z);
+          // An orthographic camera's rays are parallel, as if its eye were infinitely far behind it: the point at w = 0
+          // in its backward direction. Every pixel then gets the same view direction.
+          const Vec3 forward = Vec3(world[0].x, world[0].y, world[0].z).getSafeNormal();
+          const bool isOrthographic = iCamera.projectionType == CameraComponent::ProjectionType::Orthographic;
+          mGlobalUniforms = gpu::GlobalUniforms{
+              .viewProj = iCamera.getViewProjectionMatrix(world, iAspectRatio),
+              .eye = isOrthographic ? Vec4(-forward, 0.0f) : Vec4(cameraPosition, 1.0f),
+              .exposure = iCamera.getExposure(),
+          };
         }
       });
-  if (!mViewProj) {
+  if (!mGlobalUniforms) {
     return;
   }
+
+  // Without an environment, the sky and the ground stay black
+  bool hasEnvironment = false;
+  ioRegistry.view<EnvironmentComponent>().each([&](const EnvironmentComponent& iEnvironment) {
+    NE_ASSERT(!hasEnvironment, "A scene may have at most one environment");
+    hasEnvironment = true;
+    mGlobalUniforms->skyRadiance = iEnvironment.skyColor.toVec3() * iEnvironment.skyIntensity;
+    mGlobalUniforms->groundRadiance = iEnvironment.groundColor.toVec3() * iEnvironment.groundIntensity;
+  });
+
+  ioRegistry.view<TransformComponent, LightComponent>().each(
+      [&](const TransformComponent& iTransform, const LightComponent& iLight) {
+        mLights.push_back(toGpuLight(iLight, iTransform.getWorldMatrix()));
+      });
+  mGlobalUniforms->lightCount = static_cast<uint32_t>(mLights.size());
 
   ioRegistry.view<TransformComponent, MeshComponent>().each(
       [&](Entity, const TransformComponent& iTransform, const MeshComponent& iMesh) {
@@ -109,8 +166,8 @@ void SceneRenderer::prepare(Registry& ioRegistry, float iAspectRatio) {
   });
 }
 
-void SceneRenderer::record(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUploadAllocator, gpu::DebugView iDebugView) {
-  if (!mViewProj || mDrawCalls.empty()) {
+void SceneRenderer::record(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUploadAllocator, gpu::DebugView iDebugView) const {
+  if (!mGlobalUniforms || mDrawCalls.empty()) {
     return;
   }
 
@@ -118,8 +175,12 @@ void SceneRenderer::record(VkCommandBuffer iCommandBuffer, UploadAllocator& ioUp
 
   mGeometryAllocator->bindIndexBuffer(iCommandBuffer);
 
-  gpu::GlobalUniforms globalUniforms;
-  globalUniforms.viewProj = *mViewProj;
+  // Without lights the address stays 0, and the shader's light loop never reads it: an empty vector's data() may be
+  // null, which memcpy mustn't get, even for 0 bytes
+  gpu::GlobalUniforms globalUniforms = *mGlobalUniforms;
+  if (!mLights.empty()) {
+    globalUniforms.lights = ioUploadAllocator.upload(mLights.data(), mLights.size() * sizeof(gpu::Light)).address;
+  }
   globalUniforms.debugView = static_cast<uint32_t>(iDebugView);
   VkDeviceAddress globalUniformsAddr = ioUploadAllocator.upload(&globalUniforms, sizeof(gpu::GlobalUniforms)).address;
 

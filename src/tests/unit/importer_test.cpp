@@ -240,7 +240,7 @@ NE_TEST_CASE("importer", "glTF DamagedHelmet: Material & Color Space Per Use") {
                      hasImage(material.occlusionTexture, false),
                  "Metallic-roughness, normal, and occlusion images hold data, so they're linear.");
   NE_TEST_ASSERT(material.metallic == 1.0f && material.roughness == 1.0f, "Unset metallic and roughness factors are glTF's 1.");
-  NE_TEST_ASSERT(material.emissive.equals(Vec3(1.0f)), "The emissive factor is (1, 1, 1).");
+  NE_TEST_ASSERT(material.emissive.equals(Vec3(kUnitlessEmissiveNits)), "The emissive factor (1, 1, 1) becomes 1000 nits.");
   const SubmeshData& helmet = model.meshes[0].submeshes[0];
   NE_TEST_ASSERT(helmet.materialIndex == 0, "The helmet uses material 0.");
   NE_TEST_ASSERT(helmet.tangents.size() == helmet.positions.size(),
@@ -397,9 +397,15 @@ NE_TEST_CASE("importer", "glTF Requiring An Unsupported Extension Imports Nothin
 
   writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0)",
                     R"("extensionsUsed": ["KHR_materials_emissive_strength"],)"
-                    R"("extensionsRequired": ["KHR_materials_emissive_strength"],)");
+                    R"("extensionsRequired": ["KHR_materials_emissive_strength"],)"
+                    R"("materials": [{"emissiveFactor": [1, 0.5, 0],)"
+                    R"("extensions": {"KHR_materials_emissive_strength": {"emissiveStrength": 4}}}],)",
+                    R"(, "material": 0)");
   ModelData emissiveStrength = GltfImporter::importModel(path.string());
   NE_TEST_ASSERT(emissiveStrength.meshes.size() == 1, "A file that requires KHR_materials_emissive_strength imports.");
+  NE_TEST_ASSERT(emissiveStrength.materials.size() == 1 &&
+                     emissiveStrength.materials[0].emissive.equals(Vec3(4000.0f, 2000.0f, 0.0f)),
+                 "Emissive factor (1, 0.5, 0) x strength 4 x kUnitlessEmissiveNits is (4000, 2000, 0) nits.");
 }
 
 NE_TEST_CASE("importer", "glTF Attributes: Mistyped Ones Are Dropped, Only Set 0 Is Read") {

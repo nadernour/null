@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/math/vec3.h"
 #include <array>
 #include <cstdint>
 
@@ -37,6 +38,9 @@ struct LinearColor {
     return {iColor.r * kScale, iColor.g * kScale, iColor.b * kScale, iColor.a * kScale};
   }
   Color toUnorm() const;
+
+  // RGB as a vector, without alpha
+  constexpr Vec3 toVec3() const { return Vec3(r, g, b); }
 
   LinearColor operator*(float iScale) const { return {r * iScale, g * iScale, b * iScale, a * iScale}; }
 

@@ -1,6 +1,6 @@
 # Rendering Plan
 
-Physically based rendering for Null, split into six phases. Each phase leaves the engine working and can be checked on its own. This file merges the stage 1 plan from the "PBR rendering next steps" session (2026-10-15) with the plan review of 2026-10-18. The README's Rendering section lists the same phases.
+Physically based rendering for Null, split into seven phases; Phase 6, the environment BRDF table, was added on Nov 1. Each phase leaves the engine working and can be checked on its own. This file merges the stage 1 plan from the "PBR rendering next steps" session (2026-10-15) with the plan review of 2026-10-18. The README's Rendering section lists the same phases.
 
 ## How to Work Through It
 
@@ -38,12 +38,12 @@ Physically based rendering for Null, split into six phases. Each phase leaves th
   - directional lights: lux;
   - point and spot lights: candela;
   - emissive and sky: nits (cd/m²);
-  - glTF emissive: multiplied by `kGltfEmissiveNits` (1000).
+  - emissive from file formats that give it no unit (glTF now; OBJ, DAE, and MJCF later): multiplied by `kUnitlessEmissiveNits` (1000).
 
-  *Why:* these are KHR_lights_punctual's units. glTF emissive has no unit, so the constant is the one place to tune it.
+  *Why:* these are KHR_lights_punctual's units. Emissive in those formats has no unit, so the constant is the one place to tune it. It's one value for all of them, so the Emissive debug view, which divides it back out, shows every format's emissive as authored. Godot's materials default to the same 1000 nits. Renamed from `kGltfEmissiveNits` on Nov 1: the value is the engine's, not glTF's.
 - **Light direction:** a light shines along its entity's +X (forward), like cameras.
-- **Ambient until IBL:** a sky / ground hemisphere with both a diffuse and a specular term (`envBrdfApprox`). *Why:* without a specular ambient term, metals render black when only punctual lights hit them.
-- **Debug views:** a channel view shows what the Khronos Sample Viewer's debug channel shows: data (normals, tangents, metallic, roughness, occlusion, UVs) as stored, base color and emissive as colors, and no PBR Neutral. *Why:* the Sample Viewer is the reference renderer, so each view can be checked against it.
+- **Ambient until IBL:** a sky / ground hemisphere with both a diffuse and a specular term (scaled by `envBrdfApprox` until Phase 6's table replaces it). *Why:* without a specular ambient term, metals render black when only punctual lights hit them.
+- **Debug views:** a channel view shows what the Khronos Sample Viewer's debug channel shows: data (normals, tangents, metallic, roughness, occlusion, UVs) as stored, base color and emissive as colors, and no PBR Neutral. Once Phase 4 puts emissive in nits, the Emissive view divides it by `kUnitlessEmissiveNits`, so it still shows the authored value. *Why:* the Sample Viewer is the reference renderer, so each view can be checked against it.
 
 ### Materials and meshes
 - **Material storage:** a device-local buffer of `gpu::Material`, append-only, written at load. The per-instance `colorTint` stays for runtime variation. *Why:* overwriting a slot that an in-flight frame reads needs a barrier, and nothing needs runtime edits before Episodes & Resets.
@@ -60,10 +60,11 @@ Physically based rendering for Null, split into six phases. Each phase leaves th
 
 ### Later phases
 - **Shadows:** directional cascaded shadow maps (CSM), 4 cascades in one 4096² D32 atlas, stabilized. They come after the per-view refactor. *Why:* an atlas needs no array images, and per-view drawing is shared with Render Views.
+- **Environment BRDF:** a 64 × 64 `R16G16_SFLOAT` table, built on the CPU at startup from the light loop's GGX and visibility, replaces `envBrdfApprox`, in its own phase before IBL. *Why:* the fit makes mid-rough metal about a quarter stop too dark and drops rough metal's brightening toward the edges (Phase 6 has the numbers), which a comparison with the Sample Viewer, which reads a table, would show. In its own phase it stays out of IBL's way. Decided Nov 1.
 - **IBL:**
   - `.hdr` loaded with stb_image into an RGBA16F cube with prefiltered mips, built with graphics passes;
   - SH9 diffuse computed on the CPU;
-  - `envBrdfApprox` instead of a lookup texture.
+  - the specular scaled by Phase 6's environment BRDF table.
 
   *Why:* it reuses color-attachment rendering, so no storage images or compute pipelines are needed yet.
 
@@ -500,7 +501,7 @@ struct Vertex {
 ---
 
 ## Phase 4: Lights, Exposure & PBR Shading
-**Status:** not started
+**Status:** done (2026-10-29)
 
 **Goal:** Physically based shading:
 - the glTF metal-roughness BRDF, lit by light components in physical units;
@@ -509,135 +510,196 @@ struct Vertex {
 
 The light fixed in the shader goes away.
 
+This is the plan of Oct 15 and 18, checked against the code on Oct 29, after Phase 3. The check made these changes:
+- **Every light type takes one path through the shader.** A directional light is stored as a point infinitely far away: a position with w = 0. The vector toward it is then the same at every pixel and has length 1, so dividing by the squared distance changes nothing. A light without a range stores 1 / range² as 0, which turns the range fade off, and a point light stores cone constants that make its cone factor 1. What differs per type is worked out once per light on the CPU, in a switch that `-Wswitch` checks, so `gpu::Light` drops its type (52 bytes instead of 56).
+- **The camera's eye is stored the same way.** An orthographic camera's rays are parallel, so every pixel should get the same view direction. The draft used the camera's position, which aims every pixel's view direction at that one point.
+- **The Emissive debug view divides by `kUnitlessEmissiveNits`.** Once emissive is in nits it would show white instead of matching the Sample Viewer.
+- **Smaller fixes:**
+  - a frame without lights uploads no light buffer;
+  - the shader skips a light behind the surface before computing H, where a NaN could appear;
+  - the "same image" check leaves out the helmet's emission, which doesn't double with the lights.
+- **The ground plane moves here from Phase 5,** so point and spot lights have a surface to light.
+- **New tests:** every light type, a frame without lights, and emissive in nits.
+
 **Data:**
 - `src/components/light_component.h`:
 ```cpp
+// KHR_lights_punctual's light types and units. A light shines along its entity's +X, the way a camera looks.
 struct LightComponent {
   enum class Type : uint8_t { Directional, Point, Spot };
   Type type = Type::Directional;
-  LinearColor color = LinearColor::White;
-  float intensity = 1.0f;                   // Directional: lux. Point and spot: candela
-  float range = 0.0f;                       // Point and spot: where the light fades out; 0 for inverse-square only
-  float innerConeAngle = 0.0f;              // Spot, radians
-  float outerConeAngle = math::kPi / 4.0f; // Spot, radians
+  LinearColor color = LinearColor::White;  // Linear; alpha is ignored
+  float intensity = 1.0f;                  // Directional: lux. Point and spot: candela
+  float range = 0.0f;                      // Point and spot: where the light fades out; 0 for inverse-square only
+  float innerConeAngle = 0.0f;             // Spot, radians: full intensity inside it
+  float outerConeAngle = math::kPi / 4.0f; // Spot, radians: no light outside it; above the inner angle, at most pi / 2
 };
 ```
-- `src/components/environment_component.h`, at most one per scene: `LinearColor skyColor`, `float skyIntensity` (nits), `LinearColor groundColor`, `float groundIntensity` (nits).
-- `CameraComponent` gains:
-  - `aperture = 16.0f` (f-number);
-  - `shutterSpeed = 1.0f / 125.0f` (seconds);
-  - `iso = 100.0f`;
-  - `getEv100()` and `getExposure()`.
-- `gpu::Light` (56 bytes) and the new `GlobalUniforms` (120 bytes):
+- `src/components/environment_component.h`, at most one per scene:
 ```cpp
+// The light that reaches the scene from far away: until Image-Based Lighting, a sky of one color above the horizon and
+// a ground of one color below it
+struct EnvironmentComponent {
+  LinearColor skyColor = LinearColor::White;
+  float skyIntensity = 1.0f; // Nits
+  LinearColor groundColor = LinearColor::White;
+  float groundIntensity = 1.0f; // Nits
+};
+```
+- `CameraComponent` gains `getEv100()`, `getExposure()`, and, after `primary`:
+  ```cpp
+  float aperture{16.0f};             // f-number
+  float shutterSpeed{1.0f / 125.0f}; // Seconds
+  float iso{100.0f};
+  ```
+  The defaults follow the "sunny 16" rule: EV100 ≈ 15, the exposure for a 100,000 lux sun.
+- Emissive is in nits, and the comments on `MaterialData::emissive` and `gpu::Material::emissive` say so. `material_data.h` gains `constexpr float kUnitlessEmissiveNits = 1000.0f`, the nits of an emissive of 1 from a format that gives it no unit, such as glTF (see **Units**).
+- `gpu::Light` (52 bytes) and the new `GlobalUniforms` (128 bytes: 124 of fields, then 4 of padding, which Slang adds too). Offsets checked with slangc 2026.20 on Oct 29.
+```cpp
+// Every type the same way: a directional light is a point infinitely far away (position.w = 0), a light without a range
+// has invRangeSq = 0, and a light without a cone has spotScale = 0 and spotOffset = 1
 struct Light {
-  Vec3 position;           // Point and spot
-  float range = 0.0f;
-  Vec3 direction;          // Where the light travels: its entity's +X
-  float intensity = 0.0f;  // Lux or candela
-  Vec3 color;              // Linear
-  uint32_t type = 0;       // LightComponent::Type
-  float spotScale = 0.0f;  // 1 / max(cos(inner) - cos(outer), 0.001)
-  float spotOffset = 0.0f; // -cos(outer) * spotScale
+  Vec4 position{0.0f};     // Point and spot: (world position, 1). Directional: (direction toward the light, 0)
+  Vec3 intensity{0.0f};    // Linear color x intensity: lux for directional lights, candela for point and spot lights
+  float invRangeSq = 0.0f; // 1 / range², 0 without a range
+  Vec3 direction{0.0f};    // Where the light travels: its entity's +X
+  float spotScale = 0.0f;  // Spot: 1 / max(cos(inner) - cos(outer), 0.001); others: 0
+  float spotOffset = 1.0f; // Spot: -cos(outer) * spotScale; others: 1
 };
 
 struct GlobalUniforms {
   Mat4 viewProj;
-  VkDeviceAddress lights = 0; // Offset 64, so the address stays 8-byte aligned
-  Vec3 cameraPosition;
+  VkDeviceAddress lights = 0;       // Offset 64, so the address stays 8-byte aligned; 0 when lightCount is 0
+  Vec4 eye{0.0f, 0.0f, 0.0f, 1.0f}; // Perspective camera: (position, 1). Orthographic: (backward direction, 0)
+  Vec3 skyRadiance{0.0f};           // Nits: color x intensity
   float exposure = 1.0f;
-  Vec3 skyRadiance;           // Nits: color x intensity
+  Vec3 groundRadiance{0.0f};        // Nits: color x intensity
   uint32_t lightCount = 0;
-  Vec3 groundRadiance;
-  uint32_t debugView = 0;
+  uint32_t debugView = 0;           // DebugView
 };
 ```
 
 **Tasks:**
-1. Add `math::log2` and `math::exp2` wrappers to `math_utils.h`, like `math::sqrt`.
-2. **Exposure** (Lagarde & de Rousiers, "Moving Frostbite to PBR"):
-```cpp
-// EV100 = log2(N^2 / t * 100 / S)
-float getEv100() const { return math::log2(aperture * aperture / shutterSpeed * 100.0f / iso); }
-float getExposure() const { return 1.0f / (1.2f * math::exp2(getEv100())); }
-```
-3. **`SceneRenderer`:**
-   - gathers `TransformComponent` + `LightComponent` in `prepare` and uploads them in `record` (position = world translation, direction = normalized world +X), precomputing the spot scale and offset;
-   - reads the `EnvironmentComponent`; with none, the ambient is black;
-   - fills `GlobalUniforms` from the primary camera (position, exposure).
-4. **glTF importer:** multiply emissive by `kGltfEmissiveNits = 1000.0f`.
+1. **Math:** `math::log2` and `math::exp2` wrappers in `math_utils.h`, like `math::sqrt`.
+2. **Exposure** (Lagarde & de Rousiers, "Moving Frostbite to PBR"), in `CameraComponent`:
+   ```cpp
+   // EV100 = log2(N^2 / t * 100 / S)
+   float getEv100() const { return math::log2(aperture * aperture / shutterSpeed * 100.0f / iso); }
+   // 2^EV100 = N^2 / t * 100 / S, so no exp2(log2(...)) round trip
+   float getExposure() const { return 1.0f / (1.2f * (aperture * aperture / shutterSpeed * 100.0f / iso)); }
+   ```
+   In words: EV100 counts, in stops, how little light the settings let in (each step up halves it). `1.2 × 2^EV100` is the luminance, in nits, that just fills the sensor, and the exposure scales that to 1.0. At BasicApp's f/4, 1/60 s, ISO 400: 4² × 60 × 100 / 400 = 240, so EV100 = log2(240) ≈ 7.9. The sensor fills at 1.2 × 240 = 288 nits, so the exposure is 1/288 ≈ 0.0035, and a white wall of 100 nits comes out at 0.35. The exposure uses the 240 as is: going through EV100 would take its log2 only for exp2 to undo it (Filament's `exposure(N, t, S)` skips it too).
+3. **glTF importer:** emissive = factor × emissive strength × `kUnitlessEmissiveNits`.
+4. **`SceneRenderer`:**
+   - `mViewProj` becomes `std::optional<gpu::GlobalUniforms> mGlobalUniforms`. `prepare` fills it from:
+     - the primary camera: the view-projection, the eye, and `getExposure()`. The eye is `(world position, 1)` for a perspective camera and `(-forward, 0)` for an orthographic one, forward being the normalized world +X, as in `getViewMatrix`;
+     - the `EnvironmentComponent`: the sky's and the ground's color × intensity. With none, both stay black. Assert that there's at most one, as for primary cameras;
+     - the number of lights.
+   - `prepare` also gathers every `TransformComponent` + `LightComponent` into `std::vector<gpu::Light> mLights`. `direction` is the normalized world +X and `intensity` is color × intensity; a switch on the type fills the rest:
+
+     | Type | `position` | `invRangeSq` | `spotScale` | `spotOffset` |
+     |---|---|---|---|---|
+     | Directional | `(-direction, 0)` | 0 | 0 | 1 |
+     | Point | `(world position, 1)` | `1 / range²`, or 0 when `range` is 0 | 0 | 1 |
+     | Spot | `(world position, 1)` | as for a point light | `1 / max(cos(inner) - cos(outer), 0.001)` | `-cos(outer) * spotScale` |
+
+   - `record` uploads the lights when there are any, then the uniforms, with the lights' address and the debug view. Without lights the address stays 0: an empty vector's `data()` may be null, and `memcpy` from null is undefined even for 0 bytes.
 5. **Shader** (`scene.slang`):
+   - Mirror `Light` and `GlobalUniforms`, and mirror `kUnitlessEmissiveNits` as `kMaterialHasNormalTexture` is mirrored.
    - Remove the fixed light and ambient.
-   - Pass the world position from the vertex shader.
-   - N is the normal-mapped normal; `V = normalize(cameraPosition - worldPos)`; `NdotV = max(dot(N, V), 1e-4)`.
-   - Clamp perceptual roughness to at least 0.045.
+   - The vertex shader passes the world position, and computes `SV_Position` from it.
+   - The Emissive view returns `emissive / kUnitlessEmissiveNits`: the authored value, as the Sample Viewer shows it.
+   - For the lit color, N is the normal-mapped normal and `V = normalize(eye.xyz - worldPos * eye.w)`: toward the camera, and for an orthographic camera (w = 0) its backward direction at every pixel. `NdotV = max(dot(N, V), 1e-4)`, and perceptual roughness is clamped to at least 0.045.
 
-   The math:
-```slang
-float3 F0 = lerp(float3(0.04, 0.04, 0.04), base.rgb, metallic);
-float3 diffuseColor = base.rgb * (1.0 - metallic);
-float a = roughness * roughness;
-float a2 = a * a;
+   The math (`lights`, `lightCount`, the radiances, and `exposure` are `GlobalUniforms` fields):
+   ```slang
+   float3 F0 = lerp(float3(0.04, 0.04, 0.04), base.rgb, metallic);
+   float3 diffuseColor = base.rgb * (1.0 - metallic);
+   float a = roughness * roughness;
+   float a2 = a * a;
+   float3 radiance = float3(0.0, 0.0, 0.0);
 
-// Each light gives L (unit vector toward the light) and E (illuminance at the point, in lux):
-//   Directional: L = -light.direction; E = color * intensity
-//   Point / spot: d2 = max(dot(toLight, toLight), 1e-4); L = toLight * rsqrt(d2); att = 1 / d2
-//     range > 0: r = d2 / (range * range); att *= saturate(1 - r * r)               (KHR_lights_punctual)
-//     spot:      t = saturate(dot(light.direction, -L) * spotScale + spotOffset); att *= t * t
-//     E = color * intensity * att
-float3 H = normalize(V + L);
-float NdotL = saturate(dot(N, L));
-float NdotH = saturate(dot(N, H));
-float VdotH = saturate(dot(V, H));
-float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
-float D = a2 / (kPi * d * d);
-float Vis = 0.5 / (NdotL * sqrt(NdotV * NdotV * (1.0 - a2) + a2) + NdotV * sqrt(NdotL * NdotL * (1.0 - a2) + a2) + 1e-7);
-float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
-radiance += ((1.0 - F) * diffuseColor / kPi + F * D * Vis) * E * NdotL;
+   for (uint i = 0; i < lightCount; ++i) {
+     Light light = lights[i];
+     // Toward the light. For a directional light (w = 0) it's the same at every pixel and has length 1, so 1 / d2 is 1.
+     float3 toLight = light.position.xyz - worldPos * light.position.w;
+     float d2 = max(dot(toLight, toLight), 1e-4);
+     float3 L = toLight * rsqrt(d2);
+     float NdotL = dot(N, L);
+     if (NdotL <= 0.0) {
+       continue; // Behind the surface
+     }
+     // E: the illuminance (lux) on a surface facing the light, after KHR_lights_punctual's range fade and cone
+     float r = d2 * light.invRangeSq; // (distance / range)²
+     float cone = saturate(dot(light.direction, -L) * light.spotScale + light.spotOffset);
+     float3 E = light.intensity * (saturate(1.0 - r * r) * cone * cone / d2);
 
-// Hemisphere ambient, world +Z up
-float3 hemisphere(float3 dir) { return lerp(groundRadiance, skyRadiance, saturate(dir.z * 0.5 + 0.5)); }
-float3 R = normalize(lerp(reflect(-V, N), N, a));
-radiance += (diffuseColor * hemisphere(N) + envBrdfApprox(F0, roughness, NdotV) * hemisphere(R)) * ao;
+     float3 H = normalize(V + L);
+     float NdotH = saturate(dot(N, H));
+     float VdotH = saturate(dot(V, H));
+     float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
+     float D = a2 / (kPi * d * d);
+     float Vis = 0.5 / (NdotL * sqrt(NdotV * NdotV * (1.0 - a2) + a2) + NdotV * sqrt(NdotL * NdotL * (1.0 - a2) + a2));
+     float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
+     radiance += ((1.0 - F) * diffuseColor / kPi + F * D * Vis) * E * NdotL;
+   }
 
-radiance += emissive;
-return float4(min(radiance * exposure, 64000.0), base.a);
+   // Hemisphere ambient, world +Z up
+   float3 hemisphere(float3 dir) { return lerp(groundRadiance, skyRadiance, saturate(dir.z * 0.5 + 0.5)); }
+   float3 R = normalize(lerp(reflect(-V, N), N, a));
+   radiance += (diffuseColor * hemisphere(N) + envBrdfApprox(F0, roughness, NdotV) * hemisphere(R)) * ao;
 
-// Karis, "Physically Based Shading on Mobile" (2014)
-float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
-  const float4 c0 = float4(-1.0, -0.0275, -0.572, 0.022);
-  const float4 c1 = float4(1.0, 0.0425, 1.04, -0.04);
-  float4 r = roughness * c0 + c1;
-  float a004 = min(r.x * r.x, exp2(-9.28 * NdotV)) * r.x + r.y;
-  float2 AB = float2(-1.04, 1.04) * a004 + r.zw;
-  return F0 * AB.x + AB.y;
-}
-```
+   radiance += emissive;
+   return float4(min(radiance * exposure, 64000.0), base.a);
+
+   // Karis, "Physically Based Shading on Mobile" (2014)
+   float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
+     const float4 c0 = float4(-1.0, -0.0275, -0.572, 0.022);
+     const float4 c1 = float4(1.0, 0.0425, 1.04, -0.04);
+     float4 r = roughness * c0 + c1;
+     float a004 = min(r.x * r.x, exp2(-9.28 * NdotV)) * r.x + r.y;
+     float2 AB = float2(-1.04, 1.04) * a004 + r.zw;
+     return F0 * AB.x + AB.y;
+   }
+   ```
+   In words: a diffuse surface facing straight up sees only sky, one facing down only ground, and a wall half of each. (N.z + 1) / 2 is the sky's share of what the surface sees, weighted by angle the way diffuse light is, so the blend is exactly the diffuse light of a two-color sky. The specular term reads the same function along the reflection, bent toward N as roughness grows, because a rough surface gathers its reflection from closer to its normal.
 6. **`BasicApp`** starting values (tune by eye):
-   - a directional light of 1000 lux, pitched down about 50° (in REP-103, positive pitch tilts +X down);
+   - the sun: a directional light of 1000 lux, pitched down 50° and yawed −30° (in REP-103, positive pitch tilts +X down and negative yaw turns it right). It shines along (0.56, −0.32, −0.77), so it comes from above the camera's left shoulder;
    - an environment: sky (0.65, 0.8, 1.0) × 150 nits, ground (0.5, 0.45, 0.4) × 50 nits;
-   - the camera at f/4, 1/60 s, ISO 400 (EV100 ≈ 7.9).
+   - the camera at f/4, 1/60 s, ISO 400 (EV100 ≈ 7.9);
+   - a ground plane, moved here from Phase 5: a flat box from `MeshUtils::createBoxMeshData`, 20 × 20 × 0.1 m, light grey (0.5), roughness 0.8, with its top at z = −1.5, just under the helmet's lowest point (about −1.4);
+   - `getSunEntity()` and `getEnvironmentEntity()`, for MainUI.
 7. **UI:**
-   - Camera Settings: aperture, shutter, and ISO, plus the resulting EV100.
-   - A Lighting window: sun intensity, color, and direction; sky and ground.
-8. **Tests** (`camera` suite):
-   - f/16, 1/100 s, ISO 100 gives EV100 ≈ 14.64 and exposure ≈ 3.26e-5.
-   - Doubling the shutter time doubles the exposure.
+   - Camera Settings: aperture, shutter speed (shown as 1/N s), and ISO, plus the resulting EV100.
+   - A Lighting window, hidden at first and toggled from the View menu: the sun's intensity, color, pitch, and yaw, and the sky's and the ground's color and intensity. Like Camera Settings, it checks that the entities still have their components; a renderer test removes them.
+8. **Tests:**
+   - camera: f/16, 1/100 s, ISO 100 gives EV100 ≈ 14.64 and exposure ≈ 3.26e-5. Doubling the shutter time or the ISO doubles the exposure.
+   - renderer, "Frames Render Every Light Type": a directional light, two point lights (one with a range), and a spot light, near BasicApp's cubes. Run `runForFrames(3)`, then destroy them. In CI this runs the light loop under validation on lavapipe.
+   - renderer, "Frames Render Without Lights Or An Environment": remove every `LightComponent` and `EnvironmentComponent`, keeping copies, run `runForFrames(3)`, then put them back. BasicApp always has a sun, so no other test renders a frame without a light buffer.
+   - importer: the helmet's emissive is `Vec3(kUnitlessEmissiveNits)`. The file that requires KHR_materials_emissive_strength gains a material with emissive factor (1, 0.5, 0) and strength 4, used by its primitive, and imports emissive (4000, 2000, 0).
 
 **Done when:**
+- In BasicApp, the sun lights the cubes, the helmet, and the ground from above the camera's left shoulder. Faces turned away from it take the sky's blue from above and the ground's brown from below. The background stays the dark grey clear color, which ignores exposure until Phase 7 draws the sky.
 - The helmet's metal parts reflect the sky instead of going black.
-- Highlights shrink as roughness drops; MetalRoughSpheresNoTextures shows a clean grid.
-- One stop (shutter × 2) doubles the brightness.
-- Doubling every light and sky intensity while halving the shutter time gives the same image.
+- Highlights shrink as roughness drops, and MetalRoughSpheresNoTextures shows a clean grid.
+- One stop (shutter time × 2) doubles the scene's HDR values, so mid-tones look one stop brighter.
+- Doubling the sun's, the sky's, and the ground's intensities while halving the shutter time gives the same image, except the helmet's emissive parts, which dim by one stop: emission isn't a light, so it doesn't double.
 - There are no black or white speckles (NaN or inf).
-- The helmet's emissive glows at the indoor exposure.
+- The helmet's emissive glows at the indoor exposure (a glTF emissive of 1 is 1000 nits, 3.5 after BasicApp's exposure of 1/288), and the Emissive debug view still matches the Sample Viewer.
+- In a local change to BasicApp:
+  - a spot light aimed at the ground lights a disc whose edge fades out between the inner and the outer cone;
+  - a point light's pool of light dims with distance, and with a range it reaches black at the range;
+  - through an orthographic camera, the ground, made glossy, is evenly lit by the sun, with no highlight under the camera.
 
 **Pitfalls:**
 - Exposure is applied once, in the scene shader. The tonemap must not apply it again.
-- Pre-exposure is what keeps fp16 from overflowing. `min(..., 64000)` catches the rest, such as tiny roughness under a bright light.
-- A light shines along +X, so the directional light's `L` is `-direction`.
+- Pre-exposure is what keeps fp16 from overflowing, and `min(..., 64000)` catches the rest. At BasicApp's exposure, a mirror-like highlight (roughness at the 0.045 clamp) under the 1000 lux sun reaches about 67,000, past fp16's maximum of 65,504.
+- A light shines along +X, so a directional light's `position` is `-direction`, the direction toward the light.
 - With metallic = 1 the diffuse term is zero. Without the hemisphere's specular term, metals turn black, so don't drop it.
-- Physical units span a huge range. A 100,000 lux sun at f/16, 1/125 s, ISO 100 looks normal, and so does 1000 lux at f/4, 1/60 s, ISO 400. Pairing one setup's lights with the other's exposure looks all black or all white; that's correct, not a bug.
+- Skip a light with NdotL ≤ 0 before computing H. `normalize(V + L)` is NaN when L = −V (a light shining straight into the camera), and a NaN times a zero NdotL is still NaN.
+- Don't use an orthographic camera's position as its eye: every pixel would look from that one point, and flat surfaces would get a highlight that follows the camera.
+- Physical units span a huge range. A 100,000 lux sun at f/16, 1/125 s, ISO 100 looks normal, and so does 1000 lux at f/4, 1/60 s, ISO 400. Pairing one setup's lights with the other's exposure looks all black or all white; that's correct, not a bug. The defaults pair a sunny-16 camera with KHR_lights_punctual's intensity of 1, so a new light needs its intensity set.
+- Every pixel loops over every light, which is fine for tens of lights. Clustered lighting (see **Later**) is for more.
 
 ---
 
@@ -658,7 +720,7 @@ float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
      - uploads that view's `GlobalUniforms`;
      - binds each batch's pipeline and sets its cull mode;
      - issues the multi-draws.
-2. A `View` struct holds the view-projection matrix, camera position, exposure, and pass kind (color or depth-only).
+2. A `View` struct holds the view-projection matrix, the eye (Phase 4), the exposure, and the pass kind (color or depth-only).
 3. `Renderer` finds the primary camera, calls `prepare` and `upload` once, then `recordView` for the camera.
 
 **Part B: cascaded shadow maps**
@@ -681,15 +743,14 @@ float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
    - Blend materials don't cast shadows.
 5. `Renderer` opens one depth-only pass on the atlas, cleared once, and renders each cascade with `recordView`, the viewport and scissor set to its tile.
 6. **Shading:**
-   - Upload a `gpu::ShadowData` per frame (4 view-projection matrices, split depths, atlas texture index, texel size) and put its address in `GlobalUniforms`.
+   - Upload a `gpu::ShadowData` per frame (the shadowed light's index, 4 view-projection matrices, split depths, atlas texture index, texel size) and put its address in `GlobalUniforms`.
    - Pick the cascade from view depth.
    - Offset the world position along N by about 1–2 texels.
    - 3×3 PCF with `SampleCmpLevelZero`, through the shadow sampler (`SamplerManager::kShadowSamplerIndex`). Declare `SamplerComparisonState gShadowSamplers[]` on binding 0, next to `gSamplers`.
    - Clamp the taps inside the tile.
-   - Only the directional light's direct term is shadowed.
+   - Only that light's direct term is shadowed. Since Phase 4 the light loop doesn't know light types, so it finds the light by its index.
 7. **`BasicApp`:**
-   - a ground plane under the objects: a flat box from `MeshUtils::createBoxMeshData`, light grey, roughness 0.8;
-   - the light casts shadows;
+   - the sun casts shadows onto the ground plane from Phase 4;
    - a `Cascades` debug view tints each cascade.
 
 **Done when:**
@@ -707,7 +768,48 @@ float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
 
 ---
 
-## Phase 6: Image-Based Lighting
+## Phase 6: Environment BRDF Table
+**Status:** not started
+
+**Goal:** The ambient's specular term reads a lookup table instead of Karis's `envBrdfApprox`, so rough metal reflects the sky at the right brightness. Only that term changes, and it changes before Image-Based Lighting, so a mismatch found in Phase 7 can't come from it.
+
+The table answers one question: of light arriving evenly from every direction, what share does the specular lobe reflect toward the camera? The answer depends on the view angle (NdotV), the roughness, and F0, and comes out as a scale and an offset of F0: `F0 × A + B`. Karis fitted a curve to it in 2014, to save a texture read on the phones of the time. He fitted it to UE4's older Schlick-Smith visibility, not the height-correlated Smith of Phase 4's light loop. Against the exact values (the light loop's GGX and visibility, integrated on Nov 1):
+
+| Roughness | NdotV | Metal (F0 = 1): exact | Fit | Plastic (F0 = 0.04): exact | Fit |
+|---|---|---|---|---|---|
+| 0.045 | 1.0 | 1.000 | 0.975 | 0.040 | 0.044 |
+| 0.5 | 0.5 | 0.857 | 0.725 | 0.056 | 0.050 |
+| 1.0 | 1.0 | 0.307 | 0.450 | 0.012 | 0.016 |
+| 1.0 | 0.1 | 0.760 | 0.450 | 0.053 | 0.016 |
+
+For a metal, the fit gives 1 − 0.55 × roughness at every angle, so mid-rough metal comes out about a quarter stop too dark, and rough metal loses its brightening toward the edges.
+
+**Tasks:**
+1. **Half floats:** a float → half conversion in `core/math` (moved here from Phase 7, which reuses it).
+2. **Half-float textures:** `createTexture` takes only 8-bit RGBA today and builds an 8-bit mip chain. `ImageData` gains a half-float format, which `createTexture` uploads as it is, one level (`R16G16_SFLOAT` for two channels). Phase 7's HDR images reuse it.
+3. **The table**, in `core` next to `ImageUtils` (CPU math, no Vulkan):
+   - one function integrates one (NdotV, roughness) pair: GGX importance sampling over Hammersley points, with the light loop's height-correlated Smith visibility, returning A and B;
+   - 64 × 64 texels, NdotV along x and perceptual roughness along y, each computed at its texel's center ((i + 0.5) / 64), with 256 samples.
+4. **`ResourceManager`** builds the table once at startup and registers it, with the linear, clamp-to-edge sampler. A scratch version measured on Nov 1 took 24 ms in an optimized build and 45 ms in Debug.
+5. **`GlobalUniforms`** gains `uint32_t envBrdfTexture`, the table's packed texture and sampler index (as in `gpu::Material`), in the 4 bytes of padding after `debugView`: the struct stays 128 bytes, now without padding. `SceneRenderer` keeps the index from construction, like the material buffer's address.
+6. **Shader:** `envBrdf(F0, roughness, NdotV)` reads the table and returns `F0 * AB.x + AB.y`, as `envBrdfApprox` did; `envBrdfApprox` goes away.
+7. **Tests**, on the integration function:
+   - roughness 1 seen head-on: A + B is 1 − ln 2 ≈ 0.307, within 0.005. At roughness 1, GGX spreads evenly and the integral has a closed form;
+   - roughness 0.045 at NdotV 0.1, F0 0.04: within 0.005 of Schlick's Fresnel at that angle, 0.607. A near-mirror reflects what Fresnel says.
+
+**Done when:**
+- With the sun off in the Lighting window, so only the ambient lights the scene, MetalRoughSpheresNoTextures' rough metal spheres brighten toward their edges, and mid-rough metal is about a quarter stop brighter than with the fit.
+- Smooth spheres barely change.
+
+**Pitfalls:**
+- Use the light loop's height-correlated Smith, not UE4's Schlick-Smith with k = α / 2, which most IBL tutorials use: that mismatch is part of what this phase fixes.
+- Index the table by perceptual roughness, as `envBrdfApprox` was, not by α.
+- Half floats, not 32-bit floats: linear filtering of `R32G32_SFLOAT` isn't guaranteed.
+- The sampling error is largest at grazing angles (NdotV below 0.1): on Nov 1, at 256 samples, it was 0.4% on average and 2% at worst, there. More samples converge slowly; sampling visible normals (Heitz 2018) is the fix if it ever shows.
+
+---
+
+## Phase 7: Image-Based Lighting
 **Status:** not started
 
 **Goal:** An HDR environment map lights and reflects the scene and is drawn as the sky. The hemisphere stays as the fallback when there's no environment map.
@@ -719,7 +821,7 @@ float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
    - Mip generation with `vkCmdBlitImage`; linear blits of `R16G16B16A16_SFLOAT` are mandatory.
 2. **HDR images:**
    - `ImageImporter::importHdrFromFile` loads Radiance `.hdr` files with `stbi_loadf` as float RGBA.
-   - Convert them on the CPU to half floats (`R16G16B16A16_SFLOAT`), because linear filtering of `R32G32B32A32_SFLOAT` isn't guaranteed. This needs a small float → half conversion in `core/math`.
+   - Convert them on the CPU to half floats (`R16G16B16A16_SFLOAT`), because linear filtering of `R32G32B32A32_SFLOAT` isn't guaranteed. They use Phase 6's float → half conversion and half-float `ImageData`.
 3. **Assets:** a CC0 HDRI from Poly Haven (1k or 2k `.hdr`). **Decide first:** either build the planned download manifest (URL + SHA-256 into a gitignored cache, cached in CI) or commit one file of 2 MB or less.
 4. **Precompute at load** (graphics passes, one fullscreen triangle per face and mip):
    - equirectangular map → 512² environment cube with full mips;
@@ -729,7 +831,7 @@ float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
 6. **`EnvironmentComponent`** gains the cube texture index, the SH coefficients, and `intensity` (nits per unit of the map).
 7. **Shading:** when an environment map is set, it replaces the hemisphere:
    - diffuse ambient = SH(N) × diffuseColor;
-   - specular = the prefiltered cube sampled at mip `roughness * 5` × `envBrdfApprox`;
+   - specular = the prefiltered cube sampled at mip `roughness * 5` × the environment BRDF table (Phase 6);
    - both multiplied by intensity and ao.
 8. **Sky:** after the opaque draws, a fullscreen triangle at depth 0 (reverse-Z far):
    - depth test GREATER_OR_EQUAL, no depth writes;
@@ -759,14 +861,15 @@ Download these for manual checks, and don't commit them; `content/` stays small.
   | TextureSettingsTest | samplers (per-axis wrap); double-sided | 2, 3 |
   | NormalTangentTest, NormalTangentMirrorTest | normal maps, with tangents generated and from the file | 3 |
   | AlphaBlendModeTest | alpha modes | 3 |
-  | MetalRoughSpheresNoTextures | the BRDF | 4 |
+  | MetalRoughSpheresNoTextures | the BRDF; the environment BRDF table | 4, 6 |
 
 ## Later (Outside This Plan)
 - **Anti-aliasing:** MSAA on the scene target suits forward rendering; decide before Render Views. An entity-ID target can't be averaged, so resolve it with sample zero.
 - **Entity-ID attachment** for segmentation sensors and picking.
 - **Runtime material edits** (domain randomization): add a barrier before overwriting a slot, or upload materials per frame.
 - **Spot and point light shadows.**
-- **More glTF features:** TEXCOORD_1, KHR_texture_transform, embedded (`data:`) images, KHR_lights_punctual, the KHR_materials_* extensions.
-- **Shading quality:** specular anti-aliasing and multiple-scattering energy compensation.
+- **More glTF features:** TEXCOORD_1, KHR_texture_transform, embedded (`data:`) images, KHR_lights_punctual, the KHR_materials_* extensions. A KHR_lights_punctual light shines along glTF −Z, which the axis change makes engine −X, so the importer turns it half a turn about its up axis to shine along +X.
+- **Auto exposure:** metering the scene as real cameras do, for camera sensors.
+- **Shading quality:** specular anti-aliasing and multiple-scattering energy compensation (which reads Phase 6's table).
 - **Clustered lighting**, if light counts grow.
 - **Render graph:** see Decisions for when to revisit it.
