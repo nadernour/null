@@ -21,13 +21,32 @@ public:
 
   // The cull mode isn't part of it: it's dynamic state, which whoever records a draw sets with vkCmdSetCullMode
   struct Config {
-    std::string shaderName;
-    std::string fragmentEntry = "fragMain";
+    // The compiled shader, which holds every stage's entry point
+    struct Shader {
+      std::string name; // Required, like debugName
+      std::string vertexEntry = "vertMain";
+      std::string fragmentEntry = "fragMain"; // Empty for a vertex-only pipeline, which writes only depth
+    };
+
+    // The depth attachment's format, and what happens to each fragment's depth
+    struct Depth {
+      VkFormat format = VK_FORMAT_UNDEFINED; // Undefined for a pass without depth
+      DepthMode mode = DepthMode::ReadWrite;
+      // Added to each fragment's depth, in Vulkan's units: steps of the depth format, and depth per pixel of slope. Both
+      // 0 leave it off.
+      float biasConstant = 0.0f;
+      float biasSlope = 0.0f;
+      // Clamps depth to the viewport's range instead of clipping what lies past the near and far planes, so a shadow
+      // caster in front of a light view's near plane is flattened onto it and still casts. Needs the depthClamp
+      // feature, which Device requires.
+      bool clamp = false;
+    };
+
+    Shader shader;         // Required
     std::string debugName; // Required; with no default, GCC warns about a Config that leaves it out
     VkPipelineLayout layout = VK_NULL_HANDLE;
-    VkFormat colorAttachmentFormat = VK_FORMAT_UNDEFINED;
-    VkFormat depthAttachmentFormat = VK_FORMAT_UNDEFINED;
-    DepthMode depthMode = DepthMode::ReadWrite;
+    VkFormat colorAttachmentFormat = VK_FORMAT_UNDEFINED; // Undefined for a depth-only pass
+    Depth depth{};
     BlendMode blendMode = BlendMode::Disabled;
   };
 

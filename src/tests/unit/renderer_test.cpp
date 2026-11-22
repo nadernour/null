@@ -12,6 +12,7 @@
 #include "platform/window.h"
 #include "renderer/bindless_manager.h"
 #include "renderer/gpu_types.h"
+#include "renderer/renderer.h"
 #include "renderer/resource_manager.h"
 #include "renderer/utils.h"
 
@@ -72,7 +73,9 @@ NE_TEST_CASE("renderer", "A Frame's Uploads Can Outgrow One Block") {
 
 // One half-transparent cube per alpha mode and sidedness, in front of BasicApp's camera, so every pipeline draws with
 // both cull modes: the masked one may discard, the blended one tests against the opaque depth, and double-sided cubes
-// don't cull. Debug builds abort at exit on validation errors, such as a draw before its dynamic cull mode is set.
+// don't cull. BasicApp's sun casts shadows, so the opaque and masked cubes also draw into the cascades through both
+// shadow pipelines, which skip the blended ones. Debug builds abort at exit on validation errors, such as a draw before
+// its dynamic cull mode is set.
 NE_TEST_CASE("renderer", "Frames Render Every Alpha Mode, Single- And Double-Sided") {
   ResourceManager& resources = *ioContext.app->getResourceManager();
   Registry& registry = *ioContext.app->getRegistry();
@@ -155,6 +158,20 @@ NE_TEST_CASE("renderer", "Frames Render Without Lights Or An Environment") {
   }
 
   NE_TEST_ASSERT(!ioContext.app->getWindow()->shouldClose(), "The window stayed open, so all three frames ran.");
+}
+
+// One frame in each debug view, so every branch of the scene shader's view switch and both tonemap paths run under
+// validation; the Cascades view reads the shadows of BasicApp's sun
+NE_TEST_CASE("renderer", "Frames Render Every Debug View") {
+  Renderer& renderer = *ioContext.app->getRenderer();
+  const gpu::DebugView before = renderer.getDebugView();
+  for (uint32_t view = 0; view < static_cast<uint32_t>(gpu::DebugView::Count); ++view) {
+    renderer.setDebugView(static_cast<gpu::DebugView>(view));
+    ioContext.app->runForFrames(1);
+  }
+  renderer.setDebugView(before);
+
+  NE_TEST_ASSERT(!ioContext.app->getWindow()->shouldClose(), "The window stayed open, so every view rendered.");
 }
 
 } // namespace ne::test

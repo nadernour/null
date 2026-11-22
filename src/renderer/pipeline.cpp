@@ -13,22 +13,23 @@ namespace ne {
 
 Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   NE_ASSERT(mDevice != VK_NULL_HANDLE, "Device must not be VK_NULL_HANDLE");
-  NE_ASSERT(!iConfig.debugName.empty(), "The pipeline for shader '{}' needs a debug name", iConfig.shaderName);
-  VkShaderModule shaderModule = createShaderModule(iConfig.shaderName);
+  NE_ASSERT(!iConfig.debugName.empty(), "The pipeline for shader '{}' needs a debug name", iConfig.shader.name);
+  VkShaderModule shaderModule = createShaderModule(iConfig.shader.name);
 
   VkPipelineShaderStageCreateInfo vertShaderStageCreateInfo{};
   vertShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
   vertShaderStageCreateInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
   vertShaderStageCreateInfo.module = shaderModule;
-  vertShaderStageCreateInfo.pName = "vertMain";
+  vertShaderStageCreateInfo.pName = iConfig.shader.vertexEntry.c_str();
 
   VkPipelineShaderStageCreateInfo fragShaderStageCreateInfo{};
   fragShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
   fragShaderStageCreateInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
   fragShaderStageCreateInfo.module = shaderModule;
-  fragShaderStageCreateInfo.pName = iConfig.fragmentEntry.c_str();
+  fragShaderStageCreateInfo.pName = iConfig.shader.fragmentEntry.c_str();
 
-  VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageCreateInfo, fragShaderStageCreateInfo};
+  const VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageCreateInfo, fragShaderStageCreateInfo};
+  const uint32_t stageCount = iConfig.shader.fragmentEntry.empty() ? 1 : 2;
 
   VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo{};
   vertexInputStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -50,16 +51,17 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
 
   VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo{};
   rasterizationStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-  rasterizationStateCreateInfo.depthClampEnable = VK_FALSE; // enabling requires a gpu feature
+  rasterizationStateCreateInfo.depthClampEnable = iConfig.depth.clamp ? VK_TRUE : VK_FALSE; // Needs the depthClamp feature
   rasterizationStateCreateInfo.rasterizerDiscardEnable = VK_FALSE;
   rasterizationStateCreateInfo.polygonMode = VK_POLYGON_MODE_FILL; // changing requires a gpu feature
   // Ignored: the cull mode is dynamic state, see below
   rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_NONE;
   rasterizationStateCreateInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // Right-handed (glTF) winding
-  rasterizationStateCreateInfo.depthBiasEnable = VK_FALSE;
-  rasterizationStateCreateInfo.depthBiasConstantFactor = 0.0f;
-  rasterizationStateCreateInfo.depthBiasClamp = 0.0f;
-  rasterizationStateCreateInfo.depthBiasSlopeFactor = 0.0f;
+  const bool hasDepthBias = iConfig.depth.biasConstant != 0.0f || iConfig.depth.biasSlope != 0.0f;
+  rasterizationStateCreateInfo.depthBiasEnable = hasDepthBias ? VK_TRUE : VK_FALSE;
+  rasterizationStateCreateInfo.depthBiasConstantFactor = iConfig.depth.biasConstant;
+  rasterizationStateCreateInfo.depthBiasClamp = 0.0f; // Any other value requires the depthBiasClamp feature
+  rasterizationStateCreateInfo.depthBiasSlopeFactor = iConfig.depth.biasSlope;
   rasterizationStateCreateInfo.lineWidth = 1.0f; // Any value other than 1.0 requires "widelines" Gpu feature
 
   VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo{};
@@ -73,14 +75,14 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
 
   VkPipelineDepthStencilStateCreateInfo depthStencilStateCreateInfo{};
   depthStencilStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-  depthStencilStateCreateInfo.depthTestEnable = iConfig.depthMode != DepthMode::Disabled ? VK_TRUE : VK_FALSE;
-  depthStencilStateCreateInfo.depthWriteEnable = iConfig.depthMode == DepthMode::ReadWrite ? VK_TRUE : VK_FALSE;
+  depthStencilStateCreateInfo.depthTestEnable = iConfig.depth.mode != DepthMode::Disabled ? VK_TRUE : VK_FALSE;
+  depthStencilStateCreateInfo.depthWriteEnable = iConfig.depth.mode == DepthMode::ReadWrite ? VK_TRUE : VK_FALSE;
   depthStencilStateCreateInfo.depthBoundsTestEnable = VK_FALSE;
   depthStencilStateCreateInfo.minDepthBounds = 0.0f;
   depthStencilStateCreateInfo.maxDepthBounds = 1.0f;
   depthStencilStateCreateInfo.stencilTestEnable = VK_FALSE;
   depthStencilStateCreateInfo.depthCompareOp =
-      iConfig.depthMode != DepthMode::Disabled ? VK_COMPARE_OP_GREATER_OR_EQUAL : VK_COMPARE_OP_ALWAYS;
+      iConfig.depth.mode != DepthMode::Disabled ? VK_COMPARE_OP_GREATER_OR_EQUAL : VK_COMPARE_OP_ALWAYS;
 
   // The write mask leaves alpha out, so only the color factors matter
   const bool alphaBlend = iConfig.blendMode == BlendMode::Alpha;
@@ -94,12 +96,14 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   colorBendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
   colorBendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_G_BIT;
 
+  // One blend state per color attachment: Vulkan requires the count to match the pass, so a depth-only pass has none
+  const bool hasColor = iConfig.colorAttachmentFormat != VK_FORMAT_UNDEFINED;
   VkPipelineColorBlendStateCreateInfo colorBlendStateCreateInfo{};
   colorBlendStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
   colorBlendStateCreateInfo.logicOpEnable = VK_FALSE;
   colorBlendStateCreateInfo.logicOp = VK_LOGIC_OP_COPY;
-  colorBlendStateCreateInfo.attachmentCount = 1;
-  colorBlendStateCreateInfo.pAttachments = &colorBendAttachmentState;
+  colorBlendStateCreateInfo.attachmentCount = hasColor ? 1 : 0;
+  colorBlendStateCreateInfo.pAttachments = hasColor ? &colorBendAttachmentState : nullptr;
 
   NE_ASSERT(iConfig.layout != VK_NULL_HANDLE, "Pipeline layout must not be VK_NULL_HANDLE");
   mPipelineLayout = iConfig.layout;
@@ -112,18 +116,17 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   dynamicStateCreateInfo.pDynamicStates = dynamicState.data();
   VkPipelineRenderingCreateInfo renderingCreateInfo{};
   renderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-  renderingCreateInfo.colorAttachmentCount = (iConfig.colorAttachmentFormat != VK_FORMAT_UNDEFINED) ? 1 : 0;
-  renderingCreateInfo.pColorAttachmentFormats =
-      (iConfig.colorAttachmentFormat != VK_FORMAT_UNDEFINED) ? &iConfig.colorAttachmentFormat : nullptr;
-  renderingCreateInfo.depthAttachmentFormat = iConfig.depthAttachmentFormat;
-  renderingCreateInfo.stencilAttachmentFormat =
-      (vk_utils::deduceAspectFlags(iConfig.depthAttachmentFormat) & VK_IMAGE_ASPECT_STENCIL_BIT) ? iConfig.depthAttachmentFormat
-                                                                                                 : VK_FORMAT_UNDEFINED;
+  renderingCreateInfo.colorAttachmentCount = hasColor ? 1 : 0;
+  renderingCreateInfo.pColorAttachmentFormats = hasColor ? &iConfig.colorAttachmentFormat : nullptr;
+  renderingCreateInfo.depthAttachmentFormat = iConfig.depth.format;
+  renderingCreateInfo.stencilAttachmentFormat = (vk_utils::deduceAspectFlags(iConfig.depth.format) & VK_IMAGE_ASPECT_STENCIL_BIT)
+                                                    ? iConfig.depth.format
+                                                    : VK_FORMAT_UNDEFINED;
 
   VkGraphicsPipelineCreateInfo graphicsPipelineCreateInfo{};
   graphicsPipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
   graphicsPipelineCreateInfo.pNext = &renderingCreateInfo;
-  graphicsPipelineCreateInfo.stageCount = 2;
+  graphicsPipelineCreateInfo.stageCount = stageCount;
   graphicsPipelineCreateInfo.pStages = shaderStages;
   graphicsPipelineCreateInfo.pVertexInputState = &vertexInputStateCreateInfo;
   graphicsPipelineCreateInfo.pInputAssemblyState = &inputAssemplyStateCreateInfo;
@@ -144,7 +147,7 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   vk_utils::setDebugObjectName(mDevice, mGraphicsPipeline, std::format("{}_GraphicsPipeline", iConfig.debugName).c_str());
 
   vkDestroyShaderModule(mDevice, shaderModule, nullptr);
-  NE_VERBOSE("Created Graphics Pipeline '{}' for shader: '{}' (Pipeline: {}, Layout: {})", iConfig.debugName, iConfig.shaderName,
+  NE_VERBOSE("Created Graphics Pipeline '{}' for shader: '{}' (Pipeline: {}, Layout: {})", iConfig.debugName, iConfig.shader.name,
              (void*)mGraphicsPipeline, (void*)mPipelineLayout);
 }
 

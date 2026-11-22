@@ -22,6 +22,28 @@
 
 namespace ne {
 
+namespace {
+
+// White, with iCells x iCells round holes: alpha 0 inside them, with a one-texel soft edge so the mip chain shrinks them
+// smoothly. iSize is a multiple of iCells.
+ImageData createPerforatedImage(uint32_t iSize, uint32_t iCells) {
+  const uint32_t cellTexels = iSize / iCells;
+  const float halfCell = static_cast<float>(cellTexels) * 0.5f;
+  const float holeRadius = static_cast<float>(cellTexels) * 0.32f;
+  ImageData image{.width = iSize, .height = iSize, .pixels = std::vector<uint8_t>(static_cast<size_t>(iSize) * iSize * 4, 255)};
+  for (uint32_t y = 0; y < iSize; ++y) {
+    for (uint32_t x = 0; x < iSize; ++x) {
+      const float dx = static_cast<float>(x % cellTexels) + 0.5f - halfCell;
+      const float dy = static_cast<float>(y % cellTexels) + 0.5f - halfCell;
+      const float coverage = math::clamp(math::sqrt(dx * dx + dy * dy) - holeRadius + 0.5f, 0.0f, 1.0f);
+      image.pixels[(static_cast<size_t>(y) * iSize + x) * 4 + 3] = static_cast<uint8_t>(coverage * 255.0f + 0.5f);
+    }
+  }
+  return image;
+}
+
+} // namespace
+
 BasicApp::BasicApp() : Application("Basic App (MDI Showcase)", 1200, 1000) {
   MeshData cubeMeshData = MeshUtils::createBoxMeshData(Vec3(1.0f));
   std::shared_ptr<Mesh> cubeMesh = getResourceManager()->createMesh(cubeMeshData);
@@ -59,8 +81,8 @@ BasicApp::BasicApp() : Application("Basic App (MDI Showcase)", 1200, 1000) {
   mSunEntity = getRegistry()->createEntity();
   getRegistry()->addComponent<TransformComponent>(mSunEntity,
                                                   Transform(Vec3::Zero, Quat::fromEuler(math::radians(Vec3(0.0f, 50.0f, -30.0f)))));
-  getRegistry()->addComponent<LightComponent>(mSunEntity,
-                                              LightComponent{.type = LightComponent::Type::Directional, .intensity = 1000.0f});
+  getRegistry()->addComponent<LightComponent>(
+      mSunEntity, LightComponent{.type = LightComponent::Type::Directional, .intensity = 1000.0f, .castShadows = true});
   getRegistry()->addComponent<NameComponent>(mSunEntity, "Sun");
 
   mEnvironmentEntity = getRegistry()->createEntity();
@@ -89,6 +111,37 @@ BasicApp::BasicApp() : Application("Basic App (MDI Showcase)", 1200, 1000) {
 
   // Right (-Y)
   mHelmetEntity = helmetPrefab.instantiate(*getRegistry(), Transform(Vec3(0.0f, -1.5f, -0.5f)));
+
+  // Under the center cube, a perforated panel standing on the ground and facing the camera. Its material is masked and
+  // double-sided, so its holes show from both sides and in its shadow.
+  const uint32_t perforatedTextureId = getResourceManager()->createTexture(createPerforatedImage(256, 8), "Perforated_Texture");
+  const std::array perforatedTextureIds{perforatedTextureId};
+  mPanelMaterial = getResourceManager()->createMaterial(MaterialData{.name = "Perforated_Panel",
+                                                                     .baseColor = LinearColor{1.0f, 0.7f, 0.2f, 1.0f},
+                                                                     .roughness = 0.5f,
+                                                                     .alphaMode = AlphaMode::Mask,
+                                                                     .doubleSided = true,
+                                                                     .baseColorTexture = {.image = 0}},
+                                                        perforatedTextureIds);
+  std::shared_ptr<Mesh> panelMesh = getResourceManager()->createMesh(MeshUtils::createPlaneMeshData(Vec2(1.0f)));
+  mLoadedMeshes.push_back(panelMesh);
+  mPanelEntity = getRegistry()->createEntity();
+  // Pitched down -90 degrees, the plane's +Z normal turns to -X, toward the camera
+  getRegistry()->addComponent<TransformComponent>(
+      mPanelEntity, Transform(Vec3(0.0f, 0.0f, -1.0f), Quat::fromEuler(math::radians(Vec3(0.0f, -90.0f, 0.0f)))));
+  getRegistry()->addComponent<MeshComponent>(mPanelEntity, panelMesh, std::vector{mPanelMaterial});
+  getRegistry()->addComponent<NameComponent>(mPanelEntity, "Panel_Masked");
+
+  // Behind the left cube and in its shadow, a glass cube: blended, so the ground and the shadow show through it, and it
+  // casts no shadow of its own
+  if (!mLoadedMeshes.empty()) {
+    mGlassMaterial = getResourceManager()->createMaterial(MaterialData{
+        .name = "Glass", .baseColor = LinearColor{0.3f, 0.65f, 1.0f, 0.35f}, .roughness = 0.1f, .alphaMode = AlphaMode::Blend});
+    mGlassEntity = getRegistry()->createEntity();
+    getRegistry()->addComponent<TransformComponent>(mGlassEntity, Transform(Vec3(1.5f, 0.9f, -1.2f), Quat::Identity, Vec3(0.6f)));
+    getRegistry()->addComponent<MeshComponent>(mGlassEntity, mLoadedMeshes[0], std::vector{mGlassMaterial});
+    getRegistry()->addComponent<NameComponent>(mGlassEntity, "Cube_Glass");
+  }
 
   // Under everything: its top is at z = -1.5, just below the helmet's lowest point (about -1.4)
   std::shared_ptr<Mesh> groundMesh = getResourceManager()->createMesh(MeshUtils::createBoxMeshData(Vec3(20.0f, 20.0f, 0.1f)));

@@ -10,11 +10,11 @@ Tonemapper::Tonemapper(Device* iDevice, VkPipelineLayout iPipelineLayout, VkForm
   NE_ASSERT(iDevice && iPipelineLayout != VK_NULL_HANDLE && iColorFormat != VK_FORMAT_UNDEFINED);
 
   Pipeline::Config pipelineConfig{
-      .shaderName = "tonemap",
+      .shader = {.name = "tonemap"},
       .debugName = "Tonemap",
       .layout = iPipelineLayout,
       .colorAttachmentFormat = iColorFormat,
-      .depthMode = Pipeline::DepthMode::Disabled,
+      .depth = {.mode = Pipeline::DepthMode::Disabled},
   };
   mPipeline = std::make_unique<Pipeline>(iDevice->getDevice(), pipelineConfig);
 }

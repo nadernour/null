@@ -49,7 +49,7 @@ Physically based rendering for Null, split into seven phases; Phase 6, the envir
 ### Materials and meshes
 - **Material storage:** a device-local buffer of `gpu::Material`, append-only, written at load. The per-instance `colorTint` stays for runtime variation. *Why:* overwriting a slot that an in-flight frame reads needs a barrier, and nothing needs runtime edits before Episodes & Resets.
 - **Missing textures:** use the white fallback (index 0). A material flag switches normal mapping on. *Why:* white is neutral for every slot except normals, and it avoids a branch per texture.
-- **Samplers:** one immutable sampler per texture filter (linear, nearest) × U wrap × V wrap (repeat, clamp, mirror), 18 in all, then the shadow sampler. A texture's settings index them directly. *Why:* glTF wraps each axis separately, and TextureSettingsTest mixes wrap modes on every test tile. The bindless set layout is update-after-bind, so its samplers count only against the update-after-bind limits, not `maxPerStageDescriptorSamplers` (whose required minimum is 16).
+- **Samplers:** one immutable sampler per texture filter (linear, nearest) × U wrap × V wrap (repeat, clamp, mirror), 18 in all, on binding 0; a texture's settings index them directly. The shadow sampler, which compares depths, has binding 2 to itself. *Why:* glTF wraps each axis separately, and TextureSettingsTest mixes wrap modes on every test tile. Shaders declare a comparison sampler as a type of its own (`SamplerComparisonState`): on binding 0 it took a second declaration of that binding, which Slang warns about (E39001), and an index packed next to the atlas's. Binding 2 was decided Nov 22. The bindless set layout is update-after-bind, so its samplers count only against the update-after-bind limits, not `maxPerStageDescriptorSamplers` (whose required minimum is 16).
 - **Tangents:**
   - use glTF `TANGENT` when present;
   - otherwise the glTF importer generates them with MikkTSpace (vendored `mikktspace.c/.h`), negates `w`, and welds the vertices again, but only for a primitive whose material kept a normal texture;
@@ -60,7 +60,7 @@ Physically based rendering for Null, split into seven phases; Phase 6, the envir
 - **Alpha and double-sided:** one pipeline per alpha mode {opaque, mask, blend}, all built up front by `SceneRenderer`. The cull mode is dynamic state (core since Vulkan 1.3), set per batch: back faces for single-sided materials, none for double-sided ones. Draws sort by alpha mode: opaque, mask, then blend, back to front; then single-sided before double-sided. Blend draws that share a submesh and end up next to each other still merge into one instanced draw. *Why:* opaque draws keep early depth testing, and drawing them first fills the depth buffer before the masked draws, whose `discard` keeps them from writing depth early. Blending happens in the right order: Vulkan draws instances in order, so merged blend draws stay back to front. With the cull mode dynamic, sidedness doesn't double the pipelines, and building them up front means none compiles mid-run. This changes the Oct 26 variants, {opaque, mask, blend} × {cull back, cull none}, which `ResourceManager` created on first use.
 
 ### Later phases
-- **Shadows:** directional cascaded shadow maps (CSM), 4 cascades in one 4096² D32 atlas, stabilized. They come after the per-view refactor. *Why:* an atlas needs no array images, and per-view drawing is shared with Render Views.
+- **Shadows:** directional cascaded shadow maps (CSM), 4 cascades in one 4096² D32 atlas, stabilized, drawn with depth clamp. They come after the per-view refactor. *Why:* an atlas needs no array images, and per-view drawing is shared with Render Views. Depth clamp flattens casters in front of a cascade's near plane onto it instead of clipping them, so casters however far toward the light still cast; `Device` requires the `depthClamp` feature, which desktop drivers and lavapipe have. Depth clamp was decided Nov 22.
 - **Environment BRDF:** a 64 × 64 `R16G16_SFLOAT` table, built on the CPU at startup from the light loop's GGX and visibility, replaces `envBrdfApprox`, in its own phase before IBL. *Why:* the fit makes mid-rough metal about a quarter stop too dark and drops rough metal's brightening toward the edges (Phase 6 has the numbers), which a comparison with the Sample Viewer, which reads a table, would show. In its own phase it stays out of IBL's way. Decided Nov 1.
 - **IBL:**
   - `.hdr` loaded with stb_image into an RGBA16F cube with prefiltered mips, built with graphics passes;
@@ -705,7 +705,7 @@ struct GlobalUniforms {
 ---
 
 ## Phase 5: Shadows
-**Status:** not started
+**Status:** done (2026-11-01)
 
 **Goal:** The directional light casts stable cascaded shadows. First, the scene's draws are gathered once per frame and recorded per view; Render Views reuses this for sensors.
 
@@ -721,6 +721,23 @@ This is the plan of Oct 15 and 18, checked against the code on Nov 1, after Phas
 - **`gpu::ShadowData` is spelled out** (see **Data**). `GlobalUniforms` grows to 136 bytes, and Phase 6's note follows.
 - **The Cascades debug view tints the lit image,** so unlike the channel views it keeps PBR Neutral.
 - **Tests,** which this phase had none of.
+
+The implementation that day changed these parts; the tasks below describe the result:
+- **The shadowed light's index moved from `ShadowData` to `GlobalUniforms::shadowLight`,** which holds `gpu::kNoShadowLight` when no light's shadows were drawn. Otherwise the shader tests the shadows pointer against null, which Slang compiles to a 64-bit integer comparison. That needs the `shaderInt64` feature, which the engine doesn't enable, and the validation layer flagged it.
+- **Each cascade keeps a border of 4 texels around its sphere** (`ShadowCascades::kBorderTexels`). Snapping moves a tile by up to half a texel, the normal offset reaches 1.5 texels, and the filter 2 more, so lookups near a slice's corners stay inside its tile. The light's eye backs off by half the tile, border included, instead of by the radius.
+- **Slang warns that `gShadowSamplers` overlaps `gSamplers`** (warning 39001), so the warning is off for that one declaration, between `#pragma warning(push)` and `#pragma warning(pop)`; any other overlap still warns.
+- **BasicApp gained alpha test pieces,** asked for that day: a perforated panel, masked and double-sided, on a plane from the new `MeshUtils::createPlaneMeshData`, standing under the center cube, and a blended glass cube behind the left cube, inside its shadow. The panel's holes show in its shadow, and the glass casts none.
+- **`DebugView::Cascades` follows `Lit`,** so the two lit views come first in the menu.
+
+The review of Nov 22 changed these parts; the tasks below still describe Nov 1:
+- **Depth clamp** in the shadow pipelines (`Pipeline::Config::Depth::clamp`, with `Device` requiring the `depthClamp` feature) replaced `casterMargin` and its 100 m limit. Each light view's near plane lies on the near face of its tile's box, 4 texels (the border) in front of the slice's sphere, so lookups, which the normal offset moves up to 1.5 texels toward the light, stay behind it, where the casters it flattened can shadow them. The pitfall about casterMargin no longer applies.
+- **The shadow sampler has binding 2 to itself** (`SamplerComparisonState gShadowSampler`), so the alias on binding 0, its `#pragma warning`, and `SamplerManager::kShadowSamplerIndex` are gone, and `ShadowData::atlasTexture` is a plain bindless index.
+- **No tile clamp in the shader.** The border alone keeps every lookup inside its tile: a slice's edge sits at least 3.5 texels in, and the normal offset and the outermost tap move a lookup at most 2.5 texels farther out, so taps land at least a texel in, half a texel inside where the clamp started. The clamp never engaged, so it and `ShadowData::tileBounds` went away (312 bytes).
+- **`ShadowCascades` owns the CSM layout and data**, which had been in `Renderer`: `kAtlasSize`, `kTileSize`, `getTile`, `makeShadowData`, and `kNormalOffsetTexels`, next to the `kBorderTexels` it feeds. `Config::resolution` went away, since the tile size is fixed, and the camera's depth plane is part of the result. `Renderer` keeps the atlas image and the pass.
+- **`Pipeline::Config`** groups the depth settings in `Depth` (format, mode, bias, clamp), and the shader in `Shader`: `name` (was `shaderName`, still required), `vertexEntry` (new), and `fragmentEntry`. Slang compiles every entry point of a shader into one module, so one name serves both stages.
+- **`castsShadows(AlphaMode)`** in `scene_renderer.cpp` is the one rule for which alpha modes cast; building the shadow pipelines and drawing depth views both use it.
+- `kNoShadowLight` is spelled `~0U`, like `ecs.h`'s sentinels, and the Cascades view's tints are `kCascadeDebugTints`.
+- **Tests:** "Every Slice Lands Inside Its Cascade" also checks that each corner's lookup, moved toward the light by the normal offset, stays behind the near plane.
 
 **The frame:**
 ```
@@ -779,6 +796,9 @@ Renderer::render
    // seen from the light through an orthographic view of its own
    struct ShadowCascades {
      static constexpr uint32_t kCount = 4;
+     // Texels around each slice's bounding sphere, for what reaches past it: snapping (half a texel), the normal offset
+     // (1.5), and the 3x3 filter's reach (2)
+     static constexpr uint32_t kBorderTexels = 4;
 
      struct Config {
        float distance = 60.0f;      // View depth where shadows end
@@ -800,24 +820,27 @@ Renderer::render
    Per cascade:
    1. **Splits** run from the camera's near plane n to f, the shadow distance or the far plane, whichever is nearer. Split i of 4 is λ · n · (f / n)^(i / 4) + (1 − λ) · (n + (f − n) · i / 4), with λ = 0.8 (the practical split scheme). In words: perspective shrinks things with distance, which logarithmic splits match, while the even share keeps the first cascade from shrinking to a sliver in front of the camera.
    2. **Bounding sphere** of the slice between depths d₀ and d₁. Every corner of a perspective slice at depth d lies d · k from the view axis, with k² = tan²(fov / 2) · (1 + aspect²). The center sits on the axis at z = min((d₀ + d₁)(1 + k²) / 2, d₁): there both rings of corners are equally far, or, when that point lies past the far ring, the far ring's own center, whose sphere already holds the near ring. The radius is the distance to a far corner, √((d₁ − z)² + d₁² k²). An orthographic slice is a box: its center is at (d₀ + d₁) / 2 and its radius √(w² + h² + ((d₁ − d₀) / 2)²), for its half width w and half height h.
-   3. **Light view:** the light's world rotation, placed at center − forward · (radius + casterMargin), forward being the light's +X. It's built from the light's rotation, not the camera's, so the shadow map's texel grid doesn't turn with the camera.
-   4. **Projection:** `CameraComponent`'s reverse-Z orthographic math with aspect 1, 2 × radius tall; near plane 0.01, far plane 2 × radius + casterMargin.
-   5. **Snap:** project the world origin, round where it lands to whole texels of the cascade (resolution / 2 per unit of clip space), and add the difference to the view-projection's translation. With the radius fixed, every world point then lands on the same spot within its texel however the camera moves, so shadow edges don't crawl.
+   3. **Tile:** the sphere spans all but `kBorderTexels` of the tile's texels on each side, so a texel is 2 × radius / (resolution − 2 × 4) wide, and half the tile, border included, is resolution / 2 texels.
+   4. **Light view:** the light's world rotation, placed at center − forward · (half the tile + casterMargin), forward being the light's +X. It's built from the light's rotation, not the camera's, so the shadow map's texel grid doesn't turn with the camera.
+   5. **Projection:** `CameraComponent`'s reverse-Z orthographic math with aspect 1, as tall as the tile; near plane 0.01, far plane the tile's height + casterMargin.
+   6. **Snap:** project the world origin, round where it lands to whole texels of the cascade (resolution / 2 per unit of clip space), and add the difference to the view-projection's translation. With the radius fixed, every world point then lands on the same spot within its texel however the camera moves, so shadow edges don't crawl.
 
-   For BasicApp's camera (45° vertical field of view, near plane 0.1 m, aspect 1.2) and the 60 m distance: k² = tan²(22.5°) · (1 + 1.44) = 0.419, and the splits fall at 3.4, 8.0, 18.7, and 60 m. Cascade 0 runs from 0.1 to 3.4 m: its center is at z = 3.51 · 1.419 / 2 = 2.49 m, and its radius √(0.92² + 3.41² · 0.419) = 2.39 m, so its 2048 texels span 4.78 m, 2.3 mm each. Cascades 1 and 2 center on their far rings (radii 5.2 and 12.1 m, texels of 5 and 12 mm), and cascade 3 has a 39 m radius and 38 mm texels.
+   For BasicApp's camera (45° vertical field of view, near plane 0.1 m, aspect 1.2) and the 60 m distance: k² = tan²(22.5°) · (1 + 1.44) = 0.419, and the splits fall at 3.4, 8.0, 18.7, and 60 m. Cascade 0 runs from 0.1 to 3.4 m: its center is at z = 3.51 · 1.419 / 2 = 2.49 m, and its radius √(0.92² + 3.41² · 0.419) = 2.39 m, so the 2040 texels inside its border span 4.78 m, 2.3 mm each. Cascades 1 and 2 center on their far rings (radii 5.2 and 12.1 m, texels of 5 and 12 mm), and cascade 3 has a 39 m radius and 38 mm texels.
 4. **Pipelines:**
    - `Pipeline::Config` gains `float depthBiasConstant = 0.0f` and `float depthBiasSlope = 0.0f`, in Vulkan's units; both 0 leave depth bias off. An empty `fragmentEntry` builds a vertex-only pipeline, and the blend state declares one attachment with a color format and none without.
    - `SceneRenderer` builds the shadow pipelines up front, next to the scene ones: `Shadow_Opaque` (vertex only) and `Shadow_Mask` (`fragShadowMasked`), with no color format, the depth format, `DepthMode::ReadWrite`, and a depth bias of constant 0 and slope −1.5 (see the pitfalls). They take the cull mode as dynamic state, like the scene pipelines. Blend materials don't cast shadows.
 5. **Shadow pass:** `Renderer` opens one depth-only pass on the atlas, cleared to 0 (reverse-Z's far), and draws each cascade with `recordView` and its depth `SceneView`, the viewport and scissor set to its tile.
 6. **Shading:**
    - `gpu::ShadowData` is uploaded per frame when a light casts shadows, and its address reaches `GlobalUniforms::shadows` through the camera's `SceneView`.
-   - The light loop shadows only that light's direct term, which it finds by its index.
+   - The light loop shadows only that light's direct term, which it finds by `GlobalUniforms::shadowLight`.
    - The cascade is the number of cascades that end before the pixel's view depth; four means past the shadow distance, which is lit.
    - The lookup moves along the geometry normal (the vertex normal, not the normal-mapped one, which varies per pixel) by 1.5 of the cascade's texels.
    - 3×3 PCF with `SampleCmpLevelZero` through the shadow sampler (`SamplerManager::kShadowSamplerIndex`). Each tap is clamped to its tile, half a texel in, so none reads a neighboring cascade. `SamplerComparisonState gShadowSamplers[]` is declared on binding 0 next to `gSamplers`: in SPIR-V both are plain samplers, and Vulkan allows two declarations of one binding.
 7. **`DebugView::Cascades`:** the lit image tinted by cascade: red, green, blue, yellow, and untinted past the shadow distance. It's the lit image, so the tonemapper keeps PBR Neutral for it.
 8. **`Renderer`:** `setShadowDistance` and `getShadowDistance`.
-9. **`BasicApp`:** the sun casts shadows. The Lighting window gains the sun's Casts Shadows and the shadow distance, and the Debug View menu names Cascades.
+9. **`BasicApp`:** the sun casts shadows. The Lighting window gains the sun's Casts Shadows and the shadow distance, and the Debug View menu names Cascades. Alpha test pieces stand by the row:
+   - a perforated panel under the center cube, facing the camera: a 1 m plane from `MeshUtils::createPlaneMeshData` (a rectangle facing +Z with the box's top-face UVs), pitched −90°, with a masked, double-sided material whose base color texture is made at startup, 8 × 8 round holes with soft one-texel edges;
+   - a glass cube behind the left cube, inside its shadow: the unit cube at 0.6 m, blended, with alpha 0.35.
 
 **Data:**
 ```cpp
@@ -828,19 +851,19 @@ struct ShadowData {
   Vec4 depthPlane;       // The camera's view depth of a world point p: dot(depthPlane.xyz, p) + depthPlane.w
   Vec4 splitDepths;      // The view depth where each cascade ends
   Vec4 normalOffsets;    // How far each cascade's lookups move along the normal, in meters
-  uint32_t lightIndex;   // The shadowed light in GlobalUniforms::lights
   uint32_t atlasTexture; // Packed like a material's textures: bindless index (low 16 bits), sampler index (high 16 bits)
   float texelSize;       // One atlas texel, in atlas UV
 };
 ```
-`GlobalUniforms` gains `VkDeviceAddress shadows` after `lights` (0 when no light casts shadows): 136 bytes, 132 of fields and 4 of padding.
+376 bytes. `GlobalUniforms` gains `VkDeviceAddress shadows` after `lights`, and `uint32_t shadowLight` after `debugView`: the light whose shadows were drawn, or `kNoShadowLight` (0xFFFFFFFF) when none were, and in depth views. That's 136 bytes, with no padding left. Offsets checked with slangc 2026.20 on Nov 1.
 
 **Tests:**
 - shadows (CPU), on BasicApp's camera and sun:
-  - the splits rise and the last one ends at the shadow distance, or at the far plane when that's nearer;
-  - every corner of every slice lands inside its cascade's clip volume (x and y in [−1, 1], depth in [0, 1]), for a perspective and an orthographic camera;
-  - moving the camera by fractions of a texel keeps a world point at the same spot within its texel, and turning the camera keeps every cascade's texel size;
-  - a point farther along the light's +X gets a smaller depth: reverse-Z, so farther from the light.
+  - "Cascade Splits Rise To The Shadow Distance": at 3.411, 7.970, 18.703, and 60 m; at the far plane when that's nearer; none when the distance is inside the near plane;
+  - "Every Slice Lands Inside Its Cascade": every corner of every slice lands at least 3.5 texels inside its tile (the border less snapping's half texel) and between its near and far planes, for a perspective and an orthographic camera, each in two poses;
+  - "Cascades Keep World Points On Their Texels As The Camera Moves": moving the camera by fractions of a texel and by meters keeps a world point at the same spot within its texel in every cascade, and turning the camera keeps every cascade's texel size;
+  - "A Cascade's Depth Falls Along The Light's Direction": a point farther along the light's +X gets a smaller depth (reverse-Z), and moving across the light keeps it.
+- mesh, "A Plane Faces +Z With The Box's Top-Face UVs".
 - renderer, "Frames Render Every Alpha Mode, Single- And Double-Sided": BasicApp's sun now casts shadows, so its cubes also draw through both shadow pipelines with both cull modes; its comment says so.
 - renderer, "Frames Render Every Debug View": one frame in each, under validation.
 
@@ -856,6 +879,7 @@ struct ShadowData {
 - A sampled depth view must have only the depth aspect. The atlas has no stencil, so it avoids the problem.
 - The `Shadow` sampler compares GREATER_OR_EQUAL. A fragment is lit when its light-space depth is at least the stored occluder depth (in reverse-Z, larger means closer to the light).
 - Snap in the cascade's own texels (2048 to a tile), not the atlas's, and after building the whole view-projection.
+- Don't compare a Slang pointer with null: Slang turns the address into a 64-bit integer, which needs `shaderInt64`. Mark what's absent with a count or an index instead, as `lightCount` and `shadowLight` do.
 - Without depth clamp, a caster farther toward the light than casterMargin from a slice is clipped and casts nothing into it. 100 m covers scenes of BasicApp's size and indoor robot scenes; depth clamp, an optional feature, would lift the limit.
 - The shadow pipelines keep `vertMain`, which also computes normals and tangents the depth pass doesn't use. That's small next to rasterizing four tiles; a lean vertex entry point can come with GPU profiling.
 - Cascades depend on the camera, so every sensor view needs its own. Render Views decides whether to share or reduce them.
@@ -886,7 +910,7 @@ For a metal, the fit gives 1 − 0.55 × roughness at every angle, so mid-rough 
    - one function integrates one (NdotV, roughness) pair: GGX importance sampling over Hammersley points, with the light loop's height-correlated Smith visibility, returning A and B;
    - 64 × 64 texels, NdotV along x and perceptual roughness along y, each computed at its texel's center ((i + 0.5) / 64), with 256 samples.
 4. **`ResourceManager`** builds the table once at startup and registers it, with the linear, clamp-to-edge sampler. A scratch version measured on Nov 1 took 24 ms in an optimized build and 45 ms in Debug.
-5. **`GlobalUniforms`** gains `uint32_t envBrdfTexture`, the table's packed texture and sampler index (as in `gpu::Material`), in the 4 bytes of padding after `debugView`: the struct stays 136 bytes (Phase 5's size), now without padding. `SceneRenderer` keeps the index from construction, like the material buffer's address.
+5. **`GlobalUniforms`** gains `uint32_t envBrdfTexture`, the table's packed texture and sampler index (as in `gpu::Material`), after `shadowLight`: 140 bytes of fields, then 4 of padding, 144 in all (Phase 5 used the padding there was). `SceneRenderer` keeps the index from construction, like the material buffer's address.
 6. **Shader:** `envBrdf(F0, roughness, NdotV)` reads the table and returns `F0 * AB.x + AB.y`, as `envBrdfApprox` did; `envBrdfApprox` goes away.
 7. **Tests**, on the integration function:
    - roughness 1 seen head-on: A + B is 1 − ln 2 ≈ 0.307, within 0.005. At roughness 1, GGX spreads evenly and the integral has a closed form;
@@ -963,6 +987,10 @@ Download these for manual checks, and don't commit them; `content/` stays small.
 - **Entity-ID attachment** for segmentation sensors and picking.
 - **Runtime material edits** (domain randomization): add a barrier before overwriting a slot, or upload materials per frame.
 - **Spot and point light shadows.**
+- **Shadows per sensor** (Render Views): cascades follow their camera, so each sensor needs its own, with its own shadow distance. A 1 cm near plane and a 2 m distance give 1.2 screen pixels per texel at 20 cm (BasicApp's 45° camera, 1000 px tall); today's one 60 m distance gives 12.9 there. For bounded scenes, one map fitted to the scene and shared by every sensor costs one shadow pass in all instead of four per sensor: a 4096² map over a 4 m scene gives 5.9 pixels per texel at 20 cm, fine for sensors that stay a meter or more from what they see. `Renderer::setShadowDistance` becomes a per-view setting then. Noted Nov 22.
+- **Ray-traced shadows** (README, Sensors), with CSM as the fallback, chosen per run. When they or spot and point light shadows come, each `gpu::Light` gets a shadow index (`kNoShadowLight` for none) in place of `GlobalUniforms::shadowLight`, so the light loop keeps asking `shadowFactor` whatever answers it.
+- **Culling shadow views** (README, Compute Frustum & Occlusion Culling): a cascade's view must not cull against its near plane. Depth clamp is what lets casters however far toward the light still cast, and a near-plane test would drop them again, bringing back the limit that casterMargin had. Cull against the four sides and the far plane only. Noted Nov 22.
+- **Shadow filtering:** Castaño's tent weights for the PCF taps (a smoother 5 × 5 tent from the same 9 taps, or today's softness from 4), and neighboring cascades blended over a band at each split, so the edge's softness doesn't jump where cascades meet (texels grow from 2.3 to 5 mm at BasicApp's 3.4 m split).
 - **More glTF features:** TEXCOORD_1, KHR_texture_transform, embedded (`data:`) images, KHR_lights_punctual, the KHR_materials_* extensions. A KHR_lights_punctual light shines along glTF −Z, which the axis change makes engine −X, so the importer turns it half a turn about its up axis to shine along +X.
 - **Auto exposure:** metering the scene as real cameras do, for camera sensors.
 - **Shading quality:** specular anti-aliasing and multiple-scattering energy compensation (which reads Phase 6's table).

@@ -25,7 +25,7 @@ namespace {
 // A material's texture as the shader reads it: the bindless index (low 16 bits) and the sampler index (high 16 bits)
 uint32_t packTexture(uint32_t iTextureId, const TextureRef& iTexture) {
   static_assert(vk_utils::kMaxSampledImages <= 0x10000, "Bindless indices must fit in 16 bits");
-  static_assert(SamplerManager::kSamplerCount <= 0x10000, "Sampler indices must fit in 16 bits");
+  static_assert(SamplerManager::kTextureSamplerCount <= 0x10000, "Sampler indices must fit in 16 bits");
   return iTextureId | (SamplerManager::getTextureSamplerIndex(iTexture.filter, iTexture.wrapU, iTexture.wrapV) << 16);
 }
 

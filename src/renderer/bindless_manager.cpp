@@ -10,17 +10,19 @@ BindlessManager::BindlessManager(VkDevice iDevice, SamplerManager* iSamplerManag
   NE_ASSERT(mDevice != VK_NULL_HANDLE, "Device must not be VK_NULL_HANDLE");
   NE_ASSERT(iSamplerManager != nullptr, "SamplerManager cannot be null in BindlessManager");
 
-  const uint32_t samplerCount = static_cast<uint32_t>(iSamplerManager->getSamplers().size());
+  const uint32_t textureSamplerCount = static_cast<uint32_t>(iSamplerManager->getTextureSamplers().size());
+  const VkSampler shadowSampler = iSamplerManager->getShadowSampler();
 
-  // Set 0: binding 0 holds SamplerManager's immutable samplers, binding 1 the sampled image array. The layout is
+  // Set 0: binding 0 holds SamplerManager's immutable texture samplers, binding 1 the sampled image array, and binding 2
+  // the shadow sampler, which shaders declare as a comparison sampler, a type of its own. The layout is
   // update-after-bind, so its samplers count against the update-after-bind limits, not maxPerStageDescriptorSamplers.
-  std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
+  std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
 
   bindings[0].binding = 0;
   bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-  bindings[0].descriptorCount = samplerCount;
+  bindings[0].descriptorCount = textureSamplerCount;
   bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-  bindings[0].pImmutableSamplers = iSamplerManager->getSamplers().data();
+  bindings[0].pImmutableSamplers = iSamplerManager->getTextureSamplers().data();
 
   bindings[1].binding = 1;
   bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
@@ -28,9 +30,16 @@ BindlessManager::BindlessManager(VkDevice iDevice, SamplerManager* iSamplerManag
   bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
   bindings[1].pImmutableSamplers = nullptr;
 
-  std::array<VkDescriptorBindingFlags, 2> bindingFlags{};
+  bindings[2].binding = 2;
+  bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+  bindings[2].descriptorCount = 1;
+  bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+  bindings[2].pImmutableSamplers = &shadowSampler;
+
+  std::array<VkDescriptorBindingFlags, 3> bindingFlags{};
   bindingFlags[0] = 0;
   bindingFlags[1] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+  bindingFlags[2] = 0;
 
   VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo{};
   bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
@@ -49,7 +58,7 @@ BindlessManager::BindlessManager(VkDevice iDevice, SamplerManager* iSamplerManag
 
   std::array<VkDescriptorPoolSize, 2> poolSizes{};
   poolSizes[0].type = VK_DESCRIPTOR_TYPE_SAMPLER;
-  poolSizes[0].descriptorCount = samplerCount;
+  poolSizes[0].descriptorCount = textureSamplerCount + 1; // Both sampler bindings
   poolSizes[1].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
   poolSizes[1].descriptorCount = mMaxSampledImages;
 
@@ -72,7 +81,7 @@ BindlessManager::BindlessManager(VkDevice iDevice, SamplerManager* iSamplerManag
   VK_CHECK(vkAllocateDescriptorSets(mDevice, &allocInfo, &mDescriptorSet));
   vk_utils::setDebugObjectName(mDevice, mDescriptorSet, "Bindless_DescriptorSet");
 
-  NE_VERBOSE("Initialized BindlessManager: {} samplers, {} max sampled images", samplerCount, mMaxSampledImages);
+  NE_VERBOSE("Initialized BindlessManager: {} samplers, {} max sampled images", textureSamplerCount + 1, mMaxSampledImages);
 }
 
 BindlessManager::~BindlessManager() {

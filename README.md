@@ -16,10 +16,10 @@ A digital twin platform for robot simulation, built on a Vulkan 1.4 renderer wri
 
 ## ✅ What Works Today
 
-- **Rendering**: Vulkan 1.3 / 1.4 with dynamic rendering and synchronization2. The scene renders into its own HDR target, which a tonemapper (Khronos PBR Neutral) writes to the window, with the UI drawn on top. The vertex shader fetches vertices and per-draw data through GPU pointers, and draws go out as multi-draw indirect. Materials are GPU data: one buffer of glTF metal-roughness materials, indexed per instance, whose base color, metallic-roughness, normal, occlusion, and emissive textures each keep their own sampler settings; debug views show each channel as the Khronos glTF Sample Viewer does. Normal maps use the file's tangents or MikkTSpace's, and materials can be alpha masked, alpha blended (drawn after the opaque ones, back to front), and double-sided. Surfaces are shaded with the glTF metal-roughness BRDF (GGX, Smith, Schlick) under directional, point, and spot lights in lux and candela, plus a sky / ground ambient that metals reflect, and the camera's aperture, shutter speed, and ISO set the exposure. All textures live in one bindless array with full mip chains (built on the CPU with an sRGB-correct box filter), every buffer and image comes from VMA, depth is reverse-Z, and every Vulkan object is named for RenderDoc and validation messages.
+- **Rendering**: Vulkan 1.3 / 1.4 with dynamic rendering and synchronization2. The scene renders into its own HDR target, which a tonemapper (Khronos PBR Neutral) writes to the window, with the UI drawn on top. The vertex shader fetches vertices and per-draw data through GPU pointers, and draws go out as multi-draw indirect. Materials are GPU data: one buffer of glTF metal-roughness materials, indexed per instance, whose base color, metallic-roughness, normal, occlusion, and emissive textures each keep their own sampler settings; debug views show each channel as the Khronos glTF Sample Viewer does. Normal maps use the file's tangents or MikkTSpace's, and materials can be alpha masked, alpha blended (drawn after the opaque ones, back to front), and double-sided. Surfaces are shaded with the glTF metal-roughness BRDF (GGX, Smith, Schlick) under directional, point, and spot lights in lux and candela, plus a sky / ground ambient that metals reflect, and the camera's aperture, shutter speed, and ISO set the exposure. A directional light casts cascaded shadows: four cascades in one atlas, snapped to whole texels so they don't shimmer as the camera moves, and filtered with 3 × 3 PCF; casters however far toward the light still cast (depth clamp), masked surfaces cast their cutouts, and blended ones cast none. All textures live in one bindless array with full mip chains (built on the CPU with an sRGB-correct box filter), every buffer and image comes from VMA, depth is reverse-Z, and every Vulkan object is named for RenderDoc and validation messages.
 - **Assets**: glTF / GLB models, whose node trees become reusable prefabs with their materials and textures, and PNG / JPEG textures.
 - **Scene & Input**: An ECS with parent / child transforms, perspective and orthographic cameras, lights, and a free-fly camera controller (WASD + QE, right-click to look) on typed keyboard and mouse input.
-- **Tools**: A Dear ImGui overlay with frame stats, camera and exposure settings, lighting controls, and a simulation time scale (0-3x); it blocks 3D input while in use, and `H` toggles it. A logger with colored console output keeps one log file per run (the last 10).
+- **Tools**: A Dear ImGui overlay with frame stats, camera and exposure settings, lighting and shadow controls, debug views, and a simulation time scale (0-3x); it blocks 3D input while in use, and `H` toggles it. A logger with colored console output keeps one log file per run (the last 10).
 - **Build & CI**: No Vulkan SDK needed: Vulkan headers, volk, and VMA are vendored, and CMake downloads the Slang compiler. Every push and pull request builds all three presets on Linux (GCC 14, Debian 13) and Windows (MSVC), and runs the tests on Linux on lavapipe (Mesa's software Vulkan) under Xvfb.
 
 ---
@@ -40,7 +40,7 @@ The steps are in order, each building on the one before; they bring physically b
 - [x] **Materials & glTF Textures**: Materials become GPU data, a material buffer indexed per instance, with the glTF metal-roughness fields (base color, metallic, roughness, normal, occlusion, and emissive, each with an optional texture). glTF materials and textures are imported instead of one shared default.
 - [x] **Tangents, Normal Maps & Alpha**: Tangents from glTF or generated with MikkTSpace, normal mapping, alpha mask and blend, and double-sided materials.
 - [x] **Lights, Exposure & PBR Shading**: Lights become ECS components (directional, point, and spot, in lux and candela) and replace the light fixed in the shader. The glTF metal-roughness BRDF (GGX, Smith, Schlick), camera exposure from aperture, shutter speed, and ISO, and a sky / ground ambient that metals reflect.
-- [ ] **Shadows**: The scene's draws are gathered once per frame and recorded per view, then cascaded shadow maps for the directional light; spot and point light shadows later.
+- [x] **Shadows**: The scene's draws are gathered once per frame and recorded per view, then cascaded shadow maps for the directional light; spot and point light shadows later.
 - [ ] **Environment BRDF Table**: The ambient's specular term reads a lookup table built at startup instead of a curve fit, so rough metal reflects at the right brightness; Image-Based Lighting reuses it.
 - [ ] **Image-Based Lighting**: HDR environment maps light and reflect the scene (prefiltered specular, spherical-harmonics diffuse) and are drawn as the sky.
 
@@ -62,6 +62,7 @@ The steps are in order, each building on the one before; they bring physically b
 - [ ] **Render Views & Offscreen Targets**: Several cameras rendering offscreen at once, each into its own HDR scene target, headless mode (so CI's tests no longer need Xvfb), GPU → CPU readback, and an ImGui viewport panel.
 - [ ] **Camera Sensors**: RGB, depth, and segmentation images from cameras mounted on robot frames, with intrinsics and lens distortion.
 - [ ] **Ray-Query LiDAR**: Hardware ray tracing for LiDAR and depth sensors, with a fallback for GPUs without ray tracing.
+- [ ] **Ray-Traced Shadows**: Ray queries against Ray-Query LiDAR's acceleration structures shadow every light for every sensor, with no shadow maps and no shadow pass per view. Cascaded shadow maps stay as the fallback for GPUs without ray tracing; the mode is chosen per run and logged, since the two render different images.
 - [ ] **Sensor Noise**: Configurable noise and artifacts, so behavior trained in simulation holds up on real sensors.
 
 ### Training
@@ -115,7 +116,7 @@ The steps are in order, each building on the one before; they bring physically b
 * **Build Tools**: CMake 3.24+ and Ninja.
 * **Shader Compiler**: Nothing to install: the first configure of each build folder downloads Slang.
 * **Validation Layers** (optional, Debug builds): From the Vulkan SDK or a distro package such as `vulkan-validationlayers`; without them, Debug builds run unvalidated.
-* **GPU**: A Vulkan 1.3 driver and loader (`libvulkan1` on Debian / Ubuntu) with dynamic rendering, synchronization2, buffer device address, descriptor indexing, and multi-draw indirect. Mesa's lavapipe (software Vulkan) works too.
+* **GPU**: A Vulkan 1.3 driver and loader (`libvulkan1` on Debian / Ubuntu) with dynamic rendering, synchronization2, buffer device address, descriptor indexing, multi-draw indirect, anisotropic filtering, and depth clamp. Mesa's lavapipe (software Vulkan) works too.
 
 ### Linux
 ```bash

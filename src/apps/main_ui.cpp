@@ -23,6 +23,8 @@ const char* debugViewName(gpu::DebugView iDebugView) {
   switch (iDebugView) {
     case gpu::DebugView::Lit:
       return "Lit";
+    case gpu::DebugView::Cascades:
+      return "Shadow Cascades";
     case gpu::DebugView::BaseColor:
       return "Base Color";
     case gpu::DebugView::Normal:
@@ -275,6 +277,13 @@ void MainUI::drawLighting(BasicApp& iApp) {
       if (pitched || turned) {
         transform.setLocalRotation(Quat::fromEuler(math::radians(eulerDegrees)));
       }
+      ImGui::Checkbox("Casts Shadows", &sun.castShadows);
+    }
+
+    Renderer& renderer = *iApp.getRenderer();
+    float shadowDistance = renderer.getShadowDistance();
+    if (ImGui::SliderFloat("Shadow Distance (m)", &shadowDistance, 5.0f, 500.0f, "%.0f", ImGuiSliderFlags_Logarithmic)) {
+      renderer.setShadowDistance(shadowDistance);
     }
 
     Entity environmentEntity = iApp.getEnvironmentEntity();

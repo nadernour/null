@@ -89,30 +89,31 @@ SamplerManager::SamplerManager(Device* iDevice) : mDevice(iDevice->getDevice()) 
     for (TextureWrap wrapU : kTextureWraps) {
       for (TextureWrap wrapV : kTextureWraps) {
         const SamplerConfig config = makeTextureSamplerConfig(filter, wrapU, wrapV);
-        VkSampler& sampler = mSamplers[getTextureSamplerIndex(filter, wrapU, wrapV)];
+        VkSampler& sampler = mTextureSamplers[getTextureSamplerIndex(filter, wrapU, wrapV)];
         NE_ASSERT(sampler == VK_NULL_HANDLE, "Two texture samplers share the slot of '{}'", config.debugName);
         sampler = createSampler(mDevice, config);
       }
     }
   }
 
-  mSamplers[kShadowSamplerIndex] = createSampler(mDevice, SamplerConfig{
-                                                              .filter = VK_FILTER_LINEAR,
-                                                              .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
-                                                              .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
-                                                              .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
-                                                              .compare = true,
-                                                              .debugName = "Sampler_ShadowReverseZ",
-                                                          });
+  mShadowSampler = createSampler(mDevice, SamplerConfig{
+                                              .filter = VK_FILTER_LINEAR,
+                                              .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                                              .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+                                              .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+                                              .compare = true,
+                                              .debugName = "Sampler_ShadowReverseZ",
+                                          });
 
-  NE_VERBOSE("Initialized SamplerManager: {} samplers created", mSamplers.size());
+  NE_VERBOSE("Initialized SamplerManager: {} samplers created", mTextureSamplers.size() + 1);
 }
 
 SamplerManager::~SamplerManager() {
-  for (VkSampler sampler : mSamplers) {
+  for (VkSampler sampler : mTextureSamplers) {
     vkDestroySampler(mDevice, sampler, nullptr);
   }
-  NE_VERBOSE("Destroyed SamplerManager: cleaned up {} samplers", mSamplers.size());
+  vkDestroySampler(mDevice, mShadowSampler, nullptr);
+  NE_VERBOSE("Destroyed SamplerManager: cleaned up {} samplers", mTextureSamplers.size() + 1);
 }
 
 } // namespace ne

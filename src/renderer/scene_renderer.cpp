@@ -53,6 +53,15 @@ gpu::Light toGpuLight(const LightComponent& iLight, const Mat4& iWorld) {
   return light;
 }
 
+// Pushes each stored depth away from the light by 1.5 times its slope across a texel, toward 0 in reverse-Z, so sloped
+// surfaces don't shadow themselves between texels. A float format's constant bias counts steps of the depth itself,
+// which shrink toward 0, so it's left at 0; shading moves its lookups off the surface instead (gpu::ShadowData).
+constexpr float kShadowDepthBiasConstant = 0.0f;
+constexpr float kShadowDepthBiasSlope = -1.5f;
+
+// Blended surfaces cast no shadows: a shadow map holds one depth per texel, with no room for partial coverage
+constexpr bool castsShadows(AlphaMode iAlphaMode) { return iAlphaMode != AlphaMode::Blend; }
+
 } // namespace
 
 SceneRenderer::SceneRenderer(Device* iDevice, ResourceManager* iResourceManager, VkFormat iColorFormat, VkFormat iDepthFormat) {
@@ -66,16 +75,33 @@ SceneRenderer::SceneRenderer(Device* iDevice, ResourceManager* iResourceManager,
     const AlphaMode alphaMode = static_cast<AlphaMode>(i);
     const bool isBlended = alphaMode == AlphaMode::Blend;
     const Pipeline::Config config{
-        .shaderName = vk_utils::kSceneShader,
-        .fragmentEntry = alphaMode == AlphaMode::Mask ? "fragMainMasked" : "fragMain",
+        .shader = {.name = vk_utils::kSceneShader, .fragmentEntry = alphaMode == AlphaMode::Mask ? "fragMainMasked" : "fragMain"},
         .debugName = std::format("Scene_{}", toString(alphaMode)),
         .layout = iResourceManager->getPipelineLayout(),
         .colorAttachmentFormat = iColorFormat,
-        .depthAttachmentFormat = iDepthFormat,
-        .depthMode = isBlended ? Pipeline::DepthMode::ReadOnly : Pipeline::DepthMode::ReadWrite,
+        .depth = {.format = iDepthFormat, .mode = isBlended ? Pipeline::DepthMode::ReadOnly : Pipeline::DepthMode::ReadWrite},
         .blendMode = isBlended ? Pipeline::BlendMode::Alpha : Pipeline::BlendMode::Disabled,
     };
     mPipelines[i] = std::make_unique<Pipeline>(iDevice->getDevice(), config);
+  }
+
+  // Opaque casters need no fragment shader, and masked ones only test alpha. Depth clamp flattens casters in front of a
+  // cascade's near plane onto it, so casters however far toward the light still cast.
+  for (size_t i = 0; i < mShadowPipelines.size(); ++i) {
+    const AlphaMode alphaMode = static_cast<AlphaMode>(i);
+    if (!castsShadows(alphaMode)) {
+      continue;
+    }
+    const Pipeline::Config config{
+        .shader = {.name = vk_utils::kSceneShader, .fragmentEntry = alphaMode == AlphaMode::Mask ? "fragShadowMasked" : ""},
+        .debugName = std::format("Shadow_{}", toString(alphaMode)),
+        .layout = iResourceManager->getPipelineLayout(),
+        .depth = {.format = iDepthFormat,
+                  .biasConstant = kShadowDepthBiasConstant,
+                  .biasSlope = kShadowDepthBiasSlope,
+                  .clamp = true},
+    };
+    mShadowPipelines[i] = std::make_unique<Pipeline>(iDevice->getDevice(), config);
   }
 }
 
@@ -84,6 +110,7 @@ SceneRenderer::~SceneRenderer() = default;
 void SceneRenderer::prepare(Registry& ioRegistry, const SceneView& iCameraView) {
   mFrameUniforms = gpu::GlobalUniforms{};
   mLights.clear();
+  mShadowLight.reset();
   mDrawCalls.clear();
 
   // Without an environment, the sky and the ground stay black
@@ -97,7 +124,11 @@ void SceneRenderer::prepare(Registry& ioRegistry, const SceneView& iCameraView) 
 
   ioRegistry.view<TransformComponent, LightComponent>().each(
       [&](const TransformComponent& iTransform, const LightComponent& iLight) {
-        mLights.push_back(toGpuLight(iLight, iTransform.getWorldMatrix()));
+        const Mat4& world = iTransform.getWorldMatrix();
+        if (!mShadowLight && iLight.castShadows && iLight.type == LightComponent::Type::Directional) {
+          mShadowLight = ShadowLight{.lightIndex = static_cast<uint32_t>(mLights.size()), .world = world};
+        }
+        mLights.push_back(toGpuLight(iLight, world));
       });
   mFrameUniforms.lightCount = static_cast<uint32_t>(mLights.size());
 
@@ -223,13 +254,22 @@ void SceneRenderer::recordView(VkCommandBuffer iCommandBuffer, UploadAllocator& 
   globalUniforms.eye = iView.eye;
   globalUniforms.exposure = iView.exposure;
   globalUniforms.debugView = static_cast<uint32_t>(iView.debugView);
+  // A view with shadows shades with the light that casts them
+  globalUniforms.shadows = iView.shadows;
+  globalUniforms.shadowLight = iView.shadows != 0 && mShadowLight ? mShadowLight->lightIndex : gpu::kNoShadowLight;
   const VkDeviceAddress globalUniformsAddress = ioUploadAllocator.upload(&globalUniforms, sizeof(gpu::GlobalUniforms)).address;
 
-  // The alpha mode picks the pipeline, and the sidedness the cull mode, which every scene pipeline takes as dynamic state
+  // The alpha mode picks the pipeline, and the sidedness the cull mode, which every scene and shadow pipeline takes as
+  // dynamic state
+  const bool isDepthView = iView.kind == SceneView::Kind::Depth;
+  const auto& pipelines = isDepthView ? mShadowPipelines : mPipelines;
   const Pipeline* boundPipeline = nullptr;
   std::optional<VkCullModeFlags> boundCullMode; // Unknown at the start of a view, so its first batch sets it
   for (const Batch& batch : mBatches) {
-    Pipeline& pipeline = *mPipelines[static_cast<size_t>(batch.alphaMode)];
+    if (isDepthView && !castsShadows(batch.alphaMode)) {
+      continue;
+    }
+    Pipeline& pipeline = *pipelines[static_cast<size_t>(batch.alphaMode)];
     if (boundPipeline != &pipeline) {
       boundPipeline = &pipeline;
       pipeline.bind(iCommandBuffer);

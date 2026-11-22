@@ -81,6 +81,12 @@ T exp2(T iVal) {
   return std::exp2(iVal);
 }
 
+// Nearest whole number, halves away from zero
+template <std::floating_point T>
+T round(T iVal) {
+  return std::round(iVal);
+}
+
 // Nearest integer, halves away from zero
 template <std::floating_point T>
 int64_t roundToInt64(T iVal) {

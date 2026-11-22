@@ -145,13 +145,16 @@ void Device::pickPhysicalDevice(VkInstance iInstance, const Config& iConfig) {
 
     const bool supportsTextureFiltering = features2.features.samplerAnisotropy;
 
+    // The shadow pipelines clamp depth instead of clipping casters in front of a light view's near plane
+    const bool supportsDepthClamp = features2.features.depthClamp;
+
     const bool supportsDescriptorIndexing =
         vulkan12Features.descriptorIndexing && vulkan12Features.shaderSampledImageArrayNonUniformIndexing &&
         vulkan12Features.descriptorBindingSampledImageUpdateAfterBind && vulkan12Features.descriptorBindingPartiallyBound &&
         vulkan12Features.runtimeDescriptorArray;
 
     const bool supportsRequiredFeatures = supportsModernPipeline && supportsBufferDeviceAddress && supportsGpuDrivenRendering &&
-                                          supportsTextureFiltering && supportsDescriptorIndexing;
+                                          supportsTextureFiltering && supportsDepthClamp && supportsDescriptorIndexing;
 
     if (!(supportsVulkanApi && supportRequiredQueueFamilies && supportsAllRequiredExtensions && supportsSwapChain &&
           supportsRequiredFeatures)) {
@@ -220,6 +223,7 @@ void Device::createLogicalDevice(const Config& iConfig) {
   deviceFeatures.pNext = &vulkan11Features; // Start of the chain
   deviceFeatures.features.multiDrawIndirect = VK_TRUE;
   deviceFeatures.features.samplerAnisotropy = VK_TRUE;
+  deviceFeatures.features.depthClamp = VK_TRUE;
   VkDeviceCreateInfo deviceCreateInfo{};
   deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
   deviceCreateInfo.pNext = &deviceFeatures;

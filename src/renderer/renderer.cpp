@@ -14,6 +14,7 @@
 #include "renderer/instance.h"
 #include "renderer/resource_manager.h"
 #include "renderer/scene_renderer.h"
+#include "renderer/shadow_cascades.h"
 #include "renderer/tonemapper.h"
 #include "renderer/utils.h"
 
@@ -106,10 +107,23 @@ Renderer::Renderer(Window* iWindow, const std::string& iAppName) : mWindow(iWind
 
   createTargets(mFrameManager->getExtent());
   mSceneColorTextureIndex = mResourceManager->getBindlessManager()->registerSampledImage(mSceneColor->getImageView());
+
+  // The shadow pipelines draw into it too, so it takes the depth format. Its size never changes, so its slot is written
+  // once.
+  Image::Config shadowAtlasConfig{
+      .width = ShadowCascades::kAtlasSize,
+      .height = ShadowCascades::kAtlasSize,
+      .format = mDepthFormat,
+      .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      .debugName = "Shadow_Atlas",
+  };
+  mShadowAtlas = std::make_unique<Image>(mDevice.get(), shadowAtlasConfig);
+  mShadowAtlasTextureIndex = mResourceManager->getBindlessManager()->registerSampledImage(mShadowAtlas->getImageView());
 }
 
 Renderer::~Renderer() {
   // Reverse order of creation
+  mShadowAtlas.reset();
   mSceneDepth.reset();
   mSceneColor.reset();
   mTonemapper.reset();
@@ -140,10 +154,24 @@ void Renderer::render(Registry& ioRegistry) {
   // CPU only, so it runs before beginFrame waits for the frame's fence. Without a primary camera the scene pass only
   // clears.
   std::optional<SceneView> cameraView;
+  std::optional<gpu::ShadowData> shadowData;
+  std::array<SceneView, ShadowCascades::kCount> cascadeViews;
   if (const std::optional<PrimaryCamera> primary = findPrimaryCamera(ioRegistry)) {
     const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
     cameraView = makeCameraView(*primary, aspectRatio, mDebugView);
     mSceneRenderer->prepare(ioRegistry, *cameraView);
+
+    // The cascades follow the camera, so they're computed every frame
+    if (const std::optional<SceneRenderer::ShadowLight>& shadowLight = mSceneRenderer->getShadowLight()) {
+      const ShadowCascades::Config cascadesConfig{.distance = mShadowDistance};
+      if (const std::optional<ShadowCascades> cascades =
+              ShadowCascades::compute(primary->camera, primary->world, aspectRatio, shadowLight->world, cascadesConfig)) {
+        shadowData = cascades->makeShadowData(mShadowAtlasTextureIndex);
+        for (uint32_t i = 0; i < ShadowCascades::kCount; ++i) {
+          cascadeViews[i] = SceneView{.kind = SceneView::Kind::Depth, .viewProj = cascades->viewProj[i]};
+        }
+      }
+    }
   }
 
   VkCommandBuffer commandBuffer = mFrameManager->beginFrame();
@@ -155,7 +183,12 @@ void Renderer::render(Registry& ioRegistry) {
   mResourceManager->getBindlessManager()->bind(commandBuffer, mResourceManager->getPipelineLayout());
 
   if (cameraView) {
-    mSceneRenderer->upload(*mFrameManager->getUploadAllocator());
+    UploadAllocator& uploadAllocator = *mFrameManager->getUploadAllocator();
+    mSceneRenderer->upload(uploadAllocator);
+    if (shadowData) {
+      cameraView->shadows = uploadAllocator.upload(&*shadowData, sizeof(gpu::ShadowData)).address;
+      recordShadowPass(commandBuffer, cascadeViews);
+    }
   }
 
   recordScenePass(commandBuffer, extent, cameraView ? &*cameraView : nullptr);
@@ -166,17 +199,50 @@ void Renderer::render(Registry& ioRegistry) {
 
 void Renderer::waitIdle() const { mDevice->waitIdle(); }
 
+void Renderer::recordShadowPass(VkCommandBuffer iCommandBuffer, std::span<const SceneView> iCascadeViews) {
+  mShadowAtlas->transition(iCommandBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                           VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                           VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT);
+
+  // Every cascade draws into its own tile, so one clear covers them all
+  VkRenderingAttachmentInfo depthAttachmentInfo{};
+  depthAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+  depthAttachmentInfo.imageView = mShadowAtlas->getImageView();
+  depthAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+  depthAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  depthAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  depthAttachmentInfo.clearValue.depthStencil = {0.0f, 0}; // Reverse-Z: 0 is the far plane
+
+  VkRenderingInfo renderingInfo{};
+  renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+  renderingInfo.renderArea = {.offset = {0, 0}, .extent = {ShadowCascades::kAtlasSize, ShadowCascades::kAtlasSize}};
+  renderingInfo.layerCount = 1;
+  renderingInfo.pDepthAttachment = &depthAttachmentInfo;
+
+  vkCmdBeginRendering(iCommandBuffer, &renderingInfo);
+  for (uint32_t i = 0; i < iCascadeViews.size(); ++i) {
+    setViewportAndScissor(iCommandBuffer, ShadowCascades::getTile(i));
+    mSceneRenderer->recordView(iCommandBuffer, *mFrameManager->getUploadAllocator(), iCascadeViews[i]);
+  }
+  vkCmdEndRendering(iCommandBuffer);
+}
+
 void Renderer::recordScenePass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent, const SceneView* iCameraView) {
-  const std::array barriers{
-      mSceneColor->transitionBarrier(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                     VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                                     VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT),
-      mSceneDepth->transitionBarrier(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                                     VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                                         VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                                     VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT),
-  };
-  vk_utils::pipelineBarrier(iCommandBuffer, barriers);
+  // The shadow atlas, when this frame drew it, turns readable in the same batch
+  std::array<VkImageMemoryBarrier2, 3> barriers{};
+  size_t barrierCount = 0;
+  barriers[barrierCount++] = mSceneColor->transitionBarrier(
+      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+  barriers[barrierCount++] = mSceneDepth->transitionBarrier(
+      VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+      VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+      VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT);
+  if (iCameraView && iCameraView->shadows != 0) {
+    barriers[barrierCount++] = mShadowAtlas->transitionBarrier(
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
+  }
+  vk_utils::pipelineBarrier(iCommandBuffer, {barriers.data(), barrierCount});
 
   VkRenderingAttachmentInfo colorAttachmentInfo{};
   colorAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -247,7 +313,9 @@ void Renderer::recordSwapchainPass(VkCommandBuffer iCommandBuffer, VkExtent2D iE
 
   vkCmdBeginRendering(iCommandBuffer, &renderingInfo);
   setViewportAndScissor(iCommandBuffer, renderingInfo.renderArea);
-  mTonemapper->record(iCommandBuffer, mSceneColorTextureIndex, mEncodeSrgb, mDebugView == gpu::DebugView::Lit);
+  // The Cascades view is the lit image tinted, so it keeps the curve; the channel views show their values as they are
+  const bool applyCurve = mDebugView == gpu::DebugView::Lit || mDebugView == gpu::DebugView::Cascades;
+  mTonemapper->record(iCommandBuffer, mSceneColorTextureIndex, mEncodeSrgb, applyCurve);
   mImGuiManager->draw(iCommandBuffer);
   vkCmdEndRendering(iCommandBuffer);
 
