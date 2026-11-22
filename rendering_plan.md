@@ -1,6 +1,6 @@
 # Rendering Plan
 
-Physically based rendering for Null, split into seven phases; Phase 6, the environment BRDF table, was added on Nov 1. Each phase leaves the engine working and can be checked on its own. This file merges the stage 1 plan from the "PBR rendering next steps" session (2026-10-15) with the plan review of 2026-10-18. The README's Rendering section lists the same phases.
+Physically based rendering for Null, split into seven phases; Phase 6, the environment BRDF table, was added on Nov 1, and Phases 6 and 7 were checked against the Khronos Sample Viewer's shaders on Nov 22. Each phase leaves the engine working and can be checked on its own. This file merges the stage 1 plan from the "PBR rendering next steps" session (2026-10-15) with the plan review of 2026-10-18. The README's Rendering section lists the same phases.
 
 ## How to Work Through It
 
@@ -61,13 +61,16 @@ Physically based rendering for Null, split into seven phases; Phase 6, the envir
 
 ### Later phases
 - **Shadows:** directional cascaded shadow maps (CSM), 4 cascades in one 4096² D32 atlas, stabilized, drawn with depth clamp. They come after the per-view refactor. *Why:* an atlas needs no array images, and per-view drawing is shared with Render Views. Depth clamp flattens casters in front of a cascade's near plane onto it instead of clipping them, so casters however far toward the light still cast; `Device` requires the `depthClamp` feature, which desktop drivers and lavapipe have. Depth clamp was decided Nov 22.
-- **Environment BRDF:** a 64 × 64 `R16G16_SFLOAT` table, built on the CPU at startup from the light loop's GGX and visibility, replaces `envBrdfApprox`, in its own phase before IBL. *Why:* the fit makes mid-rough metal about a quarter stop too dark and drops rough metal's brightening toward the edges (Phase 6 has the numbers), which a comparison with the Sample Viewer, which reads a table, would show. In its own phase it stays out of IBL's way. Decided Nov 1.
+- **Environment BRDF:** a 64 × 64 `R16G16_SFLOAT` table, built on the CPU at startup from the light loop's GGX and visibility, replaces `envBrdfApprox`, in its own phase before IBL. With it, the ambient adds back the light rough surfaces bounce between their microfacets (Fdez-Agüera's multiple scattering, as the Sample Viewer's image-based light does) and gives its diffuse only what the specular leaves. The light loop keeps one bounce, as the Sample Viewer's does. *Why:* the fit makes mid-rough metal about a quarter stop too dark and drops rough metal's brightening toward the edges (Phase 6 has the numbers), which a comparison with the Sample Viewer, which reads a table, would show. One bounce alone leaves white rough metal up to 1.7 stops darker than the reference, and the unweighted diffuse makes surfaces seen at a grazing angle send back more light than they receive. In its own phase it stays out of IBL's way. Decided Nov 1; multiple scattering and the diffuse weight Nov 22.
 - **IBL:**
   - `.hdr` loaded with stb_image into an RGBA16F cube with prefiltered mips, built with graphics passes;
-  - SH9 diffuse computed on the CPU;
-  - the specular scaled by Phase 6's environment BRDF table.
+  - the map's middle faces +X and its top +Z, as in Blender;
+  - SH9 diffuse computed on the CPU, stored as irradiance / π like `hemisphere(N)`;
+  - Phase 6's ambient (table, multiple scattering, diffuse weight), with the map in place of the hemisphere;
+  - cube views share binding 1 with the 2D textures;
+  - the sky draws inside the scene pass, after the masked draws and before the blended ones.
 
-  *Why:* it reuses color-attachment rendering, so no storage images or compute pipelines are needed yet.
+  *Why:* graphics passes reuse color-attachment rendering, so no storage images or compute pipelines are needed yet. Blender's orientation makes a map face the same way in both, and its world is Z-up too. Cube and 2D views are both `SAMPLED_IMAGE` descriptors, so one binding keeps one slot allocator, at the price of Slang's overlap warning (39001), off for that one declaration. The shadow sampler got a binding of its own on Nov 22 because it's one fixed sampler that needs no slot; cube maps are an open-ended set, which a binding of their own would need a second allocator and a fixed size for. The orientation, the binding, and the sky's place were decided Nov 22.
 
 ---
 
@@ -890,7 +893,17 @@ struct ShadowData {
 ## Phase 6: Environment BRDF Table
 **Status:** not started
 
-**Goal:** The ambient's specular term reads a lookup table instead of Karis's `envBrdfApprox`, so rough metal reflects the sky at the right brightness. Only that term changes, and it changes before Image-Based Lighting, so a mismatch found in Phase 7 can't come from it.
+**Goal:** The ambient reads a lookup table instead of Karis's `envBrdfApprox`, and with it:
+- the specular term reflects the sky at the right brightness at every roughness;
+- the light that rough surfaces bounce between their microfacets, which a one-bounce BRDF loses, comes back (multiple scattering);
+- the diffuse term gets only the light the specular doesn't reflect.
+
+The light loop doesn't change. All of it lands before Image-Based Lighting, so a mismatch found in Phase 7 can't come from it.
+
+The review of Nov 22 checked this phase against the Khronos Sample Viewer's shaders (`ibl.glsl`, `pbr.frag`) and made these changes:
+- **Multiple scattering moved here from Later.** The Sample Viewer's image-based light adds it (Fdez-Agüera's term in `getIBLGGXFresnel`), so without it rough metal stays darker than the reference this phase means to match. Robot parts are often rough metal: bead-blasted aluminum, castings.
+- **The ambient's diffuse is weighted by what the specular leaves,** as the light loop weights its diffuse by 1 − F and the Sample Viewer mixes its image-based diffuse and specular.
+- **Done when** gained the white furnace check, which both changes make pass.
 
 The table answers one question: of light arriving evenly from every direction, what share does the specular lobe reflect toward the camera? The answer depends on the view angle (NdotV), the roughness, and F0, and comes out as a scale and an offset of F0: `F0 × A + B`. Karis fitted a curve to it in 2014, to save a texture read on the phones of the time. He fitted it to UE4's older Schlick-Smith visibility, not the height-correlated Smith of Phase 4's light loop. Against the exact values (the light loop's GGX and visibility, integrated on Nov 1):
 
@@ -903,6 +916,13 @@ The table answers one question: of light arriving evenly from every direction, w
 
 For a metal, the fit gives 1 − 0.55 × roughness at every angle, so mid-rough metal comes out about a quarter stop too dark, and rough metal loses its brightening toward the edges.
 
+**Multiple scattering.** A rough surface is a field of tiny mirror facets, tilted every which way. The BRDF follows light through one bounce: light that one facet sends into a neighbor counts as lost, though in a real metal most of it bounces on and leaves. The loss grows with roughness. The table above says a perfect metal (F0 = 1) at roughness 1, seen head-on, reflects 0.307 of an even sky, so 69% goes missing. Fdez-Agüera ("A Multiple-Scattering Microfacet Model for Real-Time Image-Based Lighting", 2019) adds it back from the same table. A + B is the share a perfect metal keeps after one bounce, so 1 − (A + B) is what goes on bouncing, and each later bounce keeps F_avg of it: Schlick's Fresnel averaged over the hemisphere, F0 + (1 − F0) / 21.
+- The perfect metal: F_avg = 1, and the bounced light adds 0.693 × 0.307 / (1 − 0.693) = 0.693, so it reflects 0.307 + 0.693 = 1, all of the light, at every roughness and angle.
+- Plastic barely moves: at the same roughness and angle, F0 = 0.04 goes from 0.012 to 0.013, since each later bounce keeps less than a tenth of its light.
+- Colored metals come out a little more saturated, as real ones do: every bounce tints the light again.
+
+**Diffuse weight.** Of the light reaching a surface, the specular reflects a share and the rest enters the material, which the diffuse term sends back out. Today's ambient adds both in full. Smooth white plastic seen at a grazing angle (NdotV = 0.1, the way a low robot camera sees the floor) reflects 0.607 of the sky, and the diffuse adds 1.0 more: 1.6 times the light it receives. Weighted, it's (1 − 0.607) × 1.0 + 0.607 = 1.0. Head-on the error was 4%, since only 0.04 reflects there.
+
 **Tasks:**
 1. **Half floats:** a float → half conversion in `core/math` (moved here from Phase 7, which reuses it).
 2. **Half-float textures:** `createTexture` takes only 8-bit RGBA today and builds an 8-bit mip chain. `ImageData` gains a half-float format, which `createTexture` uploads as it is, one level (`R16G16_SFLOAT` for two channels). Phase 7's HDR images reuse it.
@@ -911,20 +931,36 @@ For a metal, the fit gives 1 − 0.55 × roughness at every angle, so mid-rough 
    - 64 × 64 texels, NdotV along x and perceptual roughness along y, each computed at its texel's center ((i + 0.5) / 64), with 256 samples.
 4. **`ResourceManager`** builds the table once at startup and registers it, with the linear, clamp-to-edge sampler. A scratch version measured on Nov 1 took 24 ms in an optimized build and 45 ms in Debug.
 5. **`GlobalUniforms`** gains `uint32_t envBrdfTexture`, the table's packed texture and sampler index (as in `gpu::Material`), after `shadowLight`: 140 bytes of fields, then 4 of padding, 144 in all (Phase 5 used the padding there was). `SceneRenderer` keeps the index from construction, like the material buffer's address.
-6. **Shader:** `envBrdf(F0, roughness, NdotV)` reads the table and returns `F0 * AB.x + AB.y`, as `envBrdfApprox` did; `envBrdfApprox` goes away.
+6. **Shader:** `envBrdf(F0, roughness, NdotV)` reads the table and returns the share of an even sky the specular reflects, multiple scattering included; `envBrdfApprox` goes away.
+   ```slang
+   float2 AB = sampleTexture(pc.globalUniforms->envBrdfTexture, float2(NdotV, roughness)).rg;
+   float3 FssEss = F0 * AB.x + AB.y;     // One bounce
+   float Ems = 1.0 - (AB.x + AB.y);      // What a perfect metal loses past one bounce
+   float3 Favg = F0 + (1.0 - F0) / 21.0; // Schlick's Fresnel averaged over the hemisphere
+   return FssEss + Ems * FssEss * Favg / (1.0 - Favg * Ems);
+   ```
+   The ambient gives the diffuse what the specular leaves:
+   ```slang
+   float3 specularShare = envBrdf(F0, roughness, NdotV);
+   radiance += (diffuseColor * (1.0 - specularShare) * hemisphere(N) + specularShare * hemisphere(R)) * ao;
+   ```
+   Land it in two steps and screenshot each: first `F0 * AB.x + AB.y` in place of the fit, with the ambient as it is, then the multiple scattering and the diffuse weight. Each step then shows on its own (see **Done when**).
 7. **Tests**, on the integration function:
    - roughness 1 seen head-on: A + B is 1 − ln 2 ≈ 0.307, within 0.005. At roughness 1, GGX spreads evenly and the integral has a closed form;
    - roughness 0.045 at NdotV 0.1, F0 0.04: within 0.005 of Schlick's Fresnel at that angle, 0.607. A near-mirror reflects what Fresnel says.
 
-**Done when:**
-- With the sun off in the Lighting window, so only the ambient lights the scene, MetalRoughSpheresNoTextures' rough metal spheres brighten toward their edges, and mid-rough metal is about a quarter stop brighter than with the fit.
-- Smooth spheres barely change.
+**Done when**, with the sun off in the Lighting window, so only the ambient lights the scene:
+- After the first step (the table alone), MetalRoughSpheresNoTextures' rough metal spheres brighten toward their edges, mid-rough metal is about a quarter stop brighter than with the fit, and smooth spheres barely change.
+- After the second, rough metal brightens again, a white metal by up to 1.7 stops (0.307 → 1 at roughness 1, seen head-on), while the non-metal spheres barely change. The far ground, seen at a grazing angle, darkens slightly.
+- **White furnace:** with the sky and the ground set to one color and intensity, a white cube (in a local change to BasicApp), metal or not and at any roughness, shows all its faces at one brightness, so its edges disappear: a surface that absorbs nothing reflects all of an even sky, whichever way it faces. Before this phase, rough metal looks darker, and plastic faces seen at a grazing angle look brighter.
 
 **Pitfalls:**
 - Use the light loop's height-correlated Smith, not UE4's Schlick-Smith with k = α / 2, which most IBL tutorials use: that mismatch is part of what this phase fixes.
 - Index the table by perceptual roughness, as `envBrdfApprox` was, not by α.
 - Half floats, not 32-bit floats: linear filtering of `R32G32_SFLOAT` isn't guaranteed.
 - The sampling error is largest at grazing angles (NdotV below 0.1): on Nov 1, at 256 samples, it was 0.4% on average and 2% at worst, there. More samples converge slowly; sampling visible normals (Heitz 2018) is the fix if it ever shows.
+- Don't copy the Sample Viewer's "roughness-dependent Fresnel" (`k_S` in `getIBLGGXFresnel`, from the same paper), which replaces F0 with a Fresnel taken at NdotV before the table. The table's A and B already integrate Fresnel over the lobe, so it counts Fresnel twice: smooth plastic at NdotV = 0.1 reflects 0.83 instead of Fresnel's 0.607. Smooth non-metals at grazing angles look a little dimmer here than in the Sample Viewer, and that difference is expected.
+- The light loop keeps one bounce, as the Sample Viewer's does, so rough metal lit by the sun stays darker than the same metal lit by the sky. Adding it there is in **Later**.
 
 ---
 
@@ -932,6 +968,14 @@ For a metal, the fit gives 1 − 0.55 × roughness at every angle, so mid-rough 
 **Status:** not started
 
 **Goal:** An HDR environment map lights and reflects the scene and is drawn as the sky. The hemisphere stays as the fallback when there's no environment map.
+
+The review of Nov 22 made these changes:
+- **The sky draws inside the scene pass, between the masked and the blended draws** (task 8). The plan said "after the opaque draws", but `recordView` draws every batch in one loop, and glass, which doesn't write depth, must draw over the sky.
+- **Cube views share binding 1 with the 2D textures** (task 5), now a decision under **IBL** in **Decisions**: after the shadow sampler moved to a binding of its own that day, the alias read like a contradiction.
+- **The equirectangular map's orientation is fixed** (task 2). Latitude was; longitude wasn't, and tools disagree on it.
+- **Shading takes all of Phase 6:** the table, multiple scattering, and the diffuse weight.
+- **The SH stores irradiance / π,** so it drops in where `hemisphere(N)` is now, and the environment reaches the shader the way the shadows do (task 6).
+- **Tests,** which this phase had none of, and pitfalls about SH9 near a bright sun and the Sample Viewer's diffuse cube.
 
 **Tasks:**
 1. **Image infrastructure:**
@@ -941,32 +985,50 @@ For a metal, the fit gives 1 − 0.55 × roughness at every angle, so mid-rough 
 2. **HDR images:**
    - `ImageImporter::importHdrFromFile` loads Radiance `.hdr` files with `stbi_loadf` as float RGBA.
    - Convert them on the CPU to half floats (`R16G16B16A16_SFLOAT`), because linear filtering of `R32G32B32A32_SFLOAT` isn't guaranteed. They use Phase 6's float → half conversion and half-float `ImageData`.
+   - **Orientation:** the image's middle column faces +X (forward), the column a quarter of the way in from the left +Y (left), and the top row +Z: standing at the origin and looking forward, you see the middle of the panorama the right way round. For a direction d, u = 0.5 − atan2(d.y, d.x) / 2π and v = acos(d.z) / π, with v = 0 the top row. That's Blender's horizontal mapping (Cycles' `direction_to_equirectangular`), whose world is Z-up too, so a map faces the same way in both. USD dome lights put their pole on +Y (`UsdLuxDomeLight`), so a dome light from a USD scene needs a rotation to match.
 3. **Assets:** a CC0 HDRI from Poly Haven (1k or 2k `.hdr`). **Decide first:** either build the planned download manifest (URL + SHA-256 into a gitignored cache, cached in CI) or commit one file of 2 MB or less.
 4. **Precompute at load** (graphics passes, one fullscreen triangle per face and mip):
    - equirectangular map → 512² environment cube with full mips;
    - prefiltered specular cube, 256² with 6 mips; mip m holds roughness m / 5. Use GGX importance sampling that reads the environment's mips by sample density (filtered importance sampling, which avoids fireflies);
-   - SH9 diffuse irradiance, computed on the CPU from the equirectangular pixels and weighted by solid angle.
-5. **Bindless:** register cube views in binding 1 like 2D ones, and declare `TextureCube gCubeTextures[]` on binding 1 next to `gTextures`.
-6. **`EnvironmentComponent`** gains the cube texture index, the SH coefficients, and `intensity` (nits per unit of the map).
-7. **Shading:** when an environment map is set, it replaces the hemisphere:
-   - diffuse ambient = SH(N) × diffuseColor;
-   - specular = the prefiltered cube sampled at mip `roughness * 5` × the environment BRDF table (Phase 6);
+   - SH9 diffuse, computed on the CPU from the equirectangular pixels weighted by solid angle, and stored as irradiance / π: what `hemisphere(N)` returns today, so a map of one radiance L gives L at every normal.
+5. **Bindless:** register cube views in binding 1 like 2D ones (both are `SAMPLED_IMAGE` descriptors, so `BindlessManager` keeps one slot allocator), and declare `TextureCube gCubeTextures[]` on binding 1 next to `gTextures`. Slang warns about the overlap (39001), so the warning is off for that one declaration, between `#pragma warning(push)` and `#pragma warning(pop)`. Reading a slot through the wrong declaration (a cube through `gTextures`) is undefined.
+6. **`EnvironmentComponent`** gains the cube texture index, the SH coefficients, and `intensity` (nits per unit of the map). They reach the shader the way the shadows do: `SceneRenderer` uploads a `gpu::Environment` (the SH and the intensity) once per frame, and `GlobalUniforms` gains its address and `uint32_t environmentMap`, the cube's packed index, or `kNoEnvironmentMap` (`~0U`) for the hemisphere. A pointer can't be compared with null (Phase 5's pitfalls).
+7. **Shading:** when an environment map is set, it replaces the hemisphere in Phase 6's ambient, which stays as it is otherwise:
+   - diffuse = SH(N) × diffuseColor × (1 − specularShare);
+   - specular = the prefiltered cube sampled along R at mip `roughness * 5`, × specularShare;
    - both multiplied by intensity and ao.
-8. **Sky:** after the opaque draws, a fullscreen triangle at depth 0 (reverse-Z far):
-   - depth test GREATER_OR_EQUAL, no depth writes;
-   - direction from the inverse view-projection;
+8. **Sky:** `SceneRenderer::recordView` draws it in color views when the environment has a map, after the last masked batch and before the first blended one (batches are sorted by alpha mode), through a `Sky` pipeline built up front with the others:
+   - `vertSky` and `fragSky` in `scene.slang`, so it shares the bindless declarations and `GlobalUniforms`;
+   - a fullscreen triangle at depth 0 (reverse-Z's far), with no vertex input and cull mode none (see Phase 1's pitfalls);
+   - `DepthMode::ReadOnly`, which tests GREATER_OR_EQUAL and writes no depth, so it shades only the pixels nothing covers;
+   - the direction from the inverse view-projection (`GlobalUniforms` gains `Mat4 invViewProj`): the pixel's ray through two depths, so an orthographic camera sees one direction everywhere, as in Phase 4;
    - color = environment cube × intensity × exposure.
+
+   *Why there:* opaque and masked draws fill depth first, so the sky shades only what's left. Blended draws don't write depth, so a sky drawn after them would pass the depth test and paint over glass seen against the sky.
+
+   `GlobalUniforms` grows by `invViewProj`, the environment's address, and `environmentMap`; check the offsets with slangc, as the earlier phases did.
 
 **Done when:**
 - The helmet's metal reflects the environment.
 - Rough surfaces show a blurred reflection.
 - Diffuse lighting takes on the environment's color.
 - The sky shows behind the scene, without seams at cube edges.
+- Glass seen against the sky still shows over it.
+- **Furnace with a sky:** with an environment map of one color, Phase 6's white cube vanishes into the sky, which shows that the sky and the lighting share units and exposure.
+
+**Tests:**
+- image, "Equirectangular Pixels Map To REP-103 Directions": the middle of the middle row faces +X, a quarter of the way in from the left +Y, three quarters −Y, the top row +Z, and the bottom row −Z; direction → pixel → direction comes back.
+- IBL (CPU):
+  - "A Constant Environment's SH Gives It Back At Every Normal": a 64 × 32 map of one radiance L evaluates to L within 0.5% at the six axis normals and four diagonals.
+  - "A Two-Color Sky's SH Matches The Hemisphere": the sky's radiance above the horizon and the ground's below evaluate to Phase 4's `hemisphere(N)` within 1%. In words: a two-color sky's diffuse light changes only linearly with N.z, which the first two SH bands hold exactly, and a step at the horizon has nothing in the third band, so nine coefficients reproduce it without ringing; a bright sun is what rings (see the pitfalls). It also means that swapping the hemisphere for the same sky as a map leaves the diffuse unchanged.
+- renderer, "Frames Render With An Environment Map": an environment map made from a generated 64 × 32 two-color image, so CI needs no asset. `runForFrames(3)` under validation covers the precompute passes, the cube views, and the sky; then BasicApp's environment goes back.
 
 **Pitfalls:**
 - An HDRI with a visible sun lights the scene twice when a directional light also stands in for the sun. Pick sunless HDRIs, or keep the sun out of the map.
+- Nine SH coefficients can't hold a small, bright source. Around a sun in the map they ring: dark or tinted blotches on the side facing away from it, even negative light. Sunless maps avoid it; **Later** has the fixes.
+- The Sample Viewer lights its diffuse from a filtered cube, not SH9. For sunless maps the two agree to about 1% on average (Ramamoorthi & Hanrahan, 2001), so compare the diffuse loosely and the specular closely.
 - HDRIs come in arbitrary units. Calibrate `intensity` against the directional light; a sunny sky is a few thousand nits.
-- Equirectangular latitude is measured from +Z (engine up), not +Y as most sample code assumes.
+- Equirectangular latitude is measured from +Z (engine up), not +Y as most sample code assumes, and longitude from +X (task 2).
 
 ---
 
@@ -993,6 +1055,10 @@ Download these for manual checks, and don't commit them; `content/` stays small.
 - **Shadow filtering:** Castaño's tent weights for the PCF taps (a smoother 5 × 5 tent from the same 9 taps, or today's softness from 4), and neighboring cascades blended over a band at each split, so the edge's softness doesn't jump where cascades meet (texels grow from 2.3 to 5 mm at BasicApp's 3.4 m split).
 - **More glTF features:** TEXCOORD_1, KHR_texture_transform, embedded (`data:`) images, KHR_lights_punctual, the KHR_materials_* extensions. A KHR_lights_punctual light shines along glTF −Z, which the axis change makes engine −X, so the importer turns it half a turn about its up axis to shine along +X.
 - **Auto exposure:** metering the scene as real cameras do, for camera sensors.
-- **Shading quality:** specular anti-aliasing and multiple-scattering energy compensation (which reads Phase 6's table).
+- **Shading quality:**
+  - specular anti-aliasing;
+  - multiple scattering in the light loop. Phase 6 adds it to the ambient only, which leaves rough metal darker under the sun than under the sky. Filament adds it to punctual lights as one factor on the specular lobe, 1 + F0 × (1 / (A + B) − 1), read from Phase 6's table; the Sample Viewer doesn't, so adding it moves away from the reference. A comparison with real camera images should decide.
+- **Ambient occlusion:** once the sky lights the scene (Phase 7), nothing blocks it but a material's occlusion texture, so the floor under a robot or a table gets the full sky and objects look like they float. Screen-space GTAO is the usual raster answer; ray-traced occlusion can come with Ray-Traced Shadows, on Ray-Query LiDAR's acceleration structures. Either darkens only the ambient: the punctual lights' occlusion is their shadows. Noted Nov 22.
+- **Suns in HDRIs:** Episodes & Resets randomizes lighting, and swapping HDRIs is the usual way, but most outdoor HDRIs hold a sun, which makes SH9 ring and lights the scene twice next to the directional light (Phase 7's pitfalls). The usual fixes, often used together: window the SH coefficients (Sloan, "Stupid Spherical Harmonics (SH) Tricks", 2008), and pull the sun out of the map into the directional light: find its brightest disc, set the light's direction and lux from it, and clamp it out of the map, so the sun also casts the cascaded shadows. Noted Nov 22.
 - **Clustered lighting**, if light counts grow.
 - **Render graph:** see Decisions for when to revisit it.
