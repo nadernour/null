@@ -22,7 +22,7 @@ namespace ne {
 
 namespace {
 
-// A material's texture as the shader reads it: the bindless index (low 16 bits) and the sampler index (high 16 bits)
+// As gpu::Material stores it
 uint32_t packTexture(uint32_t iTextureId, const TextureRef& iTexture) {
   static_assert(vk_utils::kMaxSampledImages <= 0x10000, "Bindless indices must fit in 16 bits");
   static_assert(SamplerManager::kTextureSamplerCount <= 0x10000, "Sampler indices must fit in 16 bits");

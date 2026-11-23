@@ -6,6 +6,7 @@
 - For the README's Open Decisions (physics, formats, connectivity, training interface), present options instead of picking one. Treat training needs (headless runs, parallel environments, determinism) as being as important as live mirroring.
 - Validate shaders with `spirv-val --target-env vulkan1.3 --scalar-block-layout`; without the flag it reports a false "improperly straddling vector" error on `Vertex` (buffer pointers use scalar layout).
 - Redirect `slangc` output to a file rather than piping it into `head`, which can kill it before it writes the `.spv`.
+- Keep this file current: fix or delete any line the task showed to be wrong or unneeded, and add one only for a non-obvious pitfall a future session would hit again. Prefer editing or removing to adding; most tasks change nothing here.
 
 ## Verifying
 - The exit code of `--run-tests` is the verdict, not the summary line. Debug builds assert at exit if the validation layer reported anything, so "ALL UNIT TEST SUITES PASSED" followed by a crash is a failure. Search the log (`build/<preset>/bin/logs/`) for `validation layer:` and `[TEST FAIL]`.
@@ -16,5 +17,7 @@
 ## Code
 - Exceptions are compiled out (`-fno-exceptions`, `_HAS_EXCEPTIONS=0`): no `try` / `throw`; use the `std::error_code` overloads of `std::filesystem`.
 - Format only the lines you change (`git clang-format`): 12 files in `src/` don't match `.clang-format`, and reformatting them buries the real diff.
-- Settings with defaults go in designated-initializer `Config` structs; allocations log with `NE_VERBOSE`; every struct shared with Slang lives in `src/renderer/gpu_types.h` with its size `static_assert`ed. Constants are `kPascalCase`.
+- Settings with defaults go in designated-initializer `Config` structs, and the objects a class uses (such as `Device`) are constructor parameters, as in `Buffer(Device*, const Config&)`; allocations log with `NE_VERBOSE`; every struct shared with Slang lives in `src/renderer/gpu_types.h` with its size `static_assert`ed. Constants are `kPascalCase`.
 - Rendering work follows `rendering_plan.md`'s Decisions. They're settled: change one only for a concrete reason found in the code, and update the file when you do.
+- Comments say what the code can't: units, invariants, spec requirements, a non-obvious order, workarounds. One line by default, at most three on a declaration; don't restate the name or narrate the next line. Say each fact once, where it's declared: code that uses it, and Slang copies of C++ types (`// Mirrors gpu::Light`), don't repeat it.
+- Derivations, rejected alternatives, and history go in `rendering_plan.md` or the commit message; the comment keeps the conclusion and may point there, as in `// (rendering_plan.md, Shadows)`.

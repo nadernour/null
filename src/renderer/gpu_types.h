@@ -16,8 +16,7 @@ namespace ne::gpu {
 constexpr uint32_t kPushConstantsSize = 128;
 constexpr VkShaderStageFlags kPushConstantStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
-// Every push goes through here: it writes the start of the shared range and names all of the range's stages, which
-// vkCmdPushConstants requires
+// vkCmdPushConstants must name every stage of the shared range, so every push goes through here
 template <typename T>
 void pushConstants(VkCommandBuffer iCommandBuffer, VkPipelineLayout iLayout, const T& iConstants) {
   static_assert(sizeof(T) <= kPushConstantsSize, "Push constants must fit in the shared range");
@@ -25,16 +24,14 @@ void pushConstants(VkCommandBuffer iCommandBuffer, VkPipelineLayout iLayout, con
   vkCmdPushConstants(iCommandBuffer, iLayout, kPushConstantStages, 0, sizeof(T), &iConstants);
 }
 
-// What the scene shader writes: the lit color, or one channel. A channel that holds data (normals, tangents, metallic,
-// roughness, occlusion, UVs) reaches the screen as stored, and one that holds a color (base color, emissive) as that
-// color. Normal is the normal-mapped normal, Geometry Normal the vertex normal. Cascades is the lit color tinted by shadow
-// cascade. shaders/scene.slang mirrors it, so a new view goes in both, and MainUI names it.
+// What the scene shader writes (rendering_plan.md, Debug views). shaders/scene.slang repeats the list in this order,
+// which nothing checks.
 enum class DebugView : uint32_t {
   Lit,
-  Cascades,
+  Cascades, // Lit, tinted by shadow cascade
   BaseColor,
-  Normal,
-  GeometryNormal,
+  Normal,         // After normal mapping
+  GeometryNormal, // The vertex normal
   Tangent,
   Bitangent,
   Metallic,
@@ -50,13 +47,11 @@ struct Vertex {
   Vec3 normal{0.0f, 0.0f, 1.0f};
   Vec2 uv{0.0f};
   LinearColor color = LinearColor::White;
-  Vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f}; // xyz toward +u; cross(normal, xyz) * w points up the image (toward -v)
+  Vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f}; // As SubmeshData::tangents
 };
 
-// Every type takes the same path through the shader. A directional light is a point infinitely far away (position.w =
-// 0), so the vector toward it is the same everywhere and has length 1, and the inverse-square falloff divides by 1. A
-// light without a range has invRangeSq = 0, and a light without a cone has spotScale = 0 and spotOffset = 1, which turn
-// those factors into 1 too.
+// Every type takes the same shader path: w = 0 gives a directional light a distance of 1, and the defaults turn the range
+// and cone factors into 1
 struct Light {
   Vec4 position{0.0f};     // Point and spot: (world position, 1). Directional: (direction toward the light, 0)
   Vec3 intensity{0.0f};    // Linear color x intensity: lux for directional lights, candela for point and spot lights
@@ -69,8 +64,7 @@ struct Light {
 // GlobalUniforms::shadowLight when no light's shadows are drawn, which no light index matches
 constexpr uint32_t kNoShadowLight = ~0U;
 
-// The cascades of the directional light that casts shadows, which a color view shades with. Cascade i is drawn into
-// tile i of the shadow atlas.
+// The shadow-casting directional light's cascades, which color views shade with
 struct ShadowData {
   Mat4 cascades[4]{};        // World position -> (atlas u, atlas v, depth) of each cascade
   Vec4 depthPlane{0.0f};     // The camera's view depth of a world point p: dot(depthPlane.xyz, p) + depthPlane.w
@@ -80,7 +74,7 @@ struct ShadowData {
   float texelSize = 0.0f;    // One atlas texel, in atlas UV
 };
 
-// What every draw of a view shares: the camera, the lights, the environment, and the shadows
+// What every draw of a view shares
 struct GlobalUniforms {
   Mat4 viewProj;
   VkDeviceAddress lights = 0;       // Offset 64, so the addresses stay 8-byte aligned; 0 when lightCount is 0

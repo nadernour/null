@@ -58,9 +58,8 @@ const char* resultToString(cgltf_result iResult) {
   return "unknown error";
 }
 
-// Required extensions the importer honors; a file that requires any other can't be loaded correctly, so it is rejected.
-// KHR_mesh_quantization only adds accessor component types, which cgltf_accessor_read_float converts, and
-// KHR_materials_emissive_strength scales the emissive factor.
+// Required extensions the importer honors; a file requiring any other is rejected. KHR_mesh_quantization only adds
+// component types, which cgltf_accessor_read_float converts; KHR_materials_emissive_strength scales the emissive.
 constexpr const char* kSupportedExtensions[] = {"KHR_mesh_quantization", "KHR_materials_emissive_strength"};
 
 bool isSupportedExtension(const char* iName) {

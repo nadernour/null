@@ -9,11 +9,9 @@ namespace ne {
 class Device;
 class Pipeline;
 
-// Maps the HDR scene color to display values (Khronos PBR Neutral), then encodes sRGB unless the attachment format does.
-// Debug views skip PBR Neutral, so their values reach the screen unchanged.
+// Maps the HDR scene color to display values (Khronos PBR Neutral), then encodes sRGB unless the attachment format does
 class Tonemapper {
 public:
-  // iColorFormat is the format of the attachment it draws into
   Tonemapper(Device* iDevice, VkPipelineLayout iPipelineLayout, VkFormat iColorFormat);
   ~Tonemapper();
 

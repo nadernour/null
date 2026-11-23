@@ -11,9 +11,8 @@ namespace ne {
 
 class Device;
 
-// Host-visible memory the GPU reads during one frame: per-draw data, uniforms, indirect commands. Uploads fill blocks in
-// order, and when one is full the next block takes over, created the first time it's needed and kept, so nothing has to
-// be sized up front. FrameManager keeps one per frame in flight and resets it once that frame's fence has signaled.
+// Host-visible memory the GPU reads during one frame, filled in order across blocks that are created when first needed
+// and kept (rendering_plan.md, Per-frame uploads). FrameManager resets it once that frame's fence has signaled.
 class UploadAllocator {
 public:
   struct Allocation {

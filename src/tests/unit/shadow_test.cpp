@@ -39,10 +39,8 @@ std::array<Vec3, 8> sliceCorners(const CameraComponent& iCamera, const Mat4& iWo
   return corners;
 }
 
-// Whether every slice's corners land inside its cascade, at least as far in from the tile's edges as the border (less
-// the half texel snapping may move it), and between its near and far planes. A corner's lookup, which the normal offset
-// may move toward the light, must stay behind the near plane too: casters in front of the plane are flattened onto it,
-// so they shadow only what lies behind it.
+// Whether every slice's corners land inside the tile's border (less the half texel snapping may move them) and between
+// the near and far planes, and stay behind the near plane after the normal offset moves their lookups toward the light
 bool slicesFitTheirCascades(const CameraComponent& iCamera, const Mat4& iWorld, const ShadowCascades& iCascades) {
   const float halfResolution = static_cast<float>(ShadowCascades::kTileSize) * 0.5f;
   const float limit = 1.0f - (static_cast<float>(ShadowCascades::kBorderTexels) - 0.5f) / halfResolution + 1e-5f;
@@ -80,8 +78,7 @@ float texelSpotDistance(const Vec2& iA, const Vec2& iB) {
 
 // For BasicApp's camera and the 60 m distance: lambda 0.8 of n (f / n)^(i / 4) plus 0.2 of the even split
 NE_TEST_CASE("shadows", "Cascade Splits Rise To The Shadow Distance") {
-  const ShadowCascades::Config config;
-  const std::optional<ShadowCascades> cascades = ShadowCascades::compute(kCamera, kCameraWorld, kAspectRatio, kSunWorld, config);
+  const std::optional<ShadowCascades> cascades = ShadowCascades::compute(kCamera, kCameraWorld, kAspectRatio, kSunWorld);
   NE_TEST_ASSERT(cascades.has_value(), "The camera sees 60 m of shadows.");
   const std::array expected{3.411f, 7.970f, 18.703f, 60.0f};
   for (uint32_t i = 0; i < ShadowCascades::kCount; ++i) {
@@ -91,42 +88,38 @@ NE_TEST_CASE("shadows", "Cascade Splits Rise To The Shadow Distance") {
 
   CameraComponent nearCamera = kCamera;
   nearCamera.farClip = 30.0f;
-  const std::optional<ShadowCascades> shortened =
-      ShadowCascades::compute(nearCamera, kCameraWorld, kAspectRatio, kSunWorld, config);
+  const std::optional<ShadowCascades> shortened = ShadowCascades::compute(nearCamera, kCameraWorld, kAspectRatio, kSunWorld);
   NE_TEST_ASSERT(shortened && shortened->splitDepths[3] == 30.0f, "A far plane nearer than the distance ends the last cascade.");
 
-  NE_TEST_ASSERT(!ShadowCascades::compute(kCamera, kCameraWorld, kAspectRatio, kSunWorld, {.distance = 0.05f}),
+  CameraComponent shortShadowCamera = kCamera;
+  shortShadowCamera.shadowDistance = 0.05f;
+  NE_TEST_ASSERT(!ShadowCascades::compute(shortShadowCamera, kCameraWorld, kAspectRatio, kSunWorld),
                  "Shadows that end before the near plane leave nothing to shadow.");
 }
 
 // The slices' far corners lie on their bounding spheres, so this fails if a sphere is too small, the near plane too close
 // to it, or the snapping moves a tile by more than half a texel
 NE_TEST_CASE("shadows", "Every Slice Lands Inside Its Cascade") {
-  const ShadowCascades::Config config;
   const Mat4 turnedCamera =
       Transform(Vec3(3.0f, -2.0f, 1.5f), Quat::fromEuler(math::radians(Vec3(10.0f, 25.0f, 140.0f)))).toMatrix();
   for (const Mat4& cameraWorld : {kCameraWorld, turnedCamera}) {
-    const std::optional<ShadowCascades> perspective =
-        ShadowCascades::compute(kCamera, cameraWorld, kAspectRatio, kSunWorld, config);
+    const std::optional<ShadowCascades> perspective = ShadowCascades::compute(kCamera, cameraWorld, kAspectRatio, kSunWorld);
     NE_TEST_ASSERT(perspective && slicesFitTheirCascades(kCamera, cameraWorld, *perspective),
                    "Every corner of every perspective slice lands inside its cascade's tile and depth range.");
 
     const CameraComponent orthographic{
         .projectionType = CameraComponent::ProjectionType::Orthographic, .orthoSize = 10.0f, .nearClip = 0.1f, .farClip = 100.0f};
-    const std::optional<ShadowCascades> boxes =
-        ShadowCascades::compute(orthographic, cameraWorld, kAspectRatio, kSunWorld, config);
+    const std::optional<ShadowCascades> boxes = ShadowCascades::compute(orthographic, cameraWorld, kAspectRatio, kSunWorld);
     NE_TEST_ASSERT(boxes && slicesFitTheirCascades(orthographic, cameraWorld, *boxes),
                    "Every corner of every orthographic slice lands inside its cascade's tile and depth range.");
   }
 }
 
-// Shadow edges shimmer when the shadow map's texels slide over the world from one frame to the next. Snapping keeps each
-// world point at the same spot within its texel however the camera moves, and turning the camera leaves the texel size
-// alone.
+// Shadow edges don't shimmer: each world point keeps its spot within its texel however the camera moves, and turning the
+// camera leaves the texel size alone
 NE_TEST_CASE("shadows", "Cascades Keep World Points On Their Texels As The Camera Moves") {
-  const ShadowCascades::Config config;
   const float resolution = static_cast<float>(ShadowCascades::kTileSize);
-  const std::optional<ShadowCascades> start = ShadowCascades::compute(kCamera, kCameraWorld, kAspectRatio, kSunWorld, config);
+  const std::optional<ShadowCascades> start = ShadowCascades::compute(kCamera, kCameraWorld, kAspectRatio, kSunWorld);
   NE_TEST_ASSERT(start.has_value(), "The camera sees 60 m of shadows.");
 
   const Vec3 point(-1.5f, 0.3f, -0.2f); // In cascade 0, about 2.5 m in front of the camera
@@ -134,7 +127,7 @@ NE_TEST_CASE("shadows", "Cascades Keep World Points On Their Texels As The Camer
                          Vec3(1.7f, -2.3f, 0.4f)};
   for (const Vec3& move : moves) {
     const Mat4 movedCamera = Transform(Vec3(-4.0f, 0.0f, 0.0f) + move).toMatrix();
-    const std::optional<ShadowCascades> moved = ShadowCascades::compute(kCamera, movedCamera, kAspectRatio, kSunWorld, config);
+    const std::optional<ShadowCascades> moved = ShadowCascades::compute(kCamera, movedCamera, kAspectRatio, kSunWorld);
     NE_TEST_ASSERT(moved.has_value(), "The moved camera sees 60 m of shadows.");
     for (uint32_t i = 0; i < ShadowCascades::kCount; ++i) {
       const float distance =
@@ -147,15 +140,14 @@ NE_TEST_CASE("shadows", "Cascades Keep World Points On Their Texels As The Camer
 
   const Mat4 turnedCamera =
       Transform(Vec3(-4.0f, 0.0f, 0.0f), Quat::fromEuler(math::radians(Vec3(5.0f, 10.0f, 30.0f)))).toMatrix();
-  const std::optional<ShadowCascades> turned = ShadowCascades::compute(kCamera, turnedCamera, kAspectRatio, kSunWorld, config);
+  const std::optional<ShadowCascades> turned = ShadowCascades::compute(kCamera, turnedCamera, kAspectRatio, kSunWorld);
   NE_TEST_ASSERT(turned && turned->texelSizes == start->texelSizes, "Turning the camera keeps every cascade's texel size.");
 }
 
 // Reverse-Z: depth 1 is next to the light and 0 far from it. Each cascade looks along the light's +X, so moving along
 // the light's +Y or +Z leaves the depth alone.
 NE_TEST_CASE("shadows", "A Cascade's Depth Falls Along The Light's Direction") {
-  const std::optional<ShadowCascades> cascades =
-      ShadowCascades::compute(kCamera, kCameraWorld, kAspectRatio, kSunWorld, ShadowCascades::Config{});
+  const std::optional<ShadowCascades> cascades = ShadowCascades::compute(kCamera, kCameraWorld, kAspectRatio, kSunWorld);
   NE_TEST_ASSERT(cascades.has_value(), "The camera sees 60 m of shadows.");
   const Vec3 point(-1.5f, 0.3f, -0.2f);
   for (uint32_t i = 0; i < ShadowCascades::kCount; ++i) {

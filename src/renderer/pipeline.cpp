@@ -53,16 +53,15 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   rasterizationStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
   rasterizationStateCreateInfo.depthClampEnable = iConfig.depth.clamp ? VK_TRUE : VK_FALSE; // Needs the depthClamp feature
   rasterizationStateCreateInfo.rasterizerDiscardEnable = VK_FALSE;
-  rasterizationStateCreateInfo.polygonMode = VK_POLYGON_MODE_FILL; // changing requires a gpu feature
-  // Ignored: the cull mode is dynamic state, see below
-  rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_NONE;
+  rasterizationStateCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;          // Other modes need the fillModeNonSolid feature
+  rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_NONE;                // Ignored: dynamic state
   rasterizationStateCreateInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // Right-handed (glTF) winding
   const bool hasDepthBias = iConfig.depth.biasConstant != 0.0f || iConfig.depth.biasSlope != 0.0f;
   rasterizationStateCreateInfo.depthBiasEnable = hasDepthBias ? VK_TRUE : VK_FALSE;
   rasterizationStateCreateInfo.depthBiasConstantFactor = iConfig.depth.biasConstant;
   rasterizationStateCreateInfo.depthBiasClamp = 0.0f; // Any other value requires the depthBiasClamp feature
   rasterizationStateCreateInfo.depthBiasSlopeFactor = iConfig.depth.biasSlope;
-  rasterizationStateCreateInfo.lineWidth = 1.0f; // Any value other than 1.0 requires "widelines" Gpu feature
+  rasterizationStateCreateInfo.lineWidth = 1.0f; // Other widths need the wideLines feature
 
   VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo{};
   multisampleStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -108,7 +107,7 @@ Pipeline::Pipeline(VkDevice iDevice, const Config& iConfig) : mDevice(iDevice) {
   NE_ASSERT(iConfig.layout != VK_NULL_HANDLE, "Pipeline layout must not be VK_NULL_HANDLE");
   mPipelineLayout = iConfig.layout;
 
-  // Cull mode has been core dynamic state since Vulkan 1.3, so one pipeline draws single- and double-sided surfaces
+  // Cull mode is core dynamic state since Vulkan 1.3
   std::vector<VkDynamicState> dynamicState = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_CULL_MODE};
   VkPipelineDynamicStateCreateInfo dynamicStateCreateInfo{};
   dynamicStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;

@@ -61,8 +61,7 @@ std::optional<PrimaryCamera> findPrimaryCamera(Registry& ioRegistry) {
 
 SceneView makeCameraView(const PrimaryCamera& iPrimary, float iAspectRatio, gpu::DebugView iDebugView) {
   const Mat4& world = iPrimary.world;
-  // An orthographic camera's rays are parallel, as if its eye were infinitely far behind it: the point at w = 0 in its
-  // backward direction. Every pixel then gets the same view direction.
+  // Orthographic rays are parallel, as if the eye were infinitely far behind the camera
   const Vec3 forward = world[0].xyz().getSafeNormal();
   const bool isOrthographic = iPrimary.camera.projectionType == CameraComponent::ProjectionType::Orthographic;
   return SceneView{
@@ -108,8 +107,7 @@ Renderer::Renderer(Window* iWindow, const std::string& iAppName) : mWindow(iWind
   createTargets(mFrameManager->getExtent());
   mSceneColorTextureIndex = mResourceManager->getBindlessManager()->registerSampledImage(mSceneColor->getImageView());
 
-  // The shadow pipelines draw into it too, so it takes the depth format. Its size never changes, so its slot is written
-  // once.
+  // The shadow pipelines draw into it too, so it takes the depth format; its size is fixed, so its slot is written once
   Image::Config shadowAtlasConfig{
       .width = ShadowCascades::kAtlasSize,
       .height = ShadowCascades::kAtlasSize,
@@ -151,8 +149,7 @@ void Renderer::render(Registry& ioRegistry) {
     NE_VERBOSE("Renderer: Scene targets resized to {}x{}", extent.width, extent.height);
   }
 
-  // CPU only, so it runs before beginFrame waits for the frame's fence. Without a primary camera the scene pass only
-  // clears.
+  // CPU-only work, so it runs before beginFrame's fence wait
   std::optional<SceneView> cameraView;
   std::optional<gpu::ShadowData> shadowData;
   std::array<SceneView, ShadowCascades::kCount> cascadeViews;
@@ -163,9 +160,8 @@ void Renderer::render(Registry& ioRegistry) {
 
     // The cascades follow the camera, so they're computed every frame
     if (const std::optional<SceneRenderer::ShadowLight>& shadowLight = mSceneRenderer->getShadowLight()) {
-      const ShadowCascades::Config cascadesConfig{.distance = mShadowDistance};
       if (const std::optional<ShadowCascades> cascades =
-              ShadowCascades::compute(primary->camera, primary->world, aspectRatio, shadowLight->world, cascadesConfig)) {
+              ShadowCascades::compute(primary->camera, primary->world, aspectRatio, shadowLight->world)) {
         shadowData = cascades->makeShadowData(mShadowAtlasTextureIndex);
         for (uint32_t i = 0; i < ShadowCascades::kCount; ++i) {
           cascadeViews[i] = SceneView{.kind = SceneView::Kind::Depth, .viewProj = cascades->viewProj[i]};

@@ -13,9 +13,8 @@ BindlessManager::BindlessManager(VkDevice iDevice, SamplerManager* iSamplerManag
   const uint32_t textureSamplerCount = static_cast<uint32_t>(iSamplerManager->getTextureSamplers().size());
   const VkSampler shadowSampler = iSamplerManager->getShadowSampler();
 
-  // Set 0: binding 0 holds SamplerManager's immutable texture samplers, binding 1 the sampled image array, and binding 2
-  // the shadow sampler, which shaders declare as a comparison sampler, a type of its own. The layout is
-  // update-after-bind, so its samplers count against the update-after-bind limits, not maxPerStageDescriptorSamplers.
+  // Set 0: binding 0 holds SamplerManager's immutable texture samplers, binding 1 the sampled images, and binding 2 the
+  // shadow sampler. Update-after-bind, so its samplers count only against the update-after-bind limits.
   std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
 
   bindings[0].binding = 0;

@@ -112,8 +112,7 @@ BasicApp::BasicApp() : Application("Basic App (MDI Showcase)", 1200, 1000) {
   // Right (-Y)
   mHelmetEntity = helmetPrefab.instantiate(*getRegistry(), Transform(Vec3(0.0f, -1.5f, -0.5f)));
 
-  // Under the center cube, a perforated panel standing on the ground and facing the camera. Its material is masked and
-  // double-sided, so its holes show from both sides and in its shadow.
+  // Under the center cube, a perforated panel facing the camera; its holes show from both sides and in its shadow
   const uint32_t perforatedTextureId = getResourceManager()->createTexture(createPerforatedImage(256, 8), "Perforated_Texture");
   const std::array perforatedTextureIds{perforatedTextureId};
   mPanelMaterial = getResourceManager()->createMaterial(MaterialData{.name = "Perforated_Panel",
@@ -132,8 +131,7 @@ BasicApp::BasicApp() : Application("Basic App (MDI Showcase)", 1200, 1000) {
   getRegistry()->addComponent<MeshComponent>(mPanelEntity, panelMesh, std::vector{mPanelMaterial});
   getRegistry()->addComponent<NameComponent>(mPanelEntity, "Panel_Masked");
 
-  // Behind the left cube and in its shadow, a glass cube: blended, so the ground and the shadow show through it, and it
-  // casts no shadow of its own
+  // Behind the left cube and in its shadow, a glass cube, which casts no shadow of its own
   if (!mLoadedMeshes.empty()) {
     mGlassMaterial = getResourceManager()->createMaterial(MaterialData{
         .name = "Glass", .baseColor = LinearColor{0.3f, 0.65f, 1.0f, 0.35f}, .roughness = 0.1f, .alphaMode = AlphaMode::Blend});

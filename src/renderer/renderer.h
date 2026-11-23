@@ -24,9 +24,8 @@ namespace gpu {
 enum class DebugView : uint32_t;
 }
 
-// Owns the GPU side of the engine, from the Vulkan instance to the render targets, and runs the frame. It's the only
-// place that orders passes: it records every barrier and opens every pass, and the classes it calls only draw into them.
-// The scene renders into the HDR color and depth images, then one swapchain pass holds the tonemap and the UI on top.
+// Owns the GPU side, from the Vulkan instance to the render targets, and runs the frame. The only place that records
+// barriers and opens passes; the classes it calls only draw into them (rendering_plan.md, No render graph).
 class Renderer {
 public:
   Renderer(Window* iWindow, const std::string& iAppName);
@@ -43,21 +42,15 @@ public:
   ResourceManager* getResourceManager() const { return mResourceManager.get(); }
   ImGuiManager* getImGuiManager() const { return mImGuiManager.get(); }
 
-  // What the scene pass writes: the lit color or one channel, which then skips the tonemap curve
   void setDebugView(gpu::DebugView iDebugView) { mDebugView = iDebugView; }
   gpu::DebugView getDebugView() const { return mDebugView; }
-
-  // The view depth where shadows end: the farthest cascade reaches it
-  void setShadowDistance(float iDistance) { mShadowDistance = iDistance; }
-  float getShadowDistance() const { return mShadowDistance; }
 
 private:
   static constexpr VkFormat kSceneColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 
   void createTargets(VkExtent2D iExtent);
-  // Draws each cascade of the light that casts shadows into its tile of the shadow atlas
   void recordShadowPass(VkCommandBuffer iCommandBuffer, std::span<const SceneView> iCascadeViews);
-  // Clears the HDR target and depth, then draws the scene from iCameraView, unless it is null
+  // With a null iCameraView, only clears
   void recordScenePass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent, const SceneView* iCameraView);
   void recordSwapchainPass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent);
 
@@ -73,14 +66,13 @@ private:
   VkFormat mDepthFormat = VK_FORMAT_UNDEFINED;
   bool mEncodeSrgb = true; // False when the swapchain format encodes sRGB itself
   gpu::DebugView mDebugView{}; // Lit
-  float mShadowDistance = 60.0f;
 
   // Swapchain-sized; both frames in flight share them
   std::unique_ptr<Image> mSceneColor;
   std::unique_ptr<Image> mSceneDepth;
   uint32_t mSceneColorTextureIndex = 0; // Bindless slot, registered once and kept across resizes
 
-  // The directional light's cascades, one per tile (ShadowCascades lays them out); both frames in flight share it
+  // One tile per cascade (ShadowCascades::getTile); both frames in flight share it
   std::unique_ptr<Image> mShadowAtlas;
   uint32_t mShadowAtlasTextureIndex = 0; // Bindless slot, registered once
 };

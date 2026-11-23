@@ -220,6 +220,7 @@ void MainUI::drawCameraSettings(BasicApp& iApp) {
       ImGui::SliderAngle("FOV", &camera.fov, 10.0f, 120.0f, "%.1f deg");
       ImGui::DragFloat("Near Clip (m)", &camera.nearClip, 0.01f, 0.01f, 10.0f, "%.2f");
       ImGui::DragFloat("Far Clip (m)", &camera.farClip, 1.0f, 1.0f, 1000.0f, "%.1f");
+      ImGui::SliderFloat("Shadow Distance (m)", &camera.shadowDistance, 5.0f, 500.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
 
       ImGui::Spacing();
       ImGui::Text("Exposure (EV100 %.1f)", camera.getEv100());
@@ -278,12 +279,6 @@ void MainUI::drawLighting(BasicApp& iApp) {
         transform.setLocalRotation(Quat::fromEuler(math::radians(eulerDegrees)));
       }
       ImGui::Checkbox("Casts Shadows", &sun.castShadows);
-    }
-
-    Renderer& renderer = *iApp.getRenderer();
-    float shadowDistance = renderer.getShadowDistance();
-    if (ImGui::SliderFloat("Shadow Distance (m)", &shadowDistance, 5.0f, 500.0f, "%.0f", ImGuiSliderFlags_Logarithmic)) {
-      renderer.setShadowDistance(shadowDistance);
     }
 
     Entity environmentEntity = iApp.getEnvironmentEntity();

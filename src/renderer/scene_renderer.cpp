@@ -26,7 +26,6 @@ namespace ne {
 
 namespace {
 
-// What the shader needs of a light. gpu::Light's defaults leave out the cone, which only spot lights have.
 gpu::Light toGpuLight(const LightComponent& iLight, const Mat4& iWorld) {
   gpu::Light light{
       .position = Vec4(iWorld[3].xyz(), 1.0f),
@@ -36,14 +35,13 @@ gpu::Light toGpuLight(const LightComponent& iLight, const Mat4& iWorld) {
   };
   switch (iLight.type) {
     case LightComponent::Type::Directional:
-      // A point infinitely far away, the other way from where the light travels; it has no range
       light.position = Vec4(-light.direction, 0.0f);
       light.invRangeSq = 0.0f;
       break;
     case LightComponent::Type::Point:
       break;
     case LightComponent::Type::Spot: {
-      // KHR_lights_punctual's cone: full intensity inside the inner angle, none outside the outer one
+      // KHR_lights_punctual's cone falloff
       const float cosOuter = math::cos(iLight.outerConeAngle);
       light.spotScale = 1.0f / math::max(math::cos(iLight.innerConeAngle) - cosOuter, 0.001f);
       light.spotOffset = -cosOuter * light.spotScale;
@@ -53,9 +51,7 @@ gpu::Light toGpuLight(const LightComponent& iLight, const Mat4& iWorld) {
   return light;
 }
 
-// Pushes each stored depth away from the light by 1.5 times its slope across a texel, toward 0 in reverse-Z, so sloped
-// surfaces don't shadow themselves between texels. A float format's constant bias counts steps of the depth itself,
-// which shrink toward 0, so it's left at 0; shading moves its lookups off the surface instead (gpu::ShadowData).
+// Slope bias only, negative for reverse-Z; the normal offset does a constant bias's job (rendering_plan.md, Shadows)
 constexpr float kShadowDepthBiasConstant = 0.0f;
 constexpr float kShadowDepthBiasSlope = -1.5f;
 
@@ -69,8 +65,7 @@ SceneRenderer::SceneRenderer(Device* iDevice, ResourceManager* iResourceManager,
   mGeometryAllocator = iResourceManager->getGeometryAllocator();
   mMaterialBufferAddress = iResourceManager->getMaterialBufferAddress();
 
-  // Only the masked entry point discards, so the others keep early depth testing. Blended surfaces test against the
-  // opaque depth but don't write it, so what's behind them still draws.
+  // Only Mask discards, so the others keep early depth testing; Blend tests depth without writing it
   for (size_t i = 0; i < mPipelines.size(); ++i) {
     const AlphaMode alphaMode = static_cast<AlphaMode>(i);
     const bool isBlended = alphaMode == AlphaMode::Blend;
@@ -85,8 +80,7 @@ SceneRenderer::SceneRenderer(Device* iDevice, ResourceManager* iResourceManager,
     mPipelines[i] = std::make_unique<Pipeline>(iDevice->getDevice(), config);
   }
 
-  // Opaque casters need no fragment shader, and masked ones only test alpha. Depth clamp flattens casters in front of a
-  // cascade's near plane onto it, so casters however far toward the light still cast.
+  // Opaque casters need no fragment shader. Depth clamp keeps casters in front of a cascade's near plane casting.
   for (size_t i = 0; i < mShadowPipelines.size(); ++i) {
     const AlphaMode alphaMode = static_cast<AlphaMode>(i);
     if (!castsShadows(alphaMode)) {
@@ -132,10 +126,8 @@ void SceneRenderer::prepare(Registry& ioRegistry, const SceneView& iCameraView) 
       });
   mFrameUniforms.lightCount = static_cast<uint32_t>(mLights.size());
 
-  // Blended draws go far to near. A perspective camera's eye is its position, and a draw's distance is the straight
-  // line from it. An orthographic camera's eye is its backward direction (w = 0), so there the distance is the depth
-  // along the view, counted from the world origin instead of the camera: that adds the same amount to every draw,
-  // which keeps the order.
+  // An orthographic eye is a direction (w = 0), so there the distance is depth along the view from the world origin,
+  // which differs from depth from the camera by the same amount for every draw
   const Vec3 eye = iCameraView.eye.xyz();
   const bool isOrthographic = iCameraView.eye.w == 0.0f;
   ioRegistry.view<TransformComponent, MeshComponent>().each(
@@ -162,11 +154,7 @@ void SceneRenderer::prepare(Registry& ioRegistry, const SceneView& iCameraView) 
         }
       });
 
-  // Opaque draws first, so the depth they write hides what's behind them from the masked draws, whose discard keeps
-  // them from writing depth early. Blended draws come last, from far to near, so each blends over what's behind it.
-  // Within an alpha mode, single-sided draws come before double-sided ones, so the cull mode changes once.
-  // Adjacent draws of the same submesh become one instanced indirect draw; its instances draw in order, so blended ones
-  // stay far to near.
+  // The order's reasons: rendering_plan.md, "Alpha and double-sided". Submesh last puts the draws upload() merges together.
   std::sort(mDrawCalls.begin(), mDrawCalls.end(), [](const DrawCall& iA, const DrawCall& iB) {
     if (iA.alphaMode != iB.alphaMode) {
       return iA.alphaMode < iB.alphaMode;
@@ -192,8 +180,7 @@ void SceneRenderer::upload(UploadAllocator& ioUploadAllocator) {
     return;
   }
 
-  // A batch holds the draws of one alpha mode and one sidedness. Within it, adjacent draws of the same submesh become one
-  // instanced indirect draw, with a draw info that points at its vertices and its first instance.
+  // Adjacent draws of one submesh become one instanced draw; instances draw in order, so blended ones stay far to near
   std::vector<gpu::DrawInfo> drawInfos;
   std::vector<gpu::InstanceData> instanceData;
   std::vector<VkDrawIndexedIndirectCommand> indirectCommands;
@@ -259,12 +246,10 @@ void SceneRenderer::recordView(VkCommandBuffer iCommandBuffer, UploadAllocator& 
   globalUniforms.shadowLight = iView.shadows != 0 && mShadowLight ? mShadowLight->lightIndex : gpu::kNoShadowLight;
   const VkDeviceAddress globalUniformsAddress = ioUploadAllocator.upload(&globalUniforms, sizeof(gpu::GlobalUniforms)).address;
 
-  // The alpha mode picks the pipeline, and the sidedness the cull mode, which every scene and shadow pipeline takes as
-  // dynamic state
   const bool isDepthView = iView.kind == SceneView::Kind::Depth;
   const auto& pipelines = isDepthView ? mShadowPipelines : mPipelines;
   const Pipeline* boundPipeline = nullptr;
-  std::optional<VkCullModeFlags> boundCullMode; // Unknown at the start of a view, so its first batch sets it
+  std::optional<VkCullModeFlags> boundCullMode; // Unknown until the first batch sets it
   for (const Batch& batch : mBatches) {
     if (isDepthView && !castsShadows(batch.alphaMode)) {
       continue;

@@ -92,11 +92,9 @@ bool matchesGltfWorldPositions(const ModelData& iModel, const std::vector<Vec3>&
   return true;
 }
 
-// Writes a one-triangle glTF and its .bin buffer to iDirectory and returns the .gltf path. Accessor 0 holds the
-// positions (VEC3), 1 the indices, 2 and 3 two UV sets (VEC2: equal to the positions' x and y, and all ones), 4 normals
-// (VEC3, all (0, 0, 1)), and 5 tangents (VEC4, all (1, 0, 0, -1)). iAttributes is the primitive's attribute list,
-// iTopLevel is inserted after "asset" with its trailing comma, and iPrimitive after the primitive's indices with its
-// leading comma.
+// Writes a one-triangle glTF and its .bin to iDirectory and returns the .gltf path. Accessors: 0 positions, 1 indices,
+// 2 and 3 UV sets (the positions' x and y, then all ones), 4 normals (all +Z), 5 tangents (all (1, 0, 0, -1)). iTopLevel
+// goes after "asset" with a trailing comma, and iPrimitive after the primitive's indices with a leading one.
 std::filesystem::path writeTriangleGltf(const std::filesystem::path& iDirectory, const std::string& iName,
                                         const std::array<uint16_t, 3>& iIndices,
                                         const std::string& iAttributes = R"("POSITION": 0)", const std::string& iTopLevel = "",

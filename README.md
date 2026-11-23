@@ -35,7 +35,7 @@ The sections below group work by area; their order is not fixed. The open decisi
 - **Training Interface**: How learning code drives Null (Python bindings, a Gym-style API, a network protocol, ...).
 
 ### Rendering
-The steps are in order, each building on the one before; they bring physically based rendering to the glTF and robot materials that camera sensors will see. [rendering_plan.md](rendering_plan.md) has each step's decisions and tasks.
+The steps are in order, each building on the one before; they bring physically based rendering to the glTF and robot materials that camera sensors will see. [rendering_plan.md](rendering_plan.md) has the decisions and the remaining steps' tasks.
 - [x] **HDR Scene Target & Frame Orchestration**: The scene renders into its own HDR color and depth images instead of the swapchain, a tonemapper (Khronos PBR Neutral) writes the result to the window, and the UI draws on top in its own step afterwards. One place runs the whole frame: scene, tonemap, UI.
 - [x] **Materials & glTF Textures**: Materials become GPU data, a material buffer indexed per instance, with the glTF metal-roughness fields (base color, metallic, roughness, normal, occlusion, and emissive, each with an optional texture). glTF materials and textures are imported instead of one shared default.
 - [x] **Tangents, Normal Maps & Alpha**: Tangents from glTF or generated with MikkTSpace, normal mapping, alpha mask and blend, and double-sided materials.

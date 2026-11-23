@@ -12,6 +12,7 @@ struct CameraComponent {
   float orthoSize{5.0f};           // Orthographic: vertical view size
   float nearClip{0.1f};
   float farClip{1000.0f};          // Perspective: <= 0 selects an infinite far plane
+  float shadowDistance{60.0f};     // View depth where the directional light's cascaded shadows end; the far plane caps it
   bool primary{true};              // Renders to the window; at most one camera may be primary
 
   // Exposure, set as on a real camera. The defaults follow the "sunny 16" rule (EV100 15), for a 100,000 lux sun.
@@ -19,20 +20,17 @@ struct CameraComponent {
   float shutterSpeed{1.0f / 125.0f}; // Seconds
   float iso{100.0f};
 
-  // How little light the settings let in, in stops at ISO 100: each step up halves it. EV100 = log2(N^2 / t * 100 / S),
-  // from Lagarde & de Rousiers, "Moving Frostbite to PBR".
+  // In stops at ISO 100: each step up halves the light let in (Lagarde & de Rousiers, "Moving Frostbite to PBR")
   float getEv100() const { return math::log2(aperture * aperture / shutterSpeed * 100.0f / iso); }
 
-  // Scales luminance (nits) so that 1.2 x 2^EV100, the luminance that just fills the sensor, becomes 1.0. 2^EV100 is
-  // N^2 / t * 100 / S, so this skips getEv100()'s log2 and the exp2 that would undo it. The scene shader applies it,
-  // so the HDR target holds exposed values.
+  // Scales luminance (nits) so that 1.2 x 2^EV100, which just fills the sensor, becomes 1.0. Computes 2^EV100 directly,
+  // without getEv100()'s log2.
   float getExposure() const { return 1.0f / (1.2f * (aperture * aperture / shutterSpeed * 100.0f / iso)); }
 
   // The aspect ratio (width / height) comes from the render target, not the camera
   Mat4 getProjectionMatrix(float iAspectRatio) const;
 
-  // View space is the ROS camera optical frame (+X right, +Y down, +Z forward), which matches Vulkan NDC,
-  // so the view matrix is a pure rotation + translation. World scale is ignored.
+  // Into the ROS optical frame (README, Engine Conventions); world scale is ignored
   Mat4 getViewMatrix(const Mat4& iWorldMatrix) const;
 
   Mat4 getViewProjectionMatrix(const Mat4& iWorldMatrix, float iAspectRatio) const {

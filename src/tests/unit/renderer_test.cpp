@@ -47,7 +47,7 @@ NE_TEST_CASE("renderer", "A Resize Keeps The HDR Target's Bindless Slot") {
 }
 
 // More instance data than one upload block holds: it gets a block of its own, and the indirect commands after it start
-// another. Debug builds abort on an upload overflow and, at exit, on validation errors.
+// another. Debug builds abort on an upload overflow.
 NE_TEST_CASE("renderer", "A Frame's Uploads Can Outgrow One Block") {
   ResourceManager& resources = *ioContext.app->getResourceManager();
   Registry& registry = *ioContext.app->getRegistry();
@@ -71,11 +71,9 @@ NE_TEST_CASE("renderer", "A Frame's Uploads Can Outgrow One Block") {
   NE_TEST_ASSERT(!ioContext.app->getWindow()->shouldClose(), "The window stayed open, so all three frames ran.");
 }
 
-// One half-transparent cube per alpha mode and sidedness, in front of BasicApp's camera, so every pipeline draws with
-// both cull modes: the masked one may discard, the blended one tests against the opaque depth, and double-sided cubes
-// don't cull. BasicApp's sun casts shadows, so the opaque and masked cubes also draw into the cascades through both
-// shadow pipelines, which skip the blended ones. Debug builds abort at exit on validation errors, such as a draw before
-// its dynamic cull mode is set.
+// One half-transparent cube per alpha mode and sidedness, in front of BasicApp's camera, so every scene pipeline draws
+// with both cull modes, and BasicApp's sun draws the opaque and masked ones through both shadow pipelines. Catches, for
+// example, a draw before its dynamic cull mode is set.
 NE_TEST_CASE("renderer", "Frames Render Every Alpha Mode, Single- And Double-Sided") {
   ResourceManager& resources = *ioContext.app->getResourceManager();
   Registry& registry = *ioContext.app->getRegistry();
@@ -106,7 +104,7 @@ NE_TEST_CASE("renderer", "Frames Render Every Alpha Mode, Single- And Double-Sid
 }
 
 // A directional light, a point light with and one without a range, and a spot light, between the camera and the cubes
-// and aimed at them. In CI this runs the scene shader's light loop on lavapipe under validation.
+// and aimed at them
 NE_TEST_CASE("renderer", "Frames Render Every Light Type") {
   Registry& registry = *ioContext.app->getRegistry();
   const std::array lights{

@@ -4,7 +4,7 @@
 
 namespace ne {
 
-// Opaque handle to a memory allocation owned by MemoryAllocator. Only MemoryAllocator interprets it.
+// Opaque: only MemoryAllocator interprets it
 struct MemoryAllocation_T;
 using MemoryAllocation = MemoryAllocation_T*;
 

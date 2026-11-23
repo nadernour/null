@@ -28,18 +28,13 @@ public:
       std::string fragmentEntry = "fragMain"; // Empty for a vertex-only pipeline, which writes only depth
     };
 
-    // The depth attachment's format, and what happens to each fragment's depth
     struct Depth {
       VkFormat format = VK_FORMAT_UNDEFINED; // Undefined for a pass without depth
       DepthMode mode = DepthMode::ReadWrite;
-      // Added to each fragment's depth, in Vulkan's units: steps of the depth format, and depth per pixel of slope. Both
-      // 0 leave it off.
+      // In Vulkan's units: steps of the depth format, and depth per pixel of slope; both 0 leave the bias off
       float biasConstant = 0.0f;
       float biasSlope = 0.0f;
-      // Clamps depth to the viewport's range instead of clipping what lies past the near and far planes, so a shadow
-      // caster in front of a light view's near plane is flattened onto it and still casts. Needs the depthClamp
-      // feature, which Device requires.
-      bool clamp = false;
+      bool clamp = false; // Clamps depth to the viewport's range instead of clipping at the near and far planes
     };
 
     Shader shader;         // Required

@@ -59,9 +59,8 @@ struct TextureRef {
   TextureFilter filter = TextureFilter::Linear;
 };
 
-// Emissive has no unit in glTF (or in OBJ, DAE, and MJCF, which come later), so importers give an emissive of 1 this
-// many nits. With one value for every format, the Emissive debug view can divide it back out and show any file's
-// emissive as authored, as the Khronos Sample Viewer does for glTF. shaders/scene.slang mirrors it.
+// Nits for a unitless emissive of 1, in every format that has no unit (rendering_plan.md, Units). shaders/scene.slang
+// mirrors it.
 constexpr float kUnitlessEmissiveNits = 1000.0f;
 
 // glTF metal-roughness; each factor multiplies its texture. The defaults are the engine's own: a dielectric.

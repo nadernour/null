@@ -5,8 +5,7 @@
 
 namespace ne {
 
-// A material in ResourceManager's material buffer. Immutable: its GPU data is written once, when ResourceManager creates
-// it. SceneRenderer draws it with the pipeline for its alpha mode, and without culling when it's double-sided.
+// A material in ResourceManager's material buffer, whose GPU data is written once, when it's created
 class Material {
 public:
   Material(uint32_t iMaterialIndex, AlphaMode iAlphaMode, bool iDoubleSided)

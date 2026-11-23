@@ -54,7 +54,6 @@ void StagingManager::beginBatch() {
 VkDeviceSize StagingManager::stageData(const void* iData, VkDeviceSize iSize) {
   NE_ASSERT(iData && iSize > 0, "Invalid data or size for staging");
 
-  // Flush the pending batch when it is full
   if (!mStagingBuffer->canUpload(iSize)) {
     NE_VERBOSE("StagingManager: Staging capacity reached. Auto-flushing batch...");
     flushBatch();

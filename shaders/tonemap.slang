@@ -10,7 +10,7 @@ Texture2D gTextures[];
 struct TonemapPushConstants {
   uint hdrTexture;
   uint encodeSrgb;
-  uint applyCurve; // 0 in debug views
+  uint applyCurve;
 };
 
 [vk::push_constant]
