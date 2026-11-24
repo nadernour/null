@@ -3,9 +3,9 @@
 #include "core/filesystem.h"
 #include "core/logger.h"
 #include "platform/window.h"
-#include "renderer/device.h"
-#include "renderer/frame_manager.h"
-#include "renderer/instance.h"
+#include "renderer/rhi/device.h"
+#include "renderer/rhi/frame_manager.h"
+#include "renderer/rhi/instance.h"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>

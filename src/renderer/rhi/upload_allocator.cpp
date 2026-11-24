@@ -1,7 +1,7 @@
-#include "renderer/upload_allocator.h"
+#include "renderer/rhi/upload_allocator.h"
 #include "core/assert.h"
 #include "core/math/math_utils.h"
-#include "renderer/device.h"
+#include "renderer/rhi/device.h"
 
 // std
 #include <format>

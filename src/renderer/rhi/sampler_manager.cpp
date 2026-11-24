@@ -1,8 +1,8 @@
-#include "renderer/sampler_manager.h"
+#include "renderer/rhi/sampler_manager.h"
 #include "core/assert.h"
 #include "core/logger.h"
-#include "renderer/device.h"
-#include "renderer/utils.h"
+#include "renderer/rhi/device.h"
+#include "renderer/rhi/utils.h"
 
 #include <format>
 #include <string>

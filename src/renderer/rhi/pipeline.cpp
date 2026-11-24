@@ -1,9 +1,8 @@
-#include "renderer/pipeline.h"
+#include "renderer/rhi/pipeline.h"
 #include "core/assert.h"
 #include "core/filesystem.h"
 #include "core/platform.h"
-#include "renderer/mesh.h"
-#include "renderer/utils.h"
+#include "renderer/rhi/utils.h"
 
 // std
 #include <filesystem>

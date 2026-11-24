@@ -10,11 +10,11 @@
 #include "core/material_data.h"
 #include "core/mesh_utils.h"
 #include "platform/window.h"
-#include "renderer/bindless_manager.h"
 #include "renderer/gpu_types.h"
 #include "renderer/renderer.h"
 #include "renderer/resource_manager.h"
-#include "renderer/utils.h"
+#include "renderer/rhi/bindless_manager.h"
+#include "renderer/rhi/utils.h"
 
 #include <GLFW/glfw3.h>
 

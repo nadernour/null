@@ -3,10 +3,10 @@
 
 #include "core/assert.h"
 #include "core/logger.h"
-#include "renderer/device.h"
-#include "renderer/instance.h"
-#include "renderer/memory_allocator.h"
-#include "renderer/utils.h"
+#include "renderer/rhi/device.h"
+#include "renderer/rhi/instance.h"
+#include "renderer/rhi/memory_allocator.h"
+#include "renderer/rhi/utils.h"
 
 namespace ne {
 

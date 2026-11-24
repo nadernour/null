@@ -1,7 +1,7 @@
-#include "renderer/instance.h"
+#include "renderer/rhi/instance.h"
 #include "core/assert.h"
 #include "core/logger.h"
-#include "renderer/utils.h"
+#include "renderer/rhi/utils.h"
 
 // std
 #include <algorithm>

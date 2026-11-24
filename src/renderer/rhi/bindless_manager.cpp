@@ -1,6 +1,6 @@
-#include "renderer/bindless_manager.h"
-#include "renderer/sampler_manager.h"
-#include "renderer/utils.h"
+#include "renderer/rhi/bindless_manager.h"
+#include "renderer/rhi/sampler_manager.h"
+#include "renderer/rhi/utils.h"
 #include <array>
 
 namespace ne {

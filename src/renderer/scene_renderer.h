@@ -4,7 +4,7 @@
 #include "core/math/math.h"
 #include "renderer/gpu_types.h"
 #include "renderer/mesh.h"
-#include "renderer/upload_allocator.h"
+#include "renderer/rhi/upload_allocator.h"
 #include <array>
 #include <memory>
 #include <optional>

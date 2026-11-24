@@ -2,11 +2,11 @@
 #include "core/assert.h"
 #include "core/logger.h"
 #include "core/mesh_data.h"
-#include "renderer/buffer.h"
-#include "renderer/device.h"
 #include "renderer/gpu_types.h"
-#include "renderer/staging_manager.h"
-#include "renderer/utils.h"
+#include "renderer/rhi/buffer.h"
+#include "renderer/rhi/device.h"
+#include "renderer/rhi/staging_manager.h"
+#include "renderer/rhi/utils.h"
 
 namespace ne {
 

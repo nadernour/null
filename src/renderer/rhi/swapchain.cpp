@@ -1,9 +1,9 @@
-#include "renderer/swapchain.h"
+#include "renderer/rhi/swapchain.h"
 #include "core/assert.h"
 #include "core/logger.h"
 #include "core/math/math_utils.h"
-#include "renderer/device.h"
-#include "renderer/utils.h"
+#include "renderer/rhi/device.h"
+#include "renderer/rhi/utils.h"
 
 // std
 #include <format>

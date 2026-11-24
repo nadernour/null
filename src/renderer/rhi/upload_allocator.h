@@ -1,6 +1,6 @@
 #pragma once
 
-#include "renderer/buffer.h"
+#include "renderer/rhi/buffer.h"
 
 #include <memory>
 #include <string>

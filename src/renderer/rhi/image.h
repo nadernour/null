@@ -1,6 +1,6 @@
 #pragma once
 
-#include "renderer/rhi_types.h"
+#include "renderer/rhi/rhi_types.h"
 
 #include <cstdint>
 #include <memory>

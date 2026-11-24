@@ -1,6 +1,6 @@
 #pragma once
 
-#include "renderer/utils.h"
+#include "renderer/rhi/utils.h"
 #include <cstdint>
 #include <volk/volk.h>
 

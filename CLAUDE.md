@@ -1,12 +1,10 @@
-@README.md
-
 ## Working Rules
 - Testability never shapes a design. Don't add types, seams, or APIs to make code testable; tests adapt to the design (e.g. a headless `Device` for RHI tests).
-- Prefer small vendored or hand-rolled code over large dependencies (GLM and spdlog were replaced with an in-house math library and logger). Prefer small libraries such as pugixml / tinyxml2 over assimp, urdfdom or OpenUSD in the core. Keep the vendored Vulkan folders separate: `third_party/vulkan`, `vulkan_utility`, `volk`, `vma`.
+- Prefer small vendored or hand-rolled code over large dependencies (e.g. pugixml over urdfdom or assimp).
 - For the README's Open Decisions (physics, formats, connectivity, training interface), present options instead of picking one. Treat training needs (headless runs, parallel environments, determinism) as being as important as live mirroring.
 - Validate shaders with `spirv-val --target-env vulkan1.3 --scalar-block-layout`; without the flag it reports a false "improperly straddling vector" error on `Vertex` (buffer pointers use scalar layout).
 - Redirect `slangc` output to a file rather than piping it into `head`, which can kill it before it writes the `.spv`.
-- Keep this file current: fix or delete any line the task showed to be wrong or unneeded, and add one only for a non-obvious pitfall a future session would hit again. Prefer editing or removing to adding; most tasks change nothing here.
+- Propose a change to this file when a task shows a line to be wrong, or hits something non-obvious that cost time; most tasks need none. Prefer rewording or deleting a line to adding one.
 
 ## Verifying
 - The exit code of `--run-tests` is the verdict, not the summary line. Debug builds assert at exit if the validation layer reported anything, so "ALL UNIT TEST SUITES PASSED" followed by a crash is a failure. Search the log (`build/<preset>/bin/logs/`) for `validation layer:` and `[TEST FAIL]`.

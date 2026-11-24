@@ -1,11 +1,11 @@
-#include "renderer/frame_manager.h"
+#include "renderer/rhi/frame_manager.h"
 #include "core/assert.h"
 #include "core/logger.h"
 #include "platform/window.h"
-#include "renderer/device.h"
-#include "renderer/swapchain.h"
-#include "renderer/upload_allocator.h"
-#include "renderer/utils.h"
+#include "renderer/rhi/device.h"
+#include "renderer/rhi/swapchain.h"
+#include "renderer/rhi/upload_allocator.h"
+#include "renderer/rhi/utils.h"
 
 // std
 #include <algorithm>

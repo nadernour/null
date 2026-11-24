@@ -1,8 +1,8 @@
 #include "renderer/tonemapper.h"
 #include "core/assert.h"
-#include "renderer/device.h"
 #include "renderer/gpu_types.h"
-#include "renderer/pipeline.h"
+#include "renderer/rhi/device.h"
+#include "renderer/rhi/pipeline.h"
 
 namespace ne {
 

@@ -7,15 +7,15 @@
 #include "core/ecs.h"
 #include "core/material_data.h"
 #include "core/math/math_utils.h"
-#include "renderer/device.h"
 #include "renderer/geometry_allocator.h"
 #include "renderer/gpu_types.h"
 #include "renderer/material.h"
 #include "renderer/mesh.h"
-#include "renderer/pipeline.h"
 #include "renderer/resource_manager.h"
-#include "renderer/upload_allocator.h"
-#include "renderer/utils.h"
+#include "renderer/rhi/device.h"
+#include "renderer/rhi/pipeline.h"
+#include "renderer/rhi/upload_allocator.h"
+#include "renderer/rhi/utils.h"
 
 // std
 #include <algorithm>
