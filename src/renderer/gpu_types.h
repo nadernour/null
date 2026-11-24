@@ -24,8 +24,8 @@ void pushConstants(VkCommandBuffer iCommandBuffer, VkPipelineLayout iLayout, con
   vkCmdPushConstants(iCommandBuffer, iLayout, kPushConstantStages, 0, sizeof(T), &iConstants);
 }
 
-// What the scene shader writes (rendering_plan.md, Debug views). shaders/scene.slang repeats the list in this order,
-// which nothing checks.
+// What the scene shader writes. The channel views show what the Khronos glTF Sample Viewer's debug channels do, without
+// PBR Neutral, so each can be checked against it. shaders/scene.slang repeats the list in this order, which nothing checks.
 enum class DebugView : uint32_t {
   Lit,
   Cascades, // Lit, tinted by shadow cascade
@@ -85,7 +85,7 @@ struct GlobalUniforms {
   Vec3 groundRadiance{0.0f};        // Nits: color x intensity
   uint32_t lightCount = 0;
   uint32_t debugView = 0;                // DebugView
-  uint32_t shadowLight = kNoShadowLight; // The light whose shadows were drawn; kNoShadowLight in depth-only views
+  uint32_t shadowLight = kNoShadowLight; // The light whose shadows were drawn; kNoShadowLight in shadow views
 };
 
 // One per indirect draw, indexed by SV_DrawIndex

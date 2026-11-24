@@ -151,8 +151,7 @@ void Renderer::render(Registry& ioRegistry) {
 
   // CPU-only work, so it runs before beginFrame's fence wait
   std::optional<SceneView> cameraView;
-  std::optional<gpu::ShadowData> shadowData;
-  std::array<SceneView, ShadowCascades::kCount> cascadeViews;
+  std::optional<ShadowCascades> cascades;
   if (const std::optional<PrimaryCamera> primary = findPrimaryCamera(ioRegistry)) {
     const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
     cameraView = makeCameraView(*primary, aspectRatio, mDebugView);
@@ -160,13 +159,7 @@ void Renderer::render(Registry& ioRegistry) {
 
     // The cascades follow the camera, so they're computed every frame
     if (const std::optional<SceneRenderer::ShadowLight>& shadowLight = mSceneRenderer->getShadowLight()) {
-      if (const std::optional<ShadowCascades> cascades =
-              ShadowCascades::compute(primary->camera, primary->world, aspectRatio, shadowLight->world)) {
-        shadowData = cascades->makeShadowData(mShadowAtlasTextureIndex);
-        for (uint32_t i = 0; i < ShadowCascades::kCount; ++i) {
-          cascadeViews[i] = SceneView{.kind = SceneView::Kind::Depth, .viewProj = cascades->viewProj[i]};
-        }
-      }
+      cascades = ShadowCascades::compute(primary->camera, primary->world, aspectRatio, shadowLight->world);
     }
   }
 
@@ -181,9 +174,10 @@ void Renderer::render(Registry& ioRegistry) {
   if (cameraView) {
     UploadAllocator& uploadAllocator = *mFrameManager->getUploadAllocator();
     mSceneRenderer->upload(uploadAllocator);
-    if (shadowData) {
-      cameraView->shadows = uploadAllocator.upload(&*shadowData, sizeof(gpu::ShadowData)).address;
-      recordShadowPass(commandBuffer, cascadeViews);
+    if (cascades) {
+      const gpu::ShadowData shadowData = cascades->makeShadowData(mShadowAtlasTextureIndex);
+      cameraView->shadows = uploadAllocator.upload(&shadowData, sizeof(gpu::ShadowData)).address;
+      recordShadowPass(commandBuffer, *cascades);
     }
   }
 
@@ -195,7 +189,7 @@ void Renderer::render(Registry& ioRegistry) {
 
 void Renderer::waitIdle() const { mDevice->waitIdle(); }
 
-void Renderer::recordShadowPass(VkCommandBuffer iCommandBuffer, std::span<const SceneView> iCascadeViews) {
+void Renderer::recordShadowPass(VkCommandBuffer iCommandBuffer, const ShadowCascades& iCascades) {
   mShadowAtlas->transition(iCommandBuffer, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT);
@@ -216,9 +210,10 @@ void Renderer::recordShadowPass(VkCommandBuffer iCommandBuffer, std::span<const 
   renderingInfo.pDepthAttachment = &depthAttachmentInfo;
 
   vkCmdBeginRendering(iCommandBuffer, &renderingInfo);
-  for (uint32_t i = 0; i < iCascadeViews.size(); ++i) {
+  for (uint32_t i = 0; i < ShadowCascades::kCount; ++i) {
     setViewportAndScissor(iCommandBuffer, ShadowCascades::getTile(i));
-    mSceneRenderer->recordView(iCommandBuffer, *mFrameManager->getUploadAllocator(), iCascadeViews[i]);
+    const SceneView cascadeView{.kind = SceneView::Kind::Shadow, .viewProj = iCascades.viewProj[i]};
+    mSceneRenderer->recordView(iCommandBuffer, *mFrameManager->getUploadAllocator(), cascadeView);
   }
   vkCmdEndRendering(iCommandBuffer);
 }

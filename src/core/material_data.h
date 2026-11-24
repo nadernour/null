@@ -59,8 +59,9 @@ struct TextureRef {
   TextureFilter filter = TextureFilter::Linear;
 };
 
-// Nits for a unitless emissive of 1, in every format that has no unit (rendering_plan.md, Units). shaders/scene.slang
-// mirrors it.
+// Nits for a unitless emissive of 1, in every format that has no unit; 1000 is Godot's default. One value for all of
+// them, so the Emissive debug view, which divides it back out, shows each format's emissive as authored.
+// shaders/scene.slang mirrors it.
 constexpr float kUnitlessEmissiveNits = 1000.0f;
 
 // glTF metal-roughness; each factor multiplies its texture. The defaults are the engine's own: a dielectric.

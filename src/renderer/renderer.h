@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <span>
 #include <string>
 #include <volk/volk.h>
 
@@ -17,6 +16,7 @@ class Registry;
 class ResourceManager;
 class SceneRenderer;
 struct SceneView;
+struct ShadowCascades;
 class Tonemapper;
 class Window;
 
@@ -24,8 +24,9 @@ namespace gpu {
 enum class DebugView : uint32_t;
 }
 
-// Owns the GPU side, from the Vulkan instance to the render targets, and runs the frame. The only place that records
-// barriers and opens passes; the classes it calls only draw into them (rendering_plan.md, No render graph).
+// Owns the GPU side, from the Vulkan instance to the render targets, and runs the frame. The only place that orders and
+// opens passes and records barriers; the classes it calls only draw into them, since one pass can hold several classes'
+// draws (the tonemap and the UI). The frame is a fixed sequence of passes, so there's no render graph.
 class Renderer {
 public:
   Renderer(Window* iWindow, const std::string& iAppName);
@@ -49,8 +50,7 @@ private:
   static constexpr VkFormat kSceneColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 
   void createTargets(VkExtent2D iExtent);
-  void recordShadowPass(VkCommandBuffer iCommandBuffer, std::span<const SceneView> iCascadeViews);
-  // With a null iCameraView, only clears
+  void recordShadowPass(VkCommandBuffer iCommandBuffer, const ShadowCascades& iCascades);
   void recordScenePass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent, const SceneView* iCameraView);
   void recordSwapchainPass(VkCommandBuffer iCommandBuffer, VkExtent2D iExtent);
 

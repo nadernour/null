@@ -21,7 +21,7 @@ class ResourceManager;
 
 // One rendering of the scene: from the camera into the HDR target, or from a light into a shadow map tile
 struct SceneView {
-  enum class Kind : uint8_t { Color, Depth };
+  enum class Kind : uint8_t { Color, Shadow };
 
   Kind kind = Kind::Color;
   Mat4 viewProj;
@@ -80,7 +80,7 @@ private:
   VkDeviceAddress mMaterialBufferAddress = 0;
   // Indexed by AlphaMode, all built up front
   std::array<std::unique_ptr<Pipeline>, static_cast<size_t>(AlphaMode::Count)> mPipelines;
-  // The same for depth views; the Blend slot stays empty
+  // The same for shadow views; the Blend slot stays empty
   std::array<std::unique_ptr<Pipeline>, static_cast<size_t>(AlphaMode::Count)> mShadowPipelines;
 
   // What prepare() gathers

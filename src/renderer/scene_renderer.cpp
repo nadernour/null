@@ -16,6 +16,7 @@
 #include "renderer/rhi/pipeline.h"
 #include "renderer/rhi/upload_allocator.h"
 #include "renderer/rhi/utils.h"
+#include "renderer/shadow_cascades.h"
 
 // std
 #include <algorithm>
@@ -50,10 +51,6 @@ gpu::Light toGpuLight(const LightComponent& iLight, const Mat4& iWorld) {
   }
   return light;
 }
-
-// Slope bias only, negative for reverse-Z; the normal offset does a constant bias's job (rendering_plan.md, Shadows)
-constexpr float kShadowDepthBiasConstant = 0.0f;
-constexpr float kShadowDepthBiasSlope = -1.5f;
 
 // Blended surfaces cast no shadows: a shadow map holds one depth per texel, with no room for partial coverage
 constexpr bool castsShadows(AlphaMode iAlphaMode) { return iAlphaMode != AlphaMode::Blend; }
@@ -90,10 +87,7 @@ SceneRenderer::SceneRenderer(Device* iDevice, ResourceManager* iResourceManager,
         .shader = {.name = vk_utils::kSceneShader, .fragmentEntry = alphaMode == AlphaMode::Mask ? "fragShadowMasked" : ""},
         .debugName = std::format("Shadow_{}", toString(alphaMode)),
         .layout = iResourceManager->getPipelineLayout(),
-        .depth = {.format = iDepthFormat,
-                  .biasConstant = kShadowDepthBiasConstant,
-                  .biasSlope = kShadowDepthBiasSlope,
-                  .clamp = true},
+        .depth = {.format = iDepthFormat, .biasSlope = ShadowCascades::kDepthBiasSlope, .clamp = true},
     };
     mShadowPipelines[i] = std::make_unique<Pipeline>(iDevice->getDevice(), config);
   }
@@ -154,7 +148,9 @@ void SceneRenderer::prepare(Registry& ioRegistry, const SceneView& iCameraView) 
         }
       });
 
-  // The order's reasons: rendering_plan.md, "Alpha and double-sided". Submesh last puts the draws upload() merges together.
+  // Opaque first, to fill depth before the masked draws, whose discard keeps them from writing depth early; blended last,
+  // far to near, so they blend in order. Sidedness then groups the cull modes, and submesh last puts the draws upload()
+  // merges together.
   std::sort(mDrawCalls.begin(), mDrawCalls.end(), [](const DrawCall& iA, const DrawCall& iB) {
     if (iA.alphaMode != iB.alphaMode) {
       return iA.alphaMode < iB.alphaMode;
@@ -246,12 +242,12 @@ void SceneRenderer::recordView(VkCommandBuffer iCommandBuffer, UploadAllocator& 
   globalUniforms.shadowLight = iView.shadows != 0 && mShadowLight ? mShadowLight->lightIndex : gpu::kNoShadowLight;
   const VkDeviceAddress globalUniformsAddress = ioUploadAllocator.upload(&globalUniforms, sizeof(gpu::GlobalUniforms)).address;
 
-  const bool isDepthView = iView.kind == SceneView::Kind::Depth;
-  const auto& pipelines = isDepthView ? mShadowPipelines : mPipelines;
+  const bool isShadowView = iView.kind == SceneView::Kind::Shadow;
+  const auto& pipelines = isShadowView ? mShadowPipelines : mPipelines;
   const Pipeline* boundPipeline = nullptr;
   std::optional<VkCullModeFlags> boundCullMode; // Unknown until the first batch sets it
   for (const Batch& batch : mBatches) {
-    if (isDepthView && !castsShadows(batch.alphaMode)) {
+    if (isShadowView && !castsShadows(batch.alphaMode)) {
       continue;
     }
     Pipeline& pipeline = *pipelines[static_cast<size_t>(batch.alphaMode)];
