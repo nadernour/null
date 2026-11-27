@@ -2,7 +2,7 @@
 
 Physically based rendering for Null, split into seven phases. Each phase leaves the engine working and can be checked on its own. The README's Rendering section lists the same phases.
 
-Phases 1–5 are done. Their task lists are in git history (`git show 32ada07:rendering_plan.md`), and what they learned that still applies is under **Pitfalls From Done Phases**.
+Phases 1–6 are done. Their task lists are in git history (`git show 32ada07:rendering_plan.md` for Phases 1–5, `git show a7913db:rendering_plan.md` for Phase 6 as planned), and what they learned that still applies is under **Pitfalls From Done Phases**.
 
 ## How to Work Through It
 
@@ -38,7 +38,7 @@ Phases 1–5 are done. Their task lists are in git history (`git show 32ada07:re
 
   *Why:* these are KHR_lights_punctual's units. Emissive in those formats has no unit, so the constant is the one place to tune it. It's one value for all of them, so the Emissive debug view, which divides it back out, shows every format's emissive as authored. Godot's materials default to the same 1000 nits.
 - **Light direction:** a light shines along its entity's +X (forward), like cameras.
-- **Ambient until IBL:** a sky / ground hemisphere with both a diffuse and a specular term (scaled by `envBrdfApprox` until Phase 6's table replaces it). *Why:* without a specular ambient term, metals render black when only punctual lights hit them.
+- **Ambient until IBL:** a sky / ground hemisphere, `hemisphere(dir)`, lights both the diffuse and the specular through the environment BRDF (below). *Why:* without a specular ambient term, metals render black when only punctual lights hit them.
 - **Debug views:** a channel view shows what the Khronos Sample Viewer's debug channel shows: data (normals, tangents, metallic, roughness, occlusion, UVs) as stored, base color and emissive as colors, and no PBR Neutral. The Emissive view divides emissive by `kUnitlessEmissiveNits`, so it shows the authored value. *Why:* the Sample Viewer is the reference renderer, so each view can be checked against it.
 
 ### Materials and meshes
@@ -53,14 +53,14 @@ Phases 1–5 are done. Their task lists are in git history (`git show 32ada07:re
   *Why:* glTF names MikkTSpace for missing tangents, and MikkTSpace bakers write normal maps that invert exactly this transform. glTF normal maps put +Y toward the top of the image, while UV v points down. glTF calculates tangents only for a material with a normal texture, from that texture's UVs, and only the importer sees a primitive's material.
 - **Missing normals:** the glTF importer generates flat normals (one vertex per index), welds back the corners that triangles on one flat face share, and drops the file's tangents. *Why:* glTF requires both, and the weld keeps flat faces from costing three vertices per triangle.
 - **Alpha and double-sided:** one pipeline per alpha mode {opaque, mask, blend}, all built up front by `SceneRenderer`. The cull mode is dynamic state (core since Vulkan 1.3), set per batch: back faces for single-sided materials, none for double-sided ones. Draws sort by alpha mode: opaque, mask, then blend, back to front; then single-sided before double-sided. Blend draws that share a submesh and end up next to each other still merge into one instanced draw. *Why:* opaque draws keep early depth testing, and drawing them first fills the depth buffer before the masked draws, whose `discard` keeps them from writing depth early. Blending happens in the right order: Vulkan draws instances in order, so merged blend draws stay back to front. With the cull mode dynamic, sidedness doesn't double the pipelines, and building them up front means none compiles mid-run.
-### Later phases
+### Lighting
 - **Shadows:** directional cascaded shadow maps (CSM), 4 cascades in one 4096² D32 atlas, stabilized, drawn with depth clamp. *Why:* an atlas needs no array images, and per-view drawing is shared with Render Views. Depth clamp flattens casters in front of a cascade's near plane onto it instead of clipping them, so casters however far toward the light still cast; `Device` requires the `depthClamp` feature, which desktop drivers and lavapipe have.
-- **Environment BRDF:** a 64 × 64 `R16G16_SFLOAT` table, built on the CPU at startup from the light loop's GGX and visibility, replaces `envBrdfApprox`, in its own phase before IBL. With it, the ambient adds back the light rough surfaces bounce between their microfacets (Fdez-Agüera's multiple scattering, as the Sample Viewer's image-based light does) and gives its diffuse only what the specular leaves. The light loop keeps one bounce, as the Sample Viewer's does. *Why:* the fit makes mid-rough metal about a quarter stop too dark and drops rough metal's brightening toward the edges (Phase 6 has the numbers), which a comparison with the Sample Viewer, which reads a table, would show. One bounce alone leaves white rough metal up to 1.7 stops darker than the reference, and the unweighted diffuse makes surfaces seen at a grazing angle send back more light than they receive. In its own phase it stays out of IBL's way.
+- **Environment BRDF:** a 64 × 64 `R16G16_SFLOAT` table (`renderer/env_brdf.h`), built on the CPU at startup by a port of Filament's `DFV` with the light loop's GGX and height-correlated Smith visibility. NdotV runs along x and perceptual roughness along y, each at its texel's center, read through a linear, clamp-to-edge sampler. The ambient follows Fdez-Agüera 2019's Listing 2: the first bounce (`FssEss`) takes the light along R, and the later bounces (`FmsEms`) and the diffuse, which gets what the specular leaves, take the light around N. The light loop keeps one bounce, as the Sample Viewer's does. *Why:* the Sample Viewer, the reference renderer, also builds its table at startup and adds the same later bounces, but lights them along R with the first; the two differ only where the later bounces are large, on rough surfaces, whose light along R is already close to the light around N. Without the later bounces, white rough metal comes out up to 1.7 stops too dark. Built from the code, the table can't fall out of step with it; if startup cost ever matters, generating it at build time, as Filament does, keeps that.
 - **IBL:**
   - `.hdr` loaded with stb_image into an RGBA16F cube with prefiltered mips, built with graphics passes;
   - the map's middle faces +X and its top +Z, as in Blender;
   - SH9 diffuse computed on the CPU, stored as irradiance / π like `hemisphere(N)`;
-  - Phase 6's ambient (table, multiple scattering, diffuse weight), with the map in place of the hemisphere;
+  - the environment BRDF's ambient, with the map in place of the hemisphere: the prefiltered cube along R for the first bounce, SH9 around N for the later bounces and the diffuse;
   - cube views share binding 1 with the 2D textures;
   - the sky draws inside the scene pass, after the masked draws and before the blended ones.
 
@@ -68,7 +68,7 @@ Phases 1–5 are done. Their task lists are in git history (`git show 32ada07:re
 ---
 
 ## Pitfalls From Done Phases
-What Phases 1–5 learned that still applies to new code.
+What Phases 1–6 learned that still applies to new code.
 
 **Shaders and layouts**
 - Slang reads buffer pointers with natural (scalar) layout, so C++ structs match as-is. Push constants use std430: keep push-constant structs to 64-bit addresses and 32-bit scalars, never `float3`. To check a layout, run `build/debug/_deps/slang-src/bin/slangc <file> -target spirv-asm ...` and read the `OpMemberDecorate ... Offset` lines.
@@ -106,74 +106,11 @@ What Phases 1–5 learned that still applies to new code.
 - Snap in the cascade's own texels (2048 to a tile), not the atlas's, and after building the whole view-projection.
 - The shadow pipelines keep `vertMain`, which also computes normals and tangents the depth pass doesn't use. That's small next to rasterizing four tiles; a lean vertex entry point can come with GPU profiling.
 
----
-
-## Phase 6: Environment BRDF Table
-**Status:** not started
-
-**Goal:** The ambient reads a lookup table instead of Karis's `envBrdfApprox`, and with it:
-- the specular term reflects the sky at the right brightness at every roughness;
-- the light that rough surfaces bounce between their microfacets, which a one-bounce BRDF loses, comes back (multiple scattering);
-- the diffuse term gets only the light the specular doesn't reflect.
-
-The light loop doesn't change. All of it lands before Image-Based Lighting, so a mismatch found in Phase 7 can't come from it.
-
-The table answers one question: of light arriving evenly from every direction, what share does the specular lobe reflect toward the camera? The answer depends on the view angle (NdotV), the roughness, and F0, and comes out as a scale and an offset of F0: `F0 × A + B`. Karis fitted a curve to it in 2014, to save a texture read on the phones of the time. He fitted it to UE4's older Schlick-Smith visibility, not the light loop's height-correlated Smith. Against the exact values (the light loop's GGX and visibility, integrated on Nov 1):
-
-| Roughness | NdotV | Metal (F0 = 1): exact | Fit | Plastic (F0 = 0.04): exact | Fit |
-|---|---|---|---|---|---|
-| 0.045 | 1.0 | 1.000 | 0.975 | 0.040 | 0.044 |
-| 0.5 | 0.5 | 0.857 | 0.725 | 0.056 | 0.050 |
-| 1.0 | 1.0 | 0.307 | 0.450 | 0.012 | 0.016 |
-| 1.0 | 0.1 | 0.760 | 0.450 | 0.053 | 0.016 |
-
-For a metal, the fit gives 1 − 0.55 × roughness at every angle, so mid-rough metal comes out about a quarter stop too dark, and rough metal loses its brightening toward the edges.
-
-**Multiple scattering.** A rough surface is a field of tiny mirror facets, tilted every which way. The BRDF follows light through one bounce: light that one facet sends into a neighbor counts as lost, though in a real metal most of it bounces on and leaves. The loss grows with roughness. The table above says a perfect metal (F0 = 1) at roughness 1, seen head-on, reflects 0.307 of an even sky, so 69% goes missing. Fdez-Agüera ("A Multiple-Scattering Microfacet Model for Real-Time Image-Based Lighting", 2019) adds it back from the same table. A + B is the share a perfect metal keeps after one bounce, so 1 − (A + B) is what goes on bouncing, and each later bounce keeps F_avg of it: Schlick's Fresnel averaged over the hemisphere, F0 + (1 − F0) / 21.
-- The perfect metal: F_avg = 1, and the bounced light adds 0.693 × 0.307 / (1 − 0.693) = 0.693, so it reflects 0.307 + 0.693 = 1, all of the light, at every roughness and angle.
-- Plastic barely moves: at the same roughness and angle, F0 = 0.04 goes from 0.012 to 0.013, since each later bounce keeps less than a tenth of its light.
-- Colored metals come out a little more saturated, as real ones do: every bounce tints the light again.
-
-**Diffuse weight.** Of the light reaching a surface, the specular reflects a share and the rest enters the material, which the diffuse term sends back out. Today's ambient adds both in full. Smooth white plastic seen at a grazing angle (NdotV = 0.1, the way a low robot camera sees the floor) reflects 0.607 of the sky, and the diffuse adds 1.0 more: 1.6 times the light it receives. Weighted, it's (1 − 0.607) × 1.0 + 0.607 = 1.0. Head-on the error was 4%, since only 0.04 reflects there.
-
-**Tasks:**
-1. **Half floats:** a float → half conversion in `core/math` (moved here from Phase 7, which reuses it).
-2. **Half-float textures:** `createTexture` takes only 8-bit RGBA today and builds an 8-bit mip chain. `ImageData` gains a half-float format, which `createTexture` uploads as it is, one level (`R16G16_SFLOAT` for two channels). Phase 7's HDR images reuse it.
-3. **The table**, in `core` next to `ImageUtils` (CPU math, no Vulkan):
-   - one function integrates one (NdotV, roughness) pair: GGX importance sampling over Hammersley points, with the light loop's height-correlated Smith visibility, returning A and B;
-   - 64 × 64 texels, NdotV along x and perceptual roughness along y, each computed at its texel's center ((i + 0.5) / 64), with 256 samples.
-4. **`ResourceManager`** builds the table once at startup and registers it, with the linear, clamp-to-edge sampler. A scratch version measured on Nov 1 took 24 ms in an optimized build and 45 ms in Debug.
-5. **`GlobalUniforms`** gains `uint32_t envBrdfTexture`, the table's packed texture and sampler index (as in `gpu::Material`), after `shadowLight`: 140 bytes of fields, then 4 of padding, 144 in all. `SceneRenderer` keeps the index from construction, like the material buffer's address.
-6. **Shader:** `envBrdf(F0, roughness, NdotV)` reads the table and returns the share of an even sky the specular reflects, multiple scattering included; `envBrdfApprox` goes away.
-   ```slang
-   float2 AB = sampleTexture(pc.globalUniforms->envBrdfTexture, float2(NdotV, roughness)).rg;
-   float3 FssEss = F0 * AB.x + AB.y;     // One bounce
-   float Ems = 1.0 - (AB.x + AB.y);      // What a perfect metal loses past one bounce
-   float3 Favg = F0 + (1.0 - F0) / 21.0; // Schlick's Fresnel averaged over the hemisphere
-   return FssEss + Ems * FssEss * Favg / (1.0 - Favg * Ems);
-   ```
-   The ambient gives the diffuse what the specular leaves:
-   ```slang
-   float3 specularShare = envBrdf(F0, roughness, NdotV);
-   radiance += (diffuseColor * (1.0 - specularShare) * hemisphere(N) + specularShare * hemisphere(R)) * ao;
-   ```
-   Land it in two steps and screenshot each: first `F0 * AB.x + AB.y` in place of the fit, with the ambient as it is, then the multiple scattering and the diffuse weight. Each step then shows on its own (see **Done when**).
-7. **Tests**, on the integration function:
-   - roughness 1 seen head-on: A + B is 1 − ln 2 ≈ 0.307, within 0.005. At roughness 1, GGX spreads evenly and the integral has a closed form;
-   - roughness 0.045 at NdotV 0.1, F0 0.04: within 0.005 of Schlick's Fresnel at that angle, 0.607. A near-mirror reflects what Fresnel says.
-
-**Done when**, with the sun off in the Lighting window, so only the ambient lights the scene:
-- After the first step (the table alone), MetalRoughSpheresNoTextures' rough metal spheres brighten toward their edges, mid-rough metal is about a quarter stop brighter than with the fit, and smooth spheres barely change.
-- After the second, rough metal brightens again, a white metal by up to 1.7 stops (0.307 → 1 at roughness 1, seen head-on), while the non-metal spheres barely change. The far ground, seen at a grazing angle, darkens slightly.
-- **White furnace:** with the sky and the ground set to one color and intensity, a white cube (in a local change to BasicApp), metal or not and at any roughness, shows all its faces at one brightness, so its edges disappear: a surface that absorbs nothing reflects all of an even sky, whichever way it faces. Before this phase, rough metal looks darker, and plastic faces seen at a grazing angle look brighter.
-
-**Pitfalls:**
-- Use the light loop's height-correlated Smith, not UE4's Schlick-Smith with k = α / 2, which most IBL tutorials use: that mismatch is part of what this phase fixes.
-- Index the table by perceptual roughness, as `envBrdfApprox` was, not by α.
-- Half floats, not 32-bit floats: linear filtering of `R32G32_SFLOAT` isn't guaranteed.
-- The sampling error is largest at grazing angles (NdotV below 0.1): on Nov 1, at 256 samples, it was 0.4% on average and 2% at worst, there. More samples converge slowly; sampling visible normals (Heitz 2018) is the fix if it ever shows.
-- Don't copy the Sample Viewer's "roughness-dependent Fresnel" (`k_S` in `getIBLGGXFresnel`, from the same paper), which replaces F0 with a Fresnel taken at NdotV before the table. The table's A and B already integrate Fresnel over the lobe, so it counts Fresnel twice: smooth plastic at NdotV = 0.1 reflects 0.83 instead of Fresnel's 0.607. Smooth non-metals at grazing angles look a little dimmer here than in the Sample Viewer, and that difference is expected.
-- The light loop keeps one bounce, as the Sample Viewer's does, so rough metal lit by the sun stays darker than the same metal lit by the sky. Adding it there is in **Later**.
+**Environment BRDF**
+- Keep the specular's two parts apart: `FssEss` takes the radiance along R, and `FmsEms` takes the irradiance around N with the diffuse, as the paper's Listing 2 does. The Sample Viewer lights both along R (`getIBLGGXFresnel` returns their sum), so rough surfaces can differ from it slightly; compare them loosely.
+- Don't copy the Sample Viewer's roughness-dependent Fresnel (`k_S` in its `getIBLGGXFresnel`, the paper's `kS`), which replaces F0 with a Fresnel taken at NdotV before the table. The table's A and B already integrate Fresnel over the lobe, so it counts Fresnel twice: smooth plastic at NdotV = 0.1 reflects 0.83 instead of Fresnel's 0.607. Smooth non-metals at grazing angles look a little dimmer here than in the Sample Viewer, and that difference is expected.
+- Half-float images (`ImageData::ChannelType::Float16`, filled with `math::floatToHalf`) upload as given: `createTexture` builds no mip chain for them, and `image_utils::generateMipChain` takes only 8-bit RGBA. They have 1, 2, or 4 channels, never 3: linear filtering of `R16G16B16_SFLOAT` isn't mandatory, nor of any 32-bit float format.
+- The table's sampling error is largest at grazing angles (NdotV below 0.1): 0.4% on average and 2% at worst there, at 256 samples. Sampling visible normals (Heitz 2018) is the fix if it ever shows.
 
 ---
 
@@ -188,19 +125,19 @@ For a metal, the fit gives 1 − 0.55 × roughness at every angle, so mid-rough 
    - Extra 2D views, one per face and mip, to render into.
    - Mip generation with `vkCmdBlitImage`; linear blits of `R16G16B16A16_SFLOAT` are mandatory.
 2. **HDR images:**
-   - `ImageImporter::importHdrFromFile` loads Radiance `.hdr` files with `stbi_loadf` as float RGBA.
-   - Convert them on the CPU to half floats (`R16G16B16A16_SFLOAT`), because linear filtering of `R32G32B32A32_SFLOAT` isn't guaranteed. They use Phase 6's float → half conversion and half-float `ImageData`.
+   - `image_importer::importHdrFromFile` loads Radiance `.hdr` files with `stbi_loadf` as float RGBA.
+   - Convert them on the CPU to half floats (`R16G16B16A16_SFLOAT`) with `math::floatToHalf`, as half-float `ImageData`; linear filtering of `R32G32B32A32_SFLOAT` isn't guaranteed.
    - **Orientation:** the image's middle column faces +X (forward), the column a quarter of the way in from the left +Y (left), and the top row +Z: standing at the origin and looking forward, you see the middle of the panorama the right way round. For a direction d, u = 0.5 − atan2(d.y, d.x) / 2π and v = acos(d.z) / π, with v = 0 the top row. That's Blender's horizontal mapping (Cycles' `direction_to_equirectangular`), whose world is Z-up too, so a map faces the same way in both. USD dome lights put their pole on +Y (`UsdLuxDomeLight`), so a dome light from a USD scene needs a rotation to match.
-3. **Assets:** a CC0 HDRI from Poly Haven (1k or 2k `.hdr`). **Decide first:** either build the planned download manifest (URL + SHA-256 into a gitignored cache, cached in CI) or commit one file of 2 MB or less.
+3. **Assets:** a CC0 HDRI from Poly Haven (1k or 2k `.hdr`), added to `render_test.md`'s asset bundle. If Phase 7 comes before that bundle, commit one file of 2 MB or less instead. CI's test generates its own map (see **Tests**), so CI downloads nothing.
 4. **Precompute at load** (graphics passes, one fullscreen triangle per face and mip):
    - equirectangular map → 512² environment cube with full mips;
-   - prefiltered specular cube, 256² with 6 mips; mip m holds roughness m / 5. Use GGX importance sampling that reads the environment's mips by sample density (filtered importance sampling, which avoids fireflies);
-   - SH9 diffuse, computed on the CPU from the equirectangular pixels weighted by solid angle, and stored as irradiance / π: what `hemisphere(N)` returns today, so a map of one radiance L gives L at every normal.
+   - prefiltered specular cube, 256² with 6 mips; mip m holds roughness m / 5. Use GGX importance sampling that reads the environment's mips by sample density (filtered importance sampling, which avoids fireflies). Port it from the reference's own `source/shaders/ibl_filtering.frag` in KhronosGroup/glTF-Sample-Renderer (Apache 2.0), keeping its names;
+   - SH9 diffuse, computed on the CPU from the equirectangular pixels weighted by solid angle, and stored as irradiance / π: what `hemisphere(N)` returns today, so a map of one radiance L gives L at every normal. Port the projection and the evaluation from a published listing, such as Sloan's "Stupid Spherical Harmonics (SH) Tricks" (2008).
 5. **Bindless:** register cube views in binding 1 like 2D ones (both are `SAMPLED_IMAGE` descriptors, so `BindlessManager` keeps one slot allocator), and declare `TextureCube gCubeTextures[]` on binding 1 next to `gTextures`. Slang warns about the overlap (39001), so the warning is off for that one declaration, between `#pragma warning(push)` and `#pragma warning(pop)`. Reading a slot through the wrong declaration (a cube through `gTextures`) is undefined.
 6. **`EnvironmentComponent`** gains the cube texture index, the SH coefficients, and `intensity` (nits per unit of the map). They reach the shader the way the shadows do: `SceneRenderer` uploads a `gpu::Environment` (the SH and the intensity) once per frame, and `GlobalUniforms` gains its address and `uint32_t environmentMap`, the cube's packed index, or `kNoEnvironmentMap` (`~0U`) for the hemisphere. A pointer can't be compared with null (see **Pitfalls From Done Phases**).
-7. **Shading:** when an environment map is set, it replaces the hemisphere in Phase 6's ambient, which stays as it is otherwise:
-   - diffuse = SH(N) × diffuseColor × (1 − specularShare);
-   - specular = the prefiltered cube sampled along R at mip `roughness * 5`, × specularShare;
+7. **Shading:** when an environment map is set, it replaces the hemisphere in the ambient, which stays as it is otherwise. Listing 2's `FssEss * radiance + (Fms * Ems + kD) * irradiance`:
+   - radiance = the prefiltered cube sampled along R at mip `roughness * 5`, in place of `hemisphere(R)`;
+   - irradiance = SH(N), in place of `hemisphere(N)`;
    - both multiplied by intensity and ao.
 8. **Sky:** `SceneRenderer::recordView` draws it in color views when the environment has a map, after the last masked batch and before the first blended one (batches are sorted by alpha mode), through a `Sky` pipeline built up front with the others:
    - `vertSky` and `fragSky` in `scene.slang`, so it shares the bindless declarations and `GlobalUniforms`;
@@ -219,7 +156,7 @@ For a metal, the fit gives 1 − 0.55 × roughness at every angle, so mid-rough 
 - Diffuse lighting takes on the environment's color.
 - The sky shows behind the scene, without seams at cube edges.
 - Glass seen against the sky still shows over it.
-- **Furnace with a sky:** with an environment map of one color, Phase 6's white cube vanishes into the sky, which shows that the sky and the lighting share units and exposure.
+- **Furnace with a sky:** with an environment map of one color, a white cube, metal or not and at any roughness, vanishes into the sky, which shows that the sky and the lighting share units and exposure.
 
 **Tests:**
 - image, "Equirectangular Pixels Map To REP-103 Directions": the middle of the middle row faces +X, a quarter of the way in from the left +Y, three quarters −Y, the top row +Z, and the bottom row −Z; direction → pixel → direction comes back.
@@ -238,16 +175,8 @@ For a metal, the fit gives 1 − 0.55 × roughness at every angle, so mid-rough 
 ---
 
 ## Verification Assets
-Download these for manual checks, and don't commit them; `content/` stays small. To view one, load it in place of the helmet in a local change to `BasicApp`, and don't commit that either.
-- **Khronos glTF Sample Viewer** (github.khronos.org/glTF-Sample-Viewer-Release): the reference renderer, with a PBR Neutral tonemapper option.
-- **Models from github.com/KhronosGroup/glTF-Sample-Assets:**
-
-  | Model | Checks | Phase |
-  |---|---|---|
-  | TextureSettingsTest | samplers (per-axis wrap); double-sided | 2, 3 |
-  | NormalTangentTest, NormalTangentMirrorTest | normal maps, with tangents generated and from the file | 3 |
-  | AlphaBlendModeTest | alpha modes | 3 |
-  | MetalRoughSpheresNoTextures | the BRDF; the environment BRDF table | 4, 6 |
+- **Khronos glTF Sample Viewer** (github.khronos.org/glTF-Sample-Viewer-Release): the reference renderer, with a PBR Neutral tonemapper option. Its rendering code, to port from, is in github.com/KhronosGroup/glTF-Sample-Renderer.
+- **Models:** `render_test.md` lists the Khronos test models and what each checks. Until its Test Assets window lands, load one in place of the helmet in a local change to `BasicApp`, and don't commit that; `content/` stays small.
 
 ## Later (Outside This Plan)
 - **Anti-aliasing:** MSAA on the scene target suits forward rendering; decide before Render Views. An entity-ID target can't be averaged, so resolve it with sample zero.

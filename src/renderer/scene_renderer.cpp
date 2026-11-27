@@ -7,6 +7,7 @@
 #include "core/ecs.h"
 #include "core/material_data.h"
 #include "core/math/math_utils.h"
+#include "renderer/env_brdf.h"
 #include "renderer/geometry_allocator.h"
 #include "renderer/gpu_types.h"
 #include "renderer/material.h"
@@ -14,6 +15,7 @@
 #include "renderer/resource_manager.h"
 #include "renderer/rhi/device.h"
 #include "renderer/rhi/pipeline.h"
+#include "renderer/rhi/sampler_manager.h"
 #include "renderer/rhi/upload_allocator.h"
 #include "renderer/rhi/utils.h"
 #include "renderer/shadow_cascades.h"
@@ -61,6 +63,10 @@ SceneRenderer::SceneRenderer(Device* iDevice, ResourceManager* iResourceManager,
   NE_ASSERT(iDevice && iResourceManager);
   mGeometryAllocator = iResourceManager->getGeometryAllocator();
   mMaterialBufferAddress = iResourceManager->getMaterialBufferAddress();
+  // Clamped, so the table's edge texels hold up to NdotV = 1 and roughness = 1
+  const uint32_t envBrdfSampler = SamplerManager::getTextureSamplerIndex(
+      {.filter = TextureFilter::Linear, .wrapU = TextureWrap::Clamp, .wrapV = TextureWrap::Clamp});
+  mEnvBrdfTexture = gpu::packTexture(iResourceManager->createTexture(buildBrdfTable(), "EnvBrdf_Table"), envBrdfSampler);
 
   // Only Mask discards, so the others keep early depth testing; Blend tests depth without writing it
   for (size_t i = 0; i < mPipelines.size(); ++i) {
@@ -96,7 +102,7 @@ SceneRenderer::SceneRenderer(Device* iDevice, ResourceManager* iResourceManager,
 SceneRenderer::~SceneRenderer() = default;
 
 void SceneRenderer::prepare(Registry& ioRegistry, const SceneView& iCameraView) {
-  mFrameUniforms = gpu::GlobalUniforms{};
+  mFrameUniforms = gpu::GlobalUniforms{.envBrdfTexture = mEnvBrdfTexture};
   mLights.clear();
   mShadowLight.reset();
   mDrawCalls.clear();

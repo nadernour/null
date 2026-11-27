@@ -4,6 +4,8 @@
 #include "core/math/math.h"
 #include "core/math/transform.h"
 
+#include <limits>
+
 namespace ne::test {
 
 NE_TEST_CASE("math", "Scalar Math Utilities") {
@@ -83,6 +85,24 @@ NE_TEST_CASE("math", "Hardware-Accelerated Inverse Square Root (invSqrt)") {
     float actual = math::invSqrt(val);
     NE_TEST_ASSERT(math::equals(actual, expected, 1e-4f), "invSqrt accuracy across arbitrary scalars.");
   }
+}
+
+NE_TEST_CASE("math", "Float To Half") {
+  NE_TEST_ASSERT(math::floatToHalf(0.0f) == 0x0000, "Zero.");
+  NE_TEST_ASSERT(math::floatToHalf(-0.0f) == 0x8000, "Negative zero keeps its sign.");
+  NE_TEST_ASSERT(math::floatToHalf(1.0f) == 0x3C00, "One.");
+  NE_TEST_ASSERT(math::floatToHalf(-2.0f) == 0xC000, "Minus two.");
+  NE_TEST_ASSERT(math::floatToHalf(0.307f) == 0x34E9, "0.307 rounds to the nearest half.");
+  NE_TEST_ASSERT(math::floatToHalf(65504.0f) == 0x7BFF, "The largest half.");
+  NE_TEST_ASSERT(math::floatToHalf(65520.0f) == 0x7C00, "Halfway past the largest half rounds to infinity.");
+  NE_TEST_ASSERT(math::floatToHalf(std::numeric_limits<float>::infinity()) == 0x7C00, "Infinity.");
+  NE_TEST_ASSERT((math::floatToHalf(std::numeric_limits<float>::quiet_NaN()) & 0x7FFF) > 0x7C00, "NaN stays NaN.");
+  NE_TEST_ASSERT(math::floatToHalf(6.103515625e-5f) == 0x0400, "The smallest normal half, 2^-14.");
+  NE_TEST_ASSERT(math::floatToHalf(5.9604645e-8f) == 0x0001, "The smallest subnormal half, 2^-24.");
+  NE_TEST_ASSERT(math::floatToHalf(2.0e-8f) == 0x0000, "Below half the smallest subnormal rounds to zero.");
+  // 1 + 2^-11 lies halfway between 0x3C00 and 0x3C01, and 1 + 3 * 2^-11 halfway between 0x3C01 and 0x3C02
+  NE_TEST_ASSERT(math::floatToHalf(1.00048828125f) == 0x3C00, "A tie rounds to the even mantissa, down.");
+  NE_TEST_ASSERT(math::floatToHalf(1.00146484375f) == 0x3C02, "A tie rounds to the even mantissa, up.");
 }
 
 } // namespace ne::test

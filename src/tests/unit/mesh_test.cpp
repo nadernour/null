@@ -9,8 +9,8 @@ namespace ne::test {
 // MikkTSpace's v points up the image and glTF's down, so generateTangents negates each w. Every triangle's UV gradients
 // show whether it did: the tangent must point toward +u, and the bitangent, cross(N, T) * w, toward -v.
 NE_TEST_CASE("mesh", "Box Tangents Point Toward +u, Their Bitangents Up The Image") {
-  SubmeshData box = MeshUtils::createBoxMeshData().submeshes[0];
-  NE_TEST_ASSERT(MeshUtils::generateTangents(box), "A box has normals and UVs, so it gets tangents.");
+  SubmeshData box = mesh_utils::createBoxMeshData().submeshes[0];
+  NE_TEST_ASSERT(mesh_utils::generateTangents(box), "A box has normals and UVs, so it gets tangents.");
   NE_TEST_ASSERT(box.positions.size() == 24 && box.tangents.size() == 24 && box.indices.size() == 36,
                  "Welding merges the 36 corners back into the box's 24 vertices, got {}.", box.positions.size());
 
@@ -49,7 +49,7 @@ NE_TEST_CASE("mesh", "Box Tangents Point Toward +u, Their Bitangents Up The Imag
 // The plane is the box's top face on its own: both triangles wind counter-clockwise seen from +Z, where its normals
 // point, and u runs along +X and v along -Y
 NE_TEST_CASE("mesh", "A Plane Faces +Z With The Box's Top-Face UVs") {
-  const MeshData plane = MeshUtils::createPlaneMeshData(Vec2(2.0f, 1.0f));
+  const MeshData plane = mesh_utils::createPlaneMeshData(Vec2(2.0f, 1.0f));
   NE_TEST_ASSERT(plane.validate(), "The plane is a valid mesh.");
   const SubmeshData& submesh = plane.submeshes[0];
   NE_TEST_ASSERT(submesh.positions.size() == 4 && submesh.indices.size() == 6, "One quad: 4 vertices and 2 triangles.");

@@ -44,15 +44,15 @@ VkSamplerAddressMode toAddressMode(TextureWrap iWrap) {
 }
 
 // Linear samplers filter trilinearly with anisotropy; nearest ones pick the nearest texel and mip level
-SamplerConfig makeTextureSamplerConfig(TextureFilter iFilter, TextureWrap iWrapU, TextureWrap iWrapV) {
-  const bool isLinear = iFilter == TextureFilter::Linear;
+SamplerConfig makeTextureSamplerConfig(const TextureSampler& iSampler) {
+  const bool isLinear = iSampler.filter == TextureFilter::Linear;
   return SamplerConfig{
       .filter = isLinear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
       .mipmapMode = isLinear ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST,
-      .addressModeU = toAddressMode(iWrapU),
-      .addressModeV = toAddressMode(iWrapV),
+      .addressModeU = toAddressMode(iSampler.wrapU),
+      .addressModeV = toAddressMode(iSampler.wrapV),
       .anisotropic = isLinear,
-      .debugName = std::format("Sampler_{}_{}_{}", toString(iFilter), toString(iWrapU), toString(iWrapV)),
+      .debugName = std::format("Sampler_{}_{}_{}", toString(iSampler.filter), toString(iSampler.wrapU), toString(iSampler.wrapV)),
   };
 }
 
@@ -88,8 +88,9 @@ SamplerManager::SamplerManager(Device* iDevice) : mDevice(iDevice->getDevice()) 
   for (TextureFilter filter : kTextureFilters) {
     for (TextureWrap wrapU : kTextureWraps) {
       for (TextureWrap wrapV : kTextureWraps) {
-        const SamplerConfig config = makeTextureSamplerConfig(filter, wrapU, wrapV);
-        VkSampler& sampler = mTextureSamplers[getTextureSamplerIndex(filter, wrapU, wrapV)];
+        const TextureSampler settings{.filter = filter, .wrapU = wrapU, .wrapV = wrapV};
+        const SamplerConfig config = makeTextureSamplerConfig(settings);
+        VkSampler& sampler = mTextureSamplers[getTextureSamplerIndex(settings)];
         NE_ASSERT(sampler == VK_NULL_HANDLE, "Two texture samplers share the slot of '{}'", config.debugName);
         sampler = createSampler(mDevice, config);
       }

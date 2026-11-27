@@ -8,7 +8,7 @@
 #include <cstring>
 #include <vector>
 
-namespace ne::ImageUtils {
+namespace ne::image_utils {
 
 namespace {
 
@@ -49,7 +49,8 @@ uint32_t calculateMipLevels(uint32_t iWidth, uint32_t iHeight) { return std::bit
 ImageData generateMipChain(const ImageData& iImage) {
   NE_ASSERT(iImage.width > 0 && iImage.height > 0 && iImage.pixels.size() >= iImage.getLevelSizeInBytes(0),
             "Image needs pixels to build a mip chain");
-  NE_ASSERT(iImage.channels == 4, "Mip chains are built from RGBA8 images, got {} channels", iImage.channels);
+  NE_ASSERT(iImage.channels == 4 && iImage.channelType == ImageData::ChannelType::Unorm8,
+            "Mip chains are built from RGBA8 images, got {} channels", iImage.channels);
 
   ImageData chain{
       .width = iImage.width,
@@ -98,4 +99,4 @@ ImageData generateMipChain(const ImageData& iImage) {
   return chain;
 }
 
-} // namespace ne::ImageUtils
+} // namespace ne::image_utils

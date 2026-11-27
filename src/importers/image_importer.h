@@ -8,11 +8,11 @@
 
 namespace ne {
 
-namespace ImageImporter {
+namespace image_importer {
 
 std::optional<ImageData> importFromFile(const std::string& iPath);
 std::optional<ImageData> importFromMemory(std::span<const uint8_t> iData);
 
-} // namespace ImageImporter
+} // namespace image_importer
 
 } // namespace ne

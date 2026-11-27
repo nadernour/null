@@ -16,11 +16,14 @@ public:
   static constexpr uint32_t kTextureFilterCount = static_cast<uint32_t>(TextureFilter::Count);
   static constexpr uint32_t kTextureWrapCount = static_cast<uint32_t>(TextureWrap::Count);
   static constexpr uint32_t kTextureSamplerCount = kTextureFilterCount * kTextureWrapCount * kTextureWrapCount;
+  static_assert(kTextureSamplerCount <= 0x10000, "gpu::packTexture keeps sampler indices in 16 bits");
 
-  // Index of the texture sampler with these settings, in getTextureSamplers() and the shaders' sampler array
-  static constexpr uint32_t getTextureSamplerIndex(TextureFilter iFilter, TextureWrap iWrapU, TextureWrap iWrapV) {
-    return (static_cast<uint32_t>(iFilter) * kTextureWrapCount + static_cast<uint32_t>(iWrapU)) * kTextureWrapCount +
-           static_cast<uint32_t>(iWrapV);
+  // Index of iSampler's sampler, in getTextureSamplers() and the shaders' sampler array
+  static constexpr uint32_t getTextureSamplerIndex(const TextureSampler& iSampler) {
+    const auto filter = static_cast<uint32_t>(iSampler.filter);
+    const auto wrapU = static_cast<uint32_t>(iSampler.wrapU);
+    const auto wrapV = static_cast<uint32_t>(iSampler.wrapV);
+    return (filter * kTextureWrapCount + wrapU) * kTextureWrapCount + wrapV;
   }
 
   SamplerManager(Device* iDevice);

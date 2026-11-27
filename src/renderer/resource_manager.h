@@ -2,7 +2,6 @@
 
 #include <volk/volk.h>
 #include <memory>
-#include <span>
 #include <string>
 #include <vector>
 
@@ -36,9 +35,9 @@ public:
 
   std::shared_ptr<Mesh> createMesh(const MeshData& iMeshData);
   uint32_t createTexture(const ImageData& iImageData, const std::string& iDebugName = "");
-  // Writes the material into the next slot of the material buffer; iTextureIds maps each TextureRef::image to a
-  // texture from createTexture(). The default material, with the reason logged, once the buffer is full.
-  std::shared_ptr<Material> createMaterial(const MaterialData& iData, std::span<const uint32_t> iTextureIds = {});
+  // Writes the material into the next slot of the material buffer. The default material, with the reason logged, once
+  // the buffer is full.
+  std::shared_ptr<Material> createMaterial(const MaterialData& iData);
   void flushUploads();
 
   StagingManager* getStagingManager() const { return mStagingManager.get(); }

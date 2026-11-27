@@ -9,8 +9,34 @@
 
 // std
 #include <format>
+#include <span>
 
 namespace ne {
+
+namespace {
+
+// iTextureIds holds the texture made from each of the model's images, which iMaterial's slots index
+MaterialData toMaterialData(const ModelMaterial& iMaterial, std::span<const uint32_t> iTextureIds) {
+  const auto toSlot = [&](const ModelTexture& iTexture) {
+    NE_ASSERT(iTexture.image < static_cast<int32_t>(iTextureIds.size()), "Material '{}' uses image {} of a model with {} images",
+              iMaterial.name, iTexture.image, iTextureIds.size());
+    if (iTexture.image < 0) {
+      return TextureSlot{};
+    }
+    return TextureSlot{.texture = iTextureIds[iTexture.image], .sampler = iTexture.sampler};
+  };
+  return MaterialData{
+      .name = iMaterial.name,
+      .params = iMaterial.params,
+      .baseColorTexture = toSlot(iMaterial.baseColorTexture),
+      .metallicRoughnessTexture = toSlot(iMaterial.metallicRoughnessTexture),
+      .normalTexture = toSlot(iMaterial.normalTexture),
+      .occlusionTexture = toSlot(iMaterial.occlusionTexture),
+      .emissiveTexture = toSlot(iMaterial.emissiveTexture),
+  };
+}
+
+} // namespace
 
 Prefab::Prefab(ResourceManager& ioResourceManager, const ModelData& iModelData)
     : mName(iModelData.name), mNodes(iModelData.nodes) {
@@ -22,8 +48,8 @@ Prefab::Prefab(ResourceManager& ioResourceManager, const ModelData& iModelData)
 
   std::vector<std::shared_ptr<Material>> materials;
   materials.reserve(iModelData.materials.size());
-  for (const MaterialData& material : iModelData.materials) {
-    materials.push_back(ioResourceManager.createMaterial(material, textureIds));
+  for (const ModelMaterial& material : iModelData.materials) {
+    materials.push_back(ioResourceManager.createMaterial(toMaterialData(material, textureIds)));
   }
 
   mMeshComponents.reserve(iModelData.meshes.size());

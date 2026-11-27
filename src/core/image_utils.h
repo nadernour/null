@@ -2,7 +2,7 @@
 
 #include "core/image_data.h"
 
-namespace ne::ImageUtils {
+namespace ne::image_utils {
 
 // Levels in a full chain down to 1x1
 uint32_t calculateMipLevels(uint32_t iWidth, uint32_t iHeight);
@@ -10,4 +10,4 @@ uint32_t calculateMipLevels(uint32_t iWidth, uint32_t iHeight);
 // Copies level 0 of an RGBA8 image and box-filters every smaller level from the one above it, in linear light when sRGB
 ImageData generateMipChain(const ImageData& iImage);
 
-} // namespace ne::ImageUtils
+} // namespace ne::image_utils

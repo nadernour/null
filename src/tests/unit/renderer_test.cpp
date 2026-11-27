@@ -51,7 +51,7 @@ NE_TEST_CASE("renderer", "A Resize Keeps The HDR Target's Bindless Slot") {
 NE_TEST_CASE("renderer", "A Frame's Uploads Can Outgrow One Block") {
   ResourceManager& resources = *ioContext.app->getResourceManager();
   Registry& registry = *ioContext.app->getRegistry();
-  std::shared_ptr<Mesh> cube = resources.createMesh(MeshUtils::createBoxMeshData());
+  std::shared_ptr<Mesh> cube = resources.createMesh(mesh_utils::createBoxMeshData());
   std::shared_ptr<Material> material = resources.getDefaultMaterial();
 
   // Behind BasicApp's camera (at x = -4, looking along +X), so the cubes are clipped and lavapipe stays fast
@@ -77,15 +77,14 @@ NE_TEST_CASE("renderer", "A Frame's Uploads Can Outgrow One Block") {
 NE_TEST_CASE("renderer", "Frames Render Every Alpha Mode, Single- And Double-Sided") {
   ResourceManager& resources = *ioContext.app->getResourceManager();
   Registry& registry = *ioContext.app->getRegistry();
-  std::shared_ptr<Mesh> cube = resources.createMesh(MeshUtils::createBoxMeshData(Vec3(0.15f)));
+  std::shared_ptr<Mesh> cube = resources.createMesh(mesh_utils::createBoxMeshData(Vec3(0.15f)));
 
   std::vector<Entity> entities;
   for (AlphaMode alphaMode : {AlphaMode::Opaque, AlphaMode::Mask, AlphaMode::Blend}) {
     for (bool doubleSided : {false, true}) {
-      std::shared_ptr<Material> material = resources.createMaterial(MaterialData{.name = "Variant",
-                                                                                 .baseColor = LinearColor{1.0f, 1.0f, 1.0f, 0.5f},
-                                                                                 .alphaMode = alphaMode,
-                                                                                 .doubleSided = doubleSided});
+      std::shared_ptr<Material> material = resources.createMaterial(MaterialData{
+          .name = "Variant",
+          .params = {.baseColor = LinearColor{1.0f, 1.0f, 1.0f, 0.5f}, .alphaMode = alphaMode, .doubleSided = doubleSided}});
 
       Entity entity = registry.createEntity();
       const float y = -0.5f + 0.2f * static_cast<float>(entities.size());

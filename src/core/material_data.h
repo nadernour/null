@@ -51,12 +51,17 @@ constexpr const char* toString(TextureFilter iFilter) {
   return "Unknown";
 }
 
-// A material's texture and its sampler settings; image indexes ModelData::images, -1 for none
-struct TextureRef {
-  int32_t image = -1;
+// How a texture is sampled; SamplerManager has one sampler per combination
+struct TextureSampler {
+  TextureFilter filter = TextureFilter::Linear;
   TextureWrap wrapU = TextureWrap::Repeat; // glTF wrapS
   TextureWrap wrapV = TextureWrap::Repeat; // glTF wrapT
-  TextureFilter filter = TextureFilter::Linear;
+};
+
+// A texture from ResourceManager::createTexture() and its sampler
+struct TextureSlot {
+  uint32_t texture = 0; // ResourceManager::kFallbackTextureIndex, the white texture, for an empty slot
+  TextureSampler sampler;
 };
 
 // Nits for a unitless emissive of 1, in every format that has no unit; 1000 is Godot's default. One value for all of
@@ -64,9 +69,9 @@ struct TextureRef {
 // shaders/scene.slang mirrors it.
 constexpr float kUnitlessEmissiveNits = 1000.0f;
 
-// glTF metal-roughness; each factor multiplies its texture. The defaults are the engine's own: a dielectric.
-struct MaterialData {
-  std::string name;
+// A material's values other than its name and textures, shared by MaterialData and ModelMaterial. glTF
+// metal-roughness; each factor multiplies its texture. The defaults are the engine's own: a dielectric.
+struct MaterialParams {
   LinearColor baseColor = LinearColor::White;
   float metallic = 0.0f;
   float roughness = 0.5f;
@@ -76,11 +81,16 @@ struct MaterialData {
   float alphaCutoff = 0.5f;
   AlphaMode alphaMode = AlphaMode::Opaque;
   bool doubleSided = false;
-  TextureRef baseColorTexture{};         // sRGB
-  TextureRef metallicRoughnessTexture{}; // Linear; G = roughness, B = metallic
-  TextureRef normalTexture{};            // Linear
-  TextureRef occlusionTexture{};         // Linear; R
-  TextureRef emissiveTexture{};          // sRGB
+};
+
+struct MaterialData {
+  std::string name;
+  MaterialParams params;
+  TextureSlot baseColorTexture{};         // sRGB
+  TextureSlot metallicRoughnessTexture{}; // Linear; G = roughness, B = metallic
+  TextureSlot normalTexture{};            // Linear
+  TextureSlot occlusionTexture{};         // Linear; R
+  TextureSlot emissiveTexture{};          // sRGB
 };
 
 } // namespace ne

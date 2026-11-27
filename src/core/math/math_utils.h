@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/math/simd.h"
+#include <bit>
 #include <cmath>
 #include <concepts>
 #include <cstdint>
@@ -121,6 +122,34 @@ T acos(T iVal) {
 template <std::floating_point T>
 T atan2(T iY, T iX) {
   return std::atan2(iY, iX);
+}
+
+// IEEE 754 binary16 bits of iValue, rounded to nearest even; past 65504 gives infinity, NaN stays NaN. Fabian Giesen's
+// public-domain float_to_half_fast3_rtne (https://gist.github.com/rygorous/2156668), with std::bit_cast for its unions.
+constexpr uint16_t floatToHalf(float iValue) {
+  constexpr uint32_t kFloatInfinity = 255u << 23;
+  constexpr uint32_t kHalfOverflow = (127u + 16u) << 23; // 2^16: every float from here on is infinity in binary16
+  constexpr uint32_t kSmallestNormal = 113u << 23;       // 2^-14
+  // 0.5 with its lowest mantissa bit at binary16's smallest subnormal, so adding it rounds a subnormal into place
+  constexpr uint32_t kSubnormalMagic = ((127u - 15u) + (23u - 10u) + 1u) << 23;
+
+  uint32_t bits = std::bit_cast<uint32_t>(iValue);
+  const uint32_t sign = bits & 0x80000000u;
+  bits ^= sign;
+
+  uint32_t half = 0;
+  if (bits >= kHalfOverflow) {
+    half = bits > kFloatInfinity ? 0x7E00u : 0x7C00u;
+  } else if (bits < kSmallestNormal) {
+    const float aligned = std::bit_cast<float>(bits) + std::bit_cast<float>(kSubnormalMagic);
+    half = std::bit_cast<uint32_t>(aligned) - kSubnormalMagic;
+  } else {
+    const uint32_t mantissaOdd = (bits >> 13) & 1u;
+    bits += ((15u - 127u) << 23) + 0xFFFu; // Rebias the exponent and add just under half a binary16 ulp...
+    bits += mantissaOdd;                   // ...or exactly half when that rounds to even
+    half = bits >> 13;
+  }
+  return static_cast<uint16_t>(half | (sign >> 16));
 }
 
 } // namespace ne::math

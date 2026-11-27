@@ -48,6 +48,7 @@ struct GlobalUniforms {
   uint lightCount;
   uint debugView;
   uint shadowLight;
+  uint envBrdfTexture;
 };
 
 // Marks the shadows pointer unused: comparing a pointer with null needs the shaderInt64 feature
@@ -197,14 +198,25 @@ static const float3 kCascadeDebugTints[5] = {
   float3(1.0, 0.3, 0.3), float3(0.3, 1.0, 0.3), float3(0.4, 0.4, 1.0), float3(1.0, 1.0, 0.3), float3(1.0, 1.0, 1.0)
 };
 
-// Karis, "Physically Based Shading on Mobile" (2014): the environment BRDF fitted as a scale and an offset of F0
-float3 envBrdfApprox(float3 F0, float roughness, float NdotV) {
-  const float4 c0 = float4(-1.0, -0.0275, -0.572, 0.022);
-  const float4 c1 = float4(1.0, 0.0425, 1.04, -0.04);
-  float4 r = roughness * c0 + c1;
-  float a004 = min(r.x * r.x, exp2(-9.28 * NdotV)) * r.x + r.y;
-  float2 AB = float2(-1.04, 1.04) * a004 + r.zw;
-  return F0 * AB.x + AB.y;
+// The share of an even sky that the specular lobe reflects toward the camera: the first bounce, from
+// renderer/env_brdf.h's table, and the light that bounces between microfacets after it
+struct EnvBrdf {
+  float3 FssEss;
+  float3 FmsEms;
+};
+
+// Fdez-Aguera 2019, "A Multiple-Scattering Microfacet Model for Real-Time Image-based Lighting", Listing 2. F0 stands
+// where the listing has a roughness-dependent Fresnel: the table's B already holds Fresnel's rise at grazing angles.
+EnvBrdf envBrdf(float3 F0, float perceptualRoughness, float NdotV) {
+  float2 f_ab = sampleTexture(pc.globalUniforms->envBrdfTexture, float2(NdotV, perceptualRoughness)).rg;
+  EnvBrdf result;
+  result.FssEss = F0 * f_ab.x + f_ab.y;
+  float Ess = f_ab.x + f_ab.y;
+  float Ems = 1.0 - Ess;
+  float3 Favg = F0 + (1.0 - F0) / 21.0;
+  float3 Fms = result.FssEss * Favg / (1.0 - (1.0 - Ess) * Favg);
+  result.FmsEms = Fms * Ems;
+  return result;
 }
 
 // Sky above the horizon, ground below (+Z up): exactly the diffuse light a two-color sky gives a surface facing dir
@@ -259,7 +271,11 @@ float3 litRadiance(float3 base, float metallic, float perceptualRoughness, float
 
   // Ambient: specular along R, which bends toward N as roughness grows
   float3 R = normalize(lerp(reflect(-V, N), N, a));
-  radiance += (diffuseColor * hemisphere(N) + envBrdfApprox(F0, roughness, NdotV) * hemisphere(R)) * ao;
+  // The bounces past the first leave in every direction, as the diffuse does, so both take the light around N; the
+  // diffuse gets only the light the specular doesn't reflect
+  EnvBrdf specular = envBrdf(F0, roughness, NdotV);
+  float3 diffuse = diffuseColor * (1.0 - (specular.FssEss + specular.FmsEms));
+  radiance += (specular.FssEss * hemisphere(R) + (specular.FmsEms + diffuse) * hemisphere(N)) * ao;
   return radiance + emissive;
 }
 

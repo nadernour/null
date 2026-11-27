@@ -9,7 +9,7 @@
 #include <bit>
 #include <unordered_map>
 
-namespace ne::MeshUtils {
+namespace ne::mesh_utils {
 
 namespace {
 
@@ -253,4 +253,4 @@ bool generateTangents(SubmeshData& ioSubmesh) {
   return true;
 }
 
-} // namespace ne::MeshUtils
+} // namespace ne::mesh_utils

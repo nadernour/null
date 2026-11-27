@@ -41,7 +41,7 @@ The steps are in order, each building on the one before; they bring physically b
 - [x] **Tangents, Normal Maps & Alpha**: Tangents from glTF or generated with MikkTSpace, normal mapping, alpha mask and blend, and double-sided materials.
 - [x] **Lights, Exposure & PBR Shading**: Lights become ECS components (directional, point, and spot, in lux and candela) and replace the light fixed in the shader. The glTF metal-roughness BRDF (GGX, Smith, Schlick), camera exposure from aperture, shutter speed, and ISO, and a sky / ground ambient that metals reflect.
 - [x] **Shadows**: The scene's draws are gathered once per frame and recorded per view, then cascaded shadow maps for the directional light; spot and point light shadows later.
-- [ ] **Environment BRDF Table**: The ambient's specular term reads a lookup table built at startup instead of a curve fit and adds back the light rough surfaces bounce between their microfacets, so rough metal reflects at the right brightness; the ambient's diffuse takes only what the specular leaves. Image-Based Lighting reuses all of it.
+- [x] **Environment BRDF Table**: The ambient's specular term reads a lookup table built at startup instead of a curve fit and adds back the light rough surfaces bounce between their microfacets, so rough metal reflects at the right brightness; the ambient's diffuse takes only what the specular leaves. Image-Based Lighting reuses all of it.
 - [ ] **Image-Based Lighting**: HDR environment maps light and reflect the scene (prefiltered specular, spherical-harmonics diffuse) and are drawn as the sky.
 
 ### Robots & Worlds

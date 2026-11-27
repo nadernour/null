@@ -17,7 +17,6 @@
 #include "renderer/mesh.h"
 #include "renderer/resource_manager.h"
 #include "scene/prefab.h"
-#include <array>
 #include <format>
 
 namespace ne {
@@ -45,25 +44,24 @@ ImageData createPerforatedImage(uint32_t iSize, uint32_t iCells) {
 } // namespace
 
 BasicApp::BasicApp() : Application("Basic App (MDI Showcase)", 1200, 1000) {
-  MeshData cubeMeshData = MeshUtils::createBoxMeshData(Vec3(1.0f));
+  MeshData cubeMeshData = mesh_utils::createBoxMeshData(Vec3(1.0f));
   std::shared_ptr<Mesh> cubeMesh = getResourceManager()->createMesh(cubeMeshData);
   mLoadedMeshes.push_back(cubeMesh);
 
-  Prefab helmetPrefab(*getResourceManager(), GltfImporter::importModel("models/DamagedHelmet.glb"));
+  Prefab helmetPrefab(*getResourceManager(), gltf_importer::importModel("models/DamagedHelmet.glb"));
 
-  std::optional<ImageData> checkerImageData = ImageImporter::importFromFile("textures/uv_checker.png");
+  std::optional<ImageData> checkerImageData = image_importer::importFromFile("textures/uv_checker.png");
   uint32_t checkerTextureId = 0;
   if (checkerImageData) {
     checkerTextureId = getResourceManager()->createTexture(*checkerImageData, "UV_Checker_Texture");
   }
 
   // Both cubes use the checker as their base color, the second without filtering
-  const std::array checkerTextureIds{checkerTextureId};
   mCube1Material = getResourceManager()->createMaterial(
-      MaterialData{.name = "Checker_Linear", .baseColorTexture = {.image = 0}}, checkerTextureIds);
+      MaterialData{.name = "Checker_Linear", .baseColorTexture = {.texture = checkerTextureId}});
   mCube2Material = getResourceManager()->createMaterial(
-      MaterialData{.name = "Checker_Nearest", .baseColorTexture = {.image = 0, .filter = TextureFilter::Nearest}},
-      checkerTextureIds);
+      MaterialData{.name = "Checker_Nearest",
+                   .baseColorTexture = {.texture = checkerTextureId, .sampler = {.filter = TextureFilter::Nearest}}});
 
   // An indoor exposure (EV100 7.9), for the sun's indoor 1000 lux
   mCameraEntity = getRegistry()->createEntity();
@@ -114,15 +112,13 @@ BasicApp::BasicApp() : Application("Basic App (MDI Showcase)", 1200, 1000) {
 
   // Under the center cube, a perforated panel facing the camera; its holes show from both sides and in its shadow
   const uint32_t perforatedTextureId = getResourceManager()->createTexture(createPerforatedImage(256, 8), "Perforated_Texture");
-  const std::array perforatedTextureIds{perforatedTextureId};
   mPanelMaterial = getResourceManager()->createMaterial(MaterialData{.name = "Perforated_Panel",
-                                                                     .baseColor = LinearColor{1.0f, 0.7f, 0.2f, 1.0f},
-                                                                     .roughness = 0.5f,
-                                                                     .alphaMode = AlphaMode::Mask,
-                                                                     .doubleSided = true,
-                                                                     .baseColorTexture = {.image = 0}},
-                                                        perforatedTextureIds);
-  std::shared_ptr<Mesh> panelMesh = getResourceManager()->createMesh(MeshUtils::createPlaneMeshData(Vec2(1.0f)));
+                                                                     .params = {.baseColor = LinearColor{1.0f, 0.7f, 0.2f, 1.0f},
+                                                                                .roughness = 0.5f,
+                                                                                .alphaMode = AlphaMode::Mask,
+                                                                                .doubleSided = true},
+                                                                     .baseColorTexture = {.texture = perforatedTextureId}});
+  std::shared_ptr<Mesh> panelMesh = getResourceManager()->createMesh(mesh_utils::createPlaneMeshData(Vec2(1.0f)));
   mLoadedMeshes.push_back(panelMesh);
   mPanelEntity = getRegistry()->createEntity();
   // Pitched down -90 degrees, the plane's +Z normal turns to -X, toward the camera
@@ -134,7 +130,8 @@ BasicApp::BasicApp() : Application("Basic App (MDI Showcase)", 1200, 1000) {
   // Behind the left cube and in its shadow, a glass cube, which casts no shadow of its own
   if (!mLoadedMeshes.empty()) {
     mGlassMaterial = getResourceManager()->createMaterial(MaterialData{
-        .name = "Glass", .baseColor = LinearColor{0.3f, 0.65f, 1.0f, 0.35f}, .roughness = 0.1f, .alphaMode = AlphaMode::Blend});
+        .name = "Glass",
+        .params = {.baseColor = LinearColor{0.3f, 0.65f, 1.0f, 0.35f}, .roughness = 0.1f, .alphaMode = AlphaMode::Blend}});
     mGlassEntity = getRegistry()->createEntity();
     getRegistry()->addComponent<TransformComponent>(mGlassEntity, Transform(Vec3(1.5f, 0.9f, -1.2f), Quat::Identity, Vec3(0.6f)));
     getRegistry()->addComponent<MeshComponent>(mGlassEntity, mLoadedMeshes[0], std::vector{mGlassMaterial});
@@ -142,10 +139,10 @@ BasicApp::BasicApp() : Application("Basic App (MDI Showcase)", 1200, 1000) {
   }
 
   // Under everything: its top is at z = -1.5, just below the helmet's lowest point (about -1.4)
-  std::shared_ptr<Mesh> groundMesh = getResourceManager()->createMesh(MeshUtils::createBoxMeshData(Vec3(20.0f, 20.0f, 0.1f)));
+  std::shared_ptr<Mesh> groundMesh = getResourceManager()->createMesh(mesh_utils::createBoxMeshData(Vec3(20.0f, 20.0f, 0.1f)));
   mLoadedMeshes.push_back(groundMesh);
   mGroundMaterial = getResourceManager()->createMaterial(
-      MaterialData{.name = "Ground", .baseColor = LinearColor{0.5f, 0.5f, 0.5f, 1.0f}, .roughness = 0.8f});
+      MaterialData{.name = "Ground", .params = {.baseColor = LinearColor{0.5f, 0.5f, 0.5f, 1.0f}, .roughness = 0.8f}});
   mGroundEntity = getRegistry()->createEntity();
   getRegistry()->addComponent<TransformComponent>(mGroundEntity, Transform(Vec3(0.0f, 0.0f, -1.55f)));
   getRegistry()->addComponent<MeshComponent>(mGroundEntity, groundMesh, std::vector{mGroundMaterial});

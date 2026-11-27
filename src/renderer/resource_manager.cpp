@@ -22,11 +22,27 @@ namespace ne {
 
 namespace {
 
-// As gpu::Material stores it
-uint32_t packTexture(uint32_t iTextureId, const TextureRef& iTexture) {
-  static_assert(vk_utils::kMaxSampledImages <= 0x10000, "Bindless indices must fit in 16 bits");
-  static_assert(SamplerManager::kTextureSamplerCount <= 0x10000, "Sampler indices must fit in 16 bits");
-  return iTextureId | (SamplerManager::getTextureSamplerIndex(iTexture.filter, iTexture.wrapU, iTexture.wrapV) << 16);
+// VK_FORMAT_UNDEFINED when iImage's channel count has none. Half floats get the formats whose linear filtering Vulkan
+// requires, which RGB16F's isn't.
+VkFormat getTextureFormat(const ImageData& iImage) {
+  if (iImage.channelType == ImageData::ChannelType::Unorm8) {
+    return iImage.srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+  }
+  NE_ASSERT(!iImage.srgb, "Half-float images are linear");
+  switch (iImage.channels) {
+    case 1:
+      return VK_FORMAT_R16_SFLOAT;
+    case 2:
+      return VK_FORMAT_R16G16_SFLOAT;
+    case 4:
+      return VK_FORMAT_R16G16B16A16_SFLOAT;
+    default:
+      return VK_FORMAT_UNDEFINED;
+  }
+}
+
+uint32_t packTexture(const TextureSlot& iSlot) {
+  return gpu::packTexture(iSlot.texture, SamplerManager::getTextureSamplerIndex(iSlot.sampler));
 }
 
 } // namespace
@@ -75,7 +91,8 @@ ResourceManager::~ResourceManager() {
   mSamplerManager.reset();
 }
 
-std::shared_ptr<Material> ResourceManager::createMaterial(const MaterialData& iData, std::span<const uint32_t> iTextureIds) {
+std::shared_ptr<Material> ResourceManager::createMaterial(const MaterialData& iData) {
+  static_assert(TextureSlot{}.texture == kFallbackTextureIndex, "An empty texture slot must hold the fallback");
   if (mMaterialCount == vk_utils::kMaxMaterials) {
     NE_ERROR("ResourceManager: Material '{}' has no slot left in the material buffer (all {} are taken); using the default "
              "material",
@@ -83,27 +100,22 @@ std::shared_ptr<Material> ResourceManager::createMaterial(const MaterialData& iD
     return mDefaultMaterial;
   }
 
-  const auto resolveTexture = [&](const TextureRef& iTexture) {
-    NE_ASSERT(iTexture.image < static_cast<int32_t>(iTextureIds.size()),
-              "Material '{}' uses image {}, but only {} texture ids were given", iData.name, iTexture.image, iTextureIds.size());
-    return iTexture.image >= 0 ? iTextureIds[iTexture.image] : kFallbackTextureIndex;
-  };
-  // A normal texture that fell back to white would read as a (1, 1, 1) normal map
-  const uint32_t normalTextureId = resolveTexture(iData.normalTexture);
+  const MaterialParams& params = iData.params;
   const gpu::Material material{
-      .baseColor = iData.baseColor,
-      .emissive = iData.emissive,
-      .metallic = iData.metallic,
-      .roughness = iData.roughness,
-      .normalScale = iData.normalScale,
-      .occlusionStrength = iData.occlusionStrength,
-      .alphaCutoff = iData.alphaCutoff,
-      .baseColorTexture = packTexture(resolveTexture(iData.baseColorTexture), iData.baseColorTexture),
-      .metallicRoughnessTexture = packTexture(resolveTexture(iData.metallicRoughnessTexture), iData.metallicRoughnessTexture),
-      .normalTexture = packTexture(normalTextureId, iData.normalTexture),
-      .occlusionTexture = packTexture(resolveTexture(iData.occlusionTexture), iData.occlusionTexture),
-      .emissiveTexture = packTexture(resolveTexture(iData.emissiveTexture), iData.emissiveTexture),
-      .flags = normalTextureId != kFallbackTextureIndex ? gpu::kMaterialHasNormalTexture : 0u,
+      .baseColor = params.baseColor,
+      .emissive = params.emissive,
+      .metallic = params.metallic,
+      .roughness = params.roughness,
+      .normalScale = params.normalScale,
+      .occlusionStrength = params.occlusionStrength,
+      .alphaCutoff = params.alphaCutoff,
+      .baseColorTexture = packTexture(iData.baseColorTexture),
+      .metallicRoughnessTexture = packTexture(iData.metallicRoughnessTexture),
+      .normalTexture = packTexture(iData.normalTexture),
+      .occlusionTexture = packTexture(iData.occlusionTexture),
+      .emissiveTexture = packTexture(iData.emissiveTexture),
+      // A normal texture that fell back to white would read as a (1, 1, 1) normal map
+      .flags = iData.normalTexture.texture != kFallbackTextureIndex ? gpu::kMaterialHasNormalTexture : 0u,
   };
 
   if (!mStagingManager->isBatching()) {
@@ -113,7 +125,7 @@ std::shared_ptr<Material> ResourceManager::createMaterial(const MaterialData& iD
   mStagingManager->stageBufferCopy(mMaterialBuffer->getBuffer(), &material, sizeof(gpu::Material),
                                    materialIndex * sizeof(gpu::Material));
   NE_VERBOSE("ResourceManager: Material '{}' takes slot {} of the material buffer", iData.name, materialIndex);
-  return std::make_shared<Material>(materialIndex, iData.alphaMode, iData.doubleSided);
+  return std::make_shared<Material>(materialIndex, params.alphaMode, params.doubleSided);
 }
 
 VkDeviceAddress ResourceManager::getMaterialBufferAddress() const { return mMaterialBuffer->getDeviceAddress(); }
@@ -149,21 +161,30 @@ uint32_t ResourceManager::createTexture(const ImageData& iImageData, const std::
              mBindlessManager->getMaxSampledImages());
     return kFallbackTextureIndex;
   }
+  const VkFormat format = getTextureFormat(iImageData);
+  if (format == VK_FORMAT_UNDEFINED) {
+    NE_ERROR("ResourceManager: Half-float texture '{}' has {} channels, not 1, 2, or 4; using the white fallback", name,
+             iImageData.channels);
+    return kFallbackTextureIndex;
+  }
 
   if (!mStagingManager->isBatching()) {
     mStagingManager->beginBatch();
   }
-  const ImageData mipChain = ImageUtils::generateMipChain(iImageData);
+  // 8-bit images get a mip chain; half-float images upload as they are
+  const bool isHalf = iImageData.channelType == ImageData::ChannelType::Float16;
+  const ImageData mipChain = isHalf ? ImageData{} : image_utils::generateMipChain(iImageData);
+  const ImageData& upload = isHalf ? iImageData : mipChain;
   Image::Config config{
-      .width = mipChain.width,
-      .height = mipChain.height,
-      .format = mipChain.srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
+      .width = upload.width,
+      .height = upload.height,
+      .format = format,
       .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-      .mipLevels = mipChain.mipLevels,
+      .mipLevels = upload.mipLevels,
       .debugName = name,
   };
   auto image = std::make_unique<Image>(mDevice, config);
-  mStagingManager->stageImageUpload(*image, mipChain.pixels.data(), mipChain.pixels.size());
+  mStagingManager->stageImageUpload(*image, upload.pixels.data(), upload.pixels.size());
 
   uint32_t textureId = mBindlessManager->registerSampledImage(image->getImageView());
   mTextures.push_back(std::move(image));

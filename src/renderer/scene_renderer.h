@@ -78,6 +78,7 @@ private:
 
   GeometryAllocator* mGeometryAllocator = nullptr;
   VkDeviceAddress mMaterialBufferAddress = 0;
+  uint32_t mEnvBrdfTexture = 0;
   // Indexed by AlphaMode, all built up front
   std::array<std::unique_ptr<Pipeline>, static_cast<size_t>(AlphaMode::Count)> mPipelines;
   // The same for shadow views; the Blend slot stays empty

@@ -36,6 +36,7 @@ constexpr VkDeviceSize kIndexPoolSize = 32 * 1024 * 1024;
 constexpr VkDeviceSize kUploadBlockSize = 16 * 1024 * 1024;
 constexpr VkDeviceSize kStagingBufferSize = 64 * 1024 * 1024;
 constexpr uint32_t kMaxSampledImages = 4096;
+static_assert(kMaxSampledImages <= 0x10000, "gpu::packTexture keeps bindless indices in 16 bits");
 constexpr uint32_t kMaxMaterials = 4096;
 constexpr const char* kSceneShader = "scene";
 

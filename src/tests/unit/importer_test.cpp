@@ -164,7 +164,7 @@ std::filesystem::path writeUnindexedGltf(const std::filesystem::path& iDirectory
 } // namespace
 
 NE_TEST_CASE("importer", "glTF Box: Node Matrix Hierarchy & Axis Conversion") {
-  ModelData model = GltfImporter::importModel("models/Box.gltf");
+  ModelData model = gltf_importer::importModel("models/Box.gltf");
 
   NE_TEST_ASSERT(model.nodes.size() == 2 && model.meshes.size() == 1, "Box has two nodes and one mesh.");
   NE_TEST_ASSERT(model.meshes[0].submeshes.size() == 1, "Box mesh has one submesh.");
@@ -193,7 +193,7 @@ NE_TEST_CASE("importer", "glTF Box: Node Matrix Hierarchy & Axis Conversion") {
 }
 
 NE_TEST_CASE("importer", "glTF DamagedHelmet: Node TRS & Axis Conversion") {
-  ModelData model = GltfImporter::importModel("models/DamagedHelmet.glb");
+  ModelData model = gltf_importer::importModel("models/DamagedHelmet.glb");
 
   NE_TEST_ASSERT(model.nodes.size() == 1 && model.meshes.size() == 1, "Helmet has one node and one mesh.");
 
@@ -207,15 +207,15 @@ NE_TEST_CASE("importer", "glTF DamagedHelmet: Node TRS & Axis Conversion") {
 }
 
 NE_TEST_CASE("importer", "glTF Box: A Material Of Factors Only") {
-  ModelData model = GltfImporter::importModel("models/Box.gltf");
+  ModelData model = gltf_importer::importModel("models/Box.gltf");
 
   NE_TEST_ASSERT(model.materials.size() == 1 && model.images.empty(), "Box has one material and no images.");
-  const MaterialData& red = model.materials[0];
+  const ModelMaterial& red = model.materials[0];
   NE_TEST_ASSERT(red.name == "Red", "The material keeps its name, got '{}'.", red.name);
-  NE_TEST_ASSERT(math::equals(red.baseColor.r, 0.8f) && red.baseColor.g == 0.0f && red.baseColor.b == 0.0f &&
-                     red.baseColor.a == 1.0f,
+  NE_TEST_ASSERT(math::equals(red.params.baseColor.r, 0.8f) && red.params.baseColor.g == 0.0f && red.params.baseColor.b == 0.0f &&
+                     red.params.baseColor.a == 1.0f,
                  "Base color is (0.8, 0, 0, 1).");
-  NE_TEST_ASSERT(red.metallic == 0.0f && red.roughness == 1.0f,
+  NE_TEST_ASSERT(red.params.metallic == 0.0f && red.params.roughness == 1.0f,
                  "Metallic is 0 as authored; roughness keeps glTF's default of 1.");
   NE_TEST_ASSERT(red.baseColorTexture.image < 0 && red.metallicRoughnessTexture.image < 0 && red.normalTexture.image < 0 &&
                      red.occlusionTexture.image < 0 && red.emissiveTexture.image < 0,
@@ -224,12 +224,12 @@ NE_TEST_CASE("importer", "glTF Box: A Material Of Factors Only") {
 }
 
 NE_TEST_CASE("importer", "glTF DamagedHelmet: Material & Color Space Per Use") {
-  ModelData model = GltfImporter::importModel("models/DamagedHelmet.glb");
+  ModelData model = gltf_importer::importModel("models/DamagedHelmet.glb");
 
   NE_TEST_ASSERT(model.materials.size() == 1 && model.images.size() == 5,
                  "Helmet has one material and five images, got {} and {}.", model.materials.size(), model.images.size());
-  const MaterialData& material = model.materials[0];
-  const auto hasImage = [&](const TextureRef& iTexture, bool iSrgb) {
+  const ModelMaterial& material = model.materials[0];
+  const auto hasImage = [&](const ModelTexture& iTexture, bool iSrgb) {
     return iTexture.image >= 0 && model.images[iTexture.image].srgb == iSrgb;
   };
   NE_TEST_ASSERT(hasImage(material.baseColorTexture, true) && hasImage(material.emissiveTexture, true),
@@ -237,8 +237,10 @@ NE_TEST_CASE("importer", "glTF DamagedHelmet: Material & Color Space Per Use") {
   NE_TEST_ASSERT(hasImage(material.metallicRoughnessTexture, false) && hasImage(material.normalTexture, false) &&
                      hasImage(material.occlusionTexture, false),
                  "Metallic-roughness, normal, and occlusion images hold data, so they're linear.");
-  NE_TEST_ASSERT(material.metallic == 1.0f && material.roughness == 1.0f, "Unset metallic and roughness factors are glTF's 1.");
-  NE_TEST_ASSERT(material.emissive.equals(Vec3(kUnitlessEmissiveNits)), "The emissive factor (1, 1, 1) becomes 1000 nits.");
+  NE_TEST_ASSERT(material.params.metallic == 1.0f && material.params.roughness == 1.0f,
+                 "Unset metallic and roughness factors are glTF's 1.");
+  NE_TEST_ASSERT(material.params.emissive.equals(Vec3(kUnitlessEmissiveNits)),
+                 "The emissive factor (1, 1, 1) becomes 1000 nits.");
   const SubmeshData& helmet = model.meshes[0].submeshes[0];
   NE_TEST_ASSERT(helmet.materialIndex == 0, "The helmet uses material 0.");
   NE_TEST_ASSERT(helmet.tangents.size() == helmet.positions.size(),
@@ -258,16 +260,17 @@ NE_TEST_CASE("importer", "glTF Textures: Wrap Per Axis, Color Space Per Use, And
       R"("samplers": [{"magFilter": 9728, "wrapS": 33071, "wrapT": 33648}],)"
       R"("images": [{"uri": "texture.png"}],)",
       R"(, "material": 0)");
-  ModelData model = GltfImporter::importModel(path.string());
+  ModelData model = gltf_importer::importModel(path.string());
 
   NE_TEST_ASSERT(model.materials.size() == 1 && model.meshes.size() == 1, "The triangle and its material import.");
-  const TextureRef& baseColor = model.materials[0].baseColorTexture;
-  const TextureRef& metallicRoughness = model.materials[0].metallicRoughnessTexture;
-  NE_TEST_ASSERT(baseColor.filter == TextureFilter::Nearest && baseColor.wrapU == TextureWrap::Clamp &&
-                     baseColor.wrapV == TextureWrap::Mirror,
+  const ModelTexture& baseColor = model.materials[0].baseColorTexture;
+  const ModelTexture& metallicRoughness = model.materials[0].metallicRoughnessTexture;
+  NE_TEST_ASSERT(baseColor.sampler.filter == TextureFilter::Nearest && baseColor.sampler.wrapU == TextureWrap::Clamp &&
+                     baseColor.sampler.wrapV == TextureWrap::Mirror,
                  "A sampler's filter and per-axis wraps carry over.");
-  NE_TEST_ASSERT(metallicRoughness.filter == TextureFilter::Linear && metallicRoughness.wrapU == TextureWrap::Repeat &&
-                     metallicRoughness.wrapV == TextureWrap::Repeat,
+  NE_TEST_ASSERT(metallicRoughness.sampler.filter == TextureFilter::Linear &&
+                     metallicRoughness.sampler.wrapU == TextureWrap::Repeat &&
+                     metallicRoughness.sampler.wrapV == TextureWrap::Repeat,
                  "A texture without a sampler gets glTF's defaults: linear and repeat.");
   NE_TEST_ASSERT(model.images.size() == 2 && baseColor.image >= 0 && metallicRoughness.image >= 0 &&
                      model.images[baseColor.image].srgb && !model.images[metallicRoughness.image].srgb,
@@ -276,9 +279,9 @@ NE_TEST_CASE("importer", "glTF Textures: Wrap Per Axis, Color Space Per Use, And
   NE_TEST_ASSERT(model.meshes[0].submeshes[0].materialIndex == 0, "The triangle uses its material.");
 
   writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2});
-  ModelData untextured = GltfImporter::importModel(path.string());
-  NE_TEST_ASSERT(untextured.materials.size() == 1 && untextured.materials[0].metallic == 1.0f &&
-                     untextured.materials[0].roughness == 1.0f && untextured.meshes[0].submeshes[0].materialIndex == 0,
+  ModelData untextured = gltf_importer::importModel(path.string());
+  NE_TEST_ASSERT(untextured.materials.size() == 1 && untextured.materials[0].params.metallic == 1.0f &&
+                     untextured.materials[0].params.roughness == 1.0f && untextured.meshes[0].submeshes[0].materialIndex == 0,
                  "A primitive without a material gets glTF's default one, fully metallic and fully rough.");
 }
 
@@ -286,7 +289,7 @@ NE_TEST_CASE("importer", "glTF Textures: Wrap Per Axis, Color Space Per Use, And
 NE_TEST_CASE("importer", "glTF Normals & Tangents: Flat Normals When Missing, Tangents In Engine Axes") {
   const TempDirectory directory;
   const std::filesystem::path path = writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2});
-  ModelData flat = GltfImporter::importModel(path.string());
+  ModelData flat = gltf_importer::importModel(path.string());
   NE_TEST_ASSERT(flat.meshes.size() == 1, "The triangle imports.");
   const std::vector<Vec3>& flatNormals = flat.meshes[0].submeshes[0].normals;
   NE_TEST_ASSERT(flatNormals.size() == 3 && std::all_of(flatNormals.begin(), flatNormals.end(),
@@ -294,7 +297,7 @@ NE_TEST_CASE("importer", "glTF Normals & Tangents: Flat Normals When Missing, Ta
                  "A triangle without NORMAL gets its face normal, engine +X, at each of its vertices.");
 
   writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0, "NORMAL": 4, "TANGENT": 5)");
-  ModelData withNormals = GltfImporter::importModel(path.string());
+  ModelData withNormals = gltf_importer::importModel(path.string());
   NE_TEST_ASSERT(withNormals.meshes.size() == 1, "The triangle imports.");
   const std::vector<Vec4>& tangents = withNormals.meshes[0].submeshes[0].tangents;
   NE_TEST_ASSERT(tangents.size() == 3 &&
@@ -303,7 +306,7 @@ NE_TEST_CASE("importer", "glTF Normals & Tangents: Flat Normals When Missing, Ta
                  "glTF's tangent (1, 0, 0) becomes engine +Y, and its w keeps its sign.");
 
   writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0, "TANGENT": 5)");
-  ModelData withoutNormals = GltfImporter::importModel(path.string());
+  ModelData withoutNormals = gltf_importer::importModel(path.string());
   NE_TEST_ASSERT(withoutNormals.meshes.size() == 1, "The triangle imports.");
   NE_TEST_ASSERT(withoutNormals.meshes[0].submeshes[0].tangents.empty() &&
                      withoutNormals.meshes[0].submeshes[0].normals.size() == 3,
@@ -319,7 +322,7 @@ NE_TEST_CASE("importer", "glTF Tangents: Generated Only For A Material With A No
       directory.getPath(), "triangle", {0, 1, 2}, attributes,
       R"("materials": [{"normalTexture": {"index": 0}}], "textures": [{"source": 0}], "images": [{"uri": "normal.png"}],)",
       R"(, "material": 0)");
-  ModelData normalMapped = GltfImporter::importModel(path.string());
+  ModelData normalMapped = gltf_importer::importModel(path.string());
   NE_TEST_ASSERT(normalMapped.meshes.size() == 1, "The triangle imports.");
   const std::vector<Vec4>& tangents = normalMapped.meshes[0].submeshes[0].tangents;
   NE_TEST_ASSERT(tangents.size() == 3 &&
@@ -329,7 +332,7 @@ NE_TEST_CASE("importer", "glTF Tangents: Generated Only For A Material With A No
                  "tangent the file states in accessor 5.");
 
   writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, attributes, R"("materials": [{}],)", R"(, "material": 0)");
-  ModelData plain = GltfImporter::importModel(path.string());
+  ModelData plain = gltf_importer::importModel(path.string());
   NE_TEST_ASSERT(plain.meshes.size() == 1 && plain.meshes[0].submeshes[0].tangents.empty(),
                  "A material without a normal texture needs no tangents, so none are generated.");
 }
@@ -340,7 +343,7 @@ NE_TEST_CASE("importer", "glTF Flat Normals: Corners On One Flat Face Weld Back 
   const std::filesystem::path path =
       writeUnindexedGltf(directory.getPath(), {Vec3(0.0f, 0.0f, 0.0f), Vec3(1.0f, 0.0f, 0.0f), Vec3(0.0f, 1.0f, 0.0f),
                                                Vec3(0.0f, 1.0f, 0.0f), Vec3(1.0f, 0.0f, 0.0f), Vec3(1.0f, 1.0f, 0.0f)});
-  ModelData square = GltfImporter::importModel(path.string());
+  ModelData square = gltf_importer::importModel(path.string());
   NE_TEST_ASSERT(square.meshes.size() == 1, "The square imports.");
   const SubmeshData& submesh = square.meshes[0].submeshes[0];
   NE_TEST_ASSERT(submesh.positions.size() == 4 && submesh.indices.size() == 6,
@@ -354,11 +357,11 @@ NE_TEST_CASE("importer", "glTF Flat Normals: Corners On One Flat Face Weld Back 
 NE_TEST_CASE("importer", "glTF With An Out-Of-Range Index Fails Validation") {
   const TempDirectory directory;
   const std::filesystem::path path = writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2});
-  ModelData valid = GltfImporter::importModel(path.string());
+  ModelData valid = gltf_importer::importModel(path.string());
   NE_TEST_ASSERT(valid.meshes.size() == 1 && valid.nodes.size() == 1, "A well-formed triangle imports.");
 
   writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 3});
-  ModelData invalid = GltfImporter::importModel(path.string());
+  ModelData invalid = gltf_importer::importModel(path.string());
   NE_TEST_ASSERT(invalid.meshes.empty() && invalid.nodes.empty(),
                  "Index 3 into 3 vertices fails validation and imports nothing.");
 }
@@ -367,7 +370,7 @@ NE_TEST_CASE("importer", "glTF Primitives That Aren't Whole Triangles Are Skippe
   const TempDirectory directory;
   const std::filesystem::path path = writeUnindexedGltf(
       directory.getPath(), {Vec3(0.0f, 0.0f, 0.0f), Vec3(1.0f, 0.0f, 0.0f), Vec3(0.0f, 1.0f, 0.0f), Vec3(1.0f, 1.0f, 0.0f)});
-  ModelData partial = GltfImporter::importModel(path.string());
+  ModelData partial = gltf_importer::importModel(path.string());
   NE_TEST_ASSERT(partial.meshes.empty() && partial.nodes.size() == 1,
                  "Four vertices aren't whole triangles, which glTF requires, so the primitive is skipped and its node "
                  "kept.");
@@ -378,19 +381,19 @@ NE_TEST_CASE("importer", "glTF Requiring An Unsupported Extension Imports Nothin
   const std::filesystem::path path = writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0)",
                                                        R"("extensionsUsed": ["KHR_draco_mesh_compression"],)"
                                                        R"("extensionsRequired": ["KHR_draco_mesh_compression"],)");
-  ModelData draco = GltfImporter::importModel(path.string());
+  ModelData draco = gltf_importer::importModel(path.string());
   NE_TEST_ASSERT(draco.meshes.empty() && draco.nodes.empty(), "A file that requires Draco is rejected whole.");
 
   // Materials are imported, but texture transforms aren't honored
   writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0)",
                     R"("extensionsUsed": ["KHR_texture_transform"], "extensionsRequired": ["KHR_texture_transform"],)");
-  ModelData textureTransform = GltfImporter::importModel(path.string());
+  ModelData textureTransform = gltf_importer::importModel(path.string());
   NE_TEST_ASSERT(textureTransform.meshes.empty() && textureTransform.nodes.empty(),
                  "A file that requires an unsupported material extension is rejected whole.");
 
   writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0)",
                     R"("extensionsUsed": ["KHR_mesh_quantization"], "extensionsRequired": ["KHR_mesh_quantization"],)");
-  ModelData quantized = GltfImporter::importModel(path.string());
+  ModelData quantized = gltf_importer::importModel(path.string());
   NE_TEST_ASSERT(quantized.meshes.size() == 1, "A file that requires KHR_mesh_quantization imports.");
 
   writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0)",
@@ -399,10 +402,10 @@ NE_TEST_CASE("importer", "glTF Requiring An Unsupported Extension Imports Nothin
                     R"("materials": [{"emissiveFactor": [1, 0.5, 0],)"
                     R"("extensions": {"KHR_materials_emissive_strength": {"emissiveStrength": 4}}}],)",
                     R"(, "material": 0)");
-  ModelData emissiveStrength = GltfImporter::importModel(path.string());
+  ModelData emissiveStrength = gltf_importer::importModel(path.string());
   NE_TEST_ASSERT(emissiveStrength.meshes.size() == 1, "A file that requires KHR_materials_emissive_strength imports.");
   NE_TEST_ASSERT(emissiveStrength.materials.size() == 1 &&
-                     emissiveStrength.materials[0].emissive.equals(Vec3(4000.0f, 2000.0f, 0.0f)),
+                     emissiveStrength.materials[0].params.emissive.equals(Vec3(4000.0f, 2000.0f, 0.0f)),
                  "Emissive factor (1, 0.5, 0) x strength 4 x kUnitlessEmissiveNits is (4000, 2000, 0) nits.");
 }
 
@@ -411,13 +414,13 @@ NE_TEST_CASE("importer", "glTF Attributes: Mistyped Ones Are Dropped, Only Set 0
   const TempDirectory directory;
   const std::filesystem::path path =
       writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0, "TEXCOORD_0": 0)");
-  ModelData mistyped = GltfImporter::importModel(path.string());
+  ModelData mistyped = gltf_importer::importModel(path.string());
   NE_TEST_ASSERT(mistyped.meshes.size() == 1 && mistyped.meshes[0].submeshes[0].texCoords.empty(),
                  "A VEC3 TEXCOORD_0 is dropped and the triangle still imports.");
 
   // TEXCOORD_1 (all ones) comes last, so reading whichever set comes last would replace TEXCOORD_0
   writeTriangleGltf(directory.getPath(), "triangle", {0, 1, 2}, R"("POSITION": 0, "TEXCOORD_0": 2, "TEXCOORD_1": 3)");
-  ModelData twoSets = GltfImporter::importModel(path.string());
+  ModelData twoSets = gltf_importer::importModel(path.string());
   const std::array uvSet0{Vec2(0.0f, 0.0f), Vec2(1.0f, 0.0f), Vec2(0.0f, 1.0f)};
   bool readsSet0 = twoSets.meshes.size() == 1 && twoSets.meshes[0].submeshes[0].texCoords.size() == 3;
   for (size_t i = 0; readsSet0 && i < 3; ++i) {

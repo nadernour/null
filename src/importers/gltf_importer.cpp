@@ -143,7 +143,7 @@ bool readAttribute(const cgltf_accessor& iAccessor, std::vector<T>& oValues) {
 // glTF requires flat normals for a primitive without NORMAL: each triangle gets three vertices of its own, which take
 // its counter-clockwise face normal. Welding then merges the corners that triangles on one flat face still share.
 void generateFlatNormals(SubmeshData& ioSubmesh) {
-  MeshUtils::unweldVertices(ioSubmesh);
+  mesh_utils::unweldVertices(ioSubmesh);
   ioSubmesh.normals.resize(ioSubmesh.positions.size());
   for (size_t i = 0; i < ioSubmesh.positions.size(); i += 3) {
     const Vec3& p0 = ioSubmesh.positions[i];
@@ -154,7 +154,7 @@ void generateFlatNormals(SubmeshData& ioSubmesh) {
     ioSubmesh.normals[i + 1] = faceNormal;
     ioSubmesh.normals[i + 2] = faceNormal;
   }
-  MeshUtils::weldVertices(ioSubmesh);
+  mesh_utils::weldVertices(ioSubmesh);
 }
 
 // Null, with the reason logged, when the primitive can't be drawn. An optional attribute glTF doesn't allow is dropped
@@ -269,7 +269,7 @@ std::optional<ImageData> decodeImage(const cgltf_image& iImage, cgltf_size iImag
       NE_WARN("GltfImporter: Image {} lies in a buffer that isn't loaded", iImageIndex);
       return std::nullopt;
     }
-    return ImageImporter::importFromMemory({bytes, iImage.buffer_view->size});
+    return image_importer::importFromMemory({bytes, iImage.buffer_view->size});
   }
   if (!iImage.uri) {
     NE_WARN("GltfImporter: Image {} has neither a buffer view nor a URI", iImageIndex);
@@ -288,7 +288,7 @@ std::optional<ImageData> decodeImage(const cgltf_image& iImage, cgltf_size iImag
   // directory
   std::string uri = iImage.uri;
   uri.resize(cgltf_decode_uri(uri.data()));
-  return ImageImporter::importFromFile((iDirectory / uri).string());
+  return image_importer::importFromFile((iDirectory / uri).string());
 }
 
 TextureWrap toTextureWrap(cgltf_wrap_mode iMode) {
@@ -321,8 +321,8 @@ public:
   ModelData build();
 
 private:
-  MaterialData importMaterial(const cgltf_material& iMaterial);
-  TextureRef importTexture(const cgltf_texture_view& iView, bool iSrgb, const char* iSlot, const char* iMaterialName);
+  ModelMaterial importMaterial(const cgltf_material& iMaterial);
+  ModelTexture importTexture(const cgltf_texture_view& iView, bool iSrgb, const char* iSlot, const char* iMaterialName);
   int32_t useImage(const cgltf_image& iImage, bool iSrgb);
   MeshData importMesh(const cgltf_mesh& iMesh);
   int32_t getDefaultMaterialIndex();
@@ -373,34 +373,34 @@ ModelData ModelBuilder::build() {
 
 // Base color and emissive textures hold colors, so their images are sRGB; the other textures hold data, so theirs are
 // linear. An image used both ways is imported twice.
-MaterialData ModelBuilder::importMaterial(const cgltf_material& iMaterial) {
+ModelMaterial ModelBuilder::importMaterial(const cgltf_material& iMaterial) {
   const cgltf_pbr_metallic_roughness& pbr = iMaterial.pbr_metallic_roughness;
-  MaterialData material;
+  ModelMaterial material;
   material.name = iMaterial.name ? iMaterial.name : "";
   const char* name = material.name.c_str();
 
   // cgltf starts from glTF's defaults, also when pbrMetallicRoughness is missing
-  material.baseColor =
+  material.params.baseColor =
       LinearColor{pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2], pbr.base_color_factor[3]};
-  material.metallic = pbr.metallic_factor;
-  material.roughness = pbr.roughness_factor;
+  material.params.metallic = pbr.metallic_factor;
+  material.params.roughness = pbr.roughness_factor;
   // glTF's emissive has no unit; kUnitlessEmissiveNits gives it one
   const float emissiveStrength = iMaterial.has_emissive_strength ? iMaterial.emissive_strength.emissive_strength : 1.0f;
-  material.emissive = Vec3(iMaterial.emissive_factor[0], iMaterial.emissive_factor[1], iMaterial.emissive_factor[2]) *
-                      (emissiveStrength * kUnitlessEmissiveNits);
-  material.alphaCutoff = iMaterial.alpha_cutoff;
+  material.params.emissive = Vec3(iMaterial.emissive_factor[0], iMaterial.emissive_factor[1], iMaterial.emissive_factor[2]) *
+                             (emissiveStrength * kUnitlessEmissiveNits);
+  material.params.alphaCutoff = iMaterial.alpha_cutoff;
   if (iMaterial.alpha_mode == cgltf_alpha_mode_mask) {
-    material.alphaMode = AlphaMode::Mask;
+    material.params.alphaMode = AlphaMode::Mask;
   } else if (iMaterial.alpha_mode == cgltf_alpha_mode_blend) {
-    material.alphaMode = AlphaMode::Blend;
+    material.params.alphaMode = AlphaMode::Blend;
   }
-  material.doubleSided = iMaterial.double_sided;
+  material.params.doubleSided = iMaterial.double_sided;
   // cgltf sets a texture's scale only along with the texture
   if (iMaterial.normal_texture.texture) {
-    material.normalScale = iMaterial.normal_texture.scale;
+    material.params.normalScale = iMaterial.normal_texture.scale;
   }
   if (iMaterial.occlusion_texture.texture) {
-    material.occlusionStrength = iMaterial.occlusion_texture.scale;
+    material.params.occlusionStrength = iMaterial.occlusion_texture.scale;
   }
 
   material.baseColorTexture = importTexture(pbr.base_color_texture, true, "base color", name);
@@ -412,9 +412,9 @@ MaterialData ModelBuilder::importMaterial(const cgltf_material& iMaterial) {
 }
 
 // The texture of one material slot, without an image when the importer can't honor it (the reason is logged)
-TextureRef ModelBuilder::importTexture(const cgltf_texture_view& iView, bool iSrgb, const char* iSlot,
-                                       const char* iMaterialName) {
-  TextureRef texture;
+ModelTexture ModelBuilder::importTexture(const cgltf_texture_view& iView, bool iSrgb, const char* iSlot,
+                                         const char* iMaterialName) {
+  ModelTexture texture;
   if (!iView.texture) {
     return texture;
   }
@@ -434,9 +434,9 @@ TextureRef ModelBuilder::importTexture(const cgltf_texture_view& iView, bool iSr
 
   // A texture without a sampler keeps glTF's defaults: repeat and linear
   if (const cgltf_sampler* sampler = iView.texture->sampler) {
-    texture.wrapU = toTextureWrap(sampler->wrap_s);
-    texture.wrapV = toTextureWrap(sampler->wrap_t);
-    texture.filter = sampler->mag_filter == cgltf_filter_type_nearest ? TextureFilter::Nearest : TextureFilter::Linear;
+    texture.sampler.wrapU = toTextureWrap(sampler->wrap_s);
+    texture.sampler.wrapV = toTextureWrap(sampler->wrap_t);
+    texture.sampler.filter = sampler->mag_filter == cgltf_filter_type_nearest ? TextureFilter::Nearest : TextureFilter::Linear;
   }
   texture.image = useImage(*iView.texture->image, iSrgb);
   if (texture.image < 0) {
@@ -482,7 +482,7 @@ MeshData ModelBuilder::importMesh(const cgltf_mesh& iMesh) {
     // glTF calculates missing tangents only for a material with a normal texture, from that texture's UVs. The importer
     // keeps a normal texture only on TEXCOORD_0, the set texCoords holds, so one it dropped asks for no tangents.
     if (submesh->tangents.empty() && mModel.materials[submesh->materialIndex].normalTexture.image >= 0) {
-      MeshUtils::generateTangents(*submesh);
+      mesh_utils::generateTangents(*submesh);
     }
     mesh.submeshes.push_back(std::move(*submesh));
   }
@@ -494,7 +494,7 @@ MeshData ModelBuilder::importMesh(const cgltf_mesh& iMesh) {
 int32_t ModelBuilder::getDefaultMaterialIndex() {
   if (mDefaultMaterialIndex < 0) {
     mDefaultMaterialIndex = static_cast<int32_t>(mModel.materials.size());
-    mModel.materials.push_back(MaterialData{.name = "glTF_Default", .metallic = 1.0f, .roughness = 1.0f});
+    mModel.materials.push_back(ModelMaterial{.name = "glTF_Default", .params = {.metallic = 1.0f, .roughness = 1.0f}});
   }
   return mDefaultMaterialIndex;
 }
@@ -519,7 +519,7 @@ void ModelBuilder::importNode(const cgltf_node& iNode, int32_t iParentIndex) {
 
 } // namespace
 
-namespace GltfImporter {
+namespace gltf_importer {
 
 ModelData importModel(const std::string& iPath) {
   const std::string fullPath = ne::fs::resolveContentPath(iPath);
@@ -535,6 +535,6 @@ ModelData importModel(const std::string& iPath) {
   return model;
 }
 
-} // namespace GltfImporter
+} // namespace gltf_importer
 
 } // namespace ne

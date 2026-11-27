@@ -74,6 +74,10 @@ struct ShadowData {
   float texelSize = 0.0f;    // One atlas texel, in atlas UV
 };
 
+// A texture as sampleTexture() in shaders/scene.slang unpacks it: the bindless index in the low 16 bits, and the
+// sampler's (SamplerManager::getTextureSamplerIndex()) in the high 16
+constexpr uint32_t packTexture(uint32_t iTextureIndex, uint32_t iSamplerIndex) { return iTextureIndex | (iSamplerIndex << 16); }
+
 // What every draw of a view shares
 struct GlobalUniforms {
   Mat4 viewProj;
@@ -86,6 +90,7 @@ struct GlobalUniforms {
   uint32_t lightCount = 0;
   uint32_t debugView = 0;                // DebugView
   uint32_t shadowLight = kNoShadowLight; // The light whose shadows were drawn; kNoShadowLight in shadow views
+  uint32_t envBrdfTexture = 0;           // renderer/env_brdf.h's table, as packTexture() packs it
 };
 
 // One per indirect draw, indexed by SV_DrawIndex
@@ -112,7 +117,7 @@ struct Material {
   float normalScale = 1.0f;
   float occlusionStrength = 1.0f;
   float alphaCutoff = 0.5f;
-  // Each texture packs its bindless index (low 16 bits) and its sampler index (high 16 bits)
+  // Each texture as packTexture() packs it
   uint32_t baseColorTexture = 0;
   uint32_t metallicRoughnessTexture = 0;
   uint32_t normalTexture = 0;
@@ -141,7 +146,7 @@ static_assert(sizeof(TonemapPushConstants) == 12, "TonemapPushConstants size mis
 static_assert(sizeof(Vertex) == 64, "Vertex size mismatch with Slang layout!");
 static_assert(sizeof(DrawInfo) == 16, "DrawInfo size mismatch with Slang layout!");
 static_assert(sizeof(Light) == 52, "Light size mismatch with Slang layout!");
-static_assert(sizeof(GlobalUniforms) == 136, "GlobalUniforms size mismatch with Slang layout!");
+static_assert(sizeof(GlobalUniforms) == 144, "GlobalUniforms size mismatch with Slang layout!");
 static_assert(sizeof(ShadowData) == 312, "ShadowData size mismatch with Slang layout!");
 static_assert(sizeof(InstanceData) == 148, "InstanceData size mismatch with Slang layout!");
 static_assert(sizeof(Material) == 72, "Material size mismatch with Slang layout!");

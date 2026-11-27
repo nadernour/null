@@ -19,7 +19,7 @@ ImageData copyPixels(const stbi_uc* iPixels, int iWidth, int iHeight) {
 
 } // namespace
 
-std::optional<ImageData> ImageImporter::importFromFile(const std::string& iPath) {
+std::optional<ImageData> image_importer::importFromFile(const std::string& iPath) {
   std::string resolvedPath = ne::fs::resolveContentPath(iPath);
 
   int width = 0;
@@ -36,7 +36,7 @@ std::optional<ImageData> ImageImporter::importFromFile(const std::string& iPath)
   return image;
 }
 
-std::optional<ImageData> ImageImporter::importFromMemory(std::span<const uint8_t> iData) {
+std::optional<ImageData> image_importer::importFromMemory(std::span<const uint8_t> iData) {
   if (iData.empty()) {
     NE_WARN("ImageImporter: Cannot load from empty memory span");
     return std::nullopt;

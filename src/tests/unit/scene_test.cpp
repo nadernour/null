@@ -234,8 +234,8 @@ NE_TEST_CASE("scene", "Prefab Gives Each Submesh Its Material") {
   blue.materialIndex = 1;
   ModelData data;
   data.name = "Painted";
-  data.materials = {MaterialData{.name = "Red", .baseColor = LinearColor{1.0f, 0.0f, 0.0f, 1.0f}},
-                    MaterialData{.name = "Blue", .baseColor = LinearColor{0.0f, 0.0f, 1.0f, 1.0f}}};
+  data.materials = {ModelMaterial{.name = "Red", .params = {.baseColor = LinearColor{1.0f, 0.0f, 0.0f, 1.0f}}},
+                    ModelMaterial{.name = "Blue", .params = {.baseColor = LinearColor{0.0f, 0.0f, 1.0f, 1.0f}}}};
   data.meshes = {MeshData{.submeshes = {red, blue, triangle}}};
   data.nodes = {ModelNode{.name = "body", .localTransform = Transform{}, .parentIndex = -1, .meshIndex = 0}};
 
